@@ -28,26 +28,35 @@ from llm.prompt_builder import PromptBuilder
 from llm.async_bridge import LLMBridge
 from hrl.option_controller import OptionController, NUM_OPTIONS
 
-def get_option_target_zone(opt_str):
+def get_option_target_zone(opt_strs):
     mapping = {
         "COLLECT_WOOD": 0, "COLLECT_STONE": 1,
         "CRAFT_PICKAXE": 2, "MINE_IRON": 3,
         "CRAFT_SWORD": 2, "CRAFT_ARMOR": 2, 
         "BUILD_BRIDGE": 4, "FIGHT_ENEMY": 5
     }
-    return mapping.get(opt_str, 0)
+    if isinstance(opt_strs, str):
+        return mapping.get(opt_strs, 0)
+    return np.array([mapping.get(s, 0) for s in opt_strs])
 
-def check_option_success(opt_str, inv_prev, inv_next):
+def check_option_success(opt_strs, inv_prev, inv_next):
     # I_WOOD=0, I_STONE=1, I_IRON=2, I_PICKAXE=4, I_SWORD=5, I_ARMOR=6, F_BRIDGE=7, F_ENEMY_DEFEATED=8
-    if opt_str == "COLLECT_WOOD": return inv_next[:, 0] > inv_prev[:, 0]
-    if opt_str == "COLLECT_STONE": return inv_next[:, 1] > inv_prev[:, 1]
-    if opt_str == "CRAFT_PICKAXE": return inv_next[:, 4] > inv_prev[:, 4]
-    if opt_str == "MINE_IRON": return inv_next[:, 2] > inv_prev[:, 2]
-    if opt_str == "CRAFT_SWORD": return inv_next[:, 5] > inv_prev[:, 5]
-    if opt_str == "CRAFT_ARMOR": return inv_next[:, 6] > inv_prev[:, 6]
-    if opt_str == "BUILD_BRIDGE": return inv_next[:, 7] > inv_prev[:, 7]
-    if opt_str == "FIGHT_ENEMY": return inv_next[:, 8] > inv_prev[:, 8]
-    return np.zeros(inv_prev.shape[0], dtype=bool)
+    n_envs = inv_prev.shape[0]
+    success = np.zeros(n_envs, dtype=bool)
+    if isinstance(opt_strs, str):
+        opt_strs = [opt_strs] * n_envs
+        
+    for i in range(n_envs):
+        opt = opt_strs[i]
+        if opt == "COLLECT_WOOD": success[i] = inv_next[i, 0] > inv_prev[i, 0]
+        elif opt == "COLLECT_STONE": success[i] = inv_next[i, 1] > inv_prev[i, 1]
+        elif opt == "CRAFT_PICKAXE": success[i] = inv_next[i, 4] > inv_prev[i, 4]
+        elif opt == "MINE_IRON": success[i] = inv_next[i, 2] > inv_prev[i, 2]
+        elif opt == "CRAFT_SWORD": success[i] = inv_next[i, 5] > inv_prev[i, 5]
+        elif opt == "CRAFT_ARMOR": success[i] = inv_next[i, 6] > inv_prev[i, 6]
+        elif opt == "BUILD_BRIDGE": success[i] = inv_next[i, 7] > inv_prev[i, 7]
+        elif opt == "FIGHT_ENEMY": success[i] = inv_next[i, 8] > inv_prev[i, 8]
+    return success
 
 def train_mappo_hrl(
     n_envs: int = 128,
@@ -178,8 +187,8 @@ def train_mappo_hrl(
             
             # Agent 0
             z0 = get_option_target_zone(a0_opt)
-            dist0_prev = np.linalg.norm(vec_env.pos[:, 0] - vec_env.zones[:, z0], axis=1) # using pos_next essentially
-            dist0_next = np.linalg.norm(vec_env.pos[:, 0] - vec_env.zones[:, z0], axis=1) 
+            dist0_prev = np.linalg.norm(vec_env.pos[:, 0] - vec_env.zones[np.arange(n_envs), z0], axis=1) # using pos_next essentially
+            dist0_next = np.linalg.norm(vec_env.pos[:, 0] - vec_env.zones[np.arange(n_envs), z0], axis=1) 
             phi0_prev = MAX_DIST - dist0_prev # simplified, technically we should track true prev
             phi0_next = MAX_DIST - dist0_next 
             shaping0 = (0.99 * phi0_next) - phi0_prev
@@ -187,21 +196,25 @@ def train_mappo_hrl(
             
             # Agent 1
             z1 = get_option_target_zone(a1_opt)
-            dist1_prev = np.linalg.norm(vec_env.pos[:, 1] - vec_env.zones[:, z1], axis=1)
-            dist1_next = np.linalg.norm(vec_env.pos[:, 1] - vec_env.zones[:, z1], axis=1)
+            dist1_prev = np.linalg.norm(vec_env.pos[:, 1] - vec_env.zones[np.arange(n_envs), z1], axis=1)
+            dist1_next = np.linalg.norm(vec_env.pos[:, 1] - vec_env.zones[np.arange(n_envs), z1], axis=1)
             phi1_prev = MAX_DIST - dist1_prev
             phi1_next = MAX_DIST - dist1_next
             shaping1 = (0.99 * phi1_next) - phi1_prev
             intrinsic_r[:, 1] = np.where(a1_success, 1.0 + step_penalty, step_penalty + (shaping1 * 0.05))
             
-            if (a0_success.any() or a1_success.any()) and not option_controller.llm_pending:
+            if option_controller.cooldown_counter > 0:
+                option_controller.cooldown_counter -= 1
+            
+            if (a0_success.any() or a1_success.any()) and not option_controller.llm_pending and option_controller.cooldown_counter == 0:
                 print(f"Option terminated. Triggering LLM Orchestrator...")
                 option_controller.llm_pending = True
+                option_controller.cooldown_counter = 50 # Cooldown of 50 steps
                 
                 # Use env 0 for state snapshot
                 inv_str = str(inv_next[0].astype(int).tolist())
-                a0_stat = "Idle/Finished" if a0_success[0] else f"Working on {a0_opt}"
-                a1_stat = "Idle/Finished" if a1_success[0] else f"Working on {a1_opt}"
+                a0_stat = "Idle/Finished" if a0_success[0] else f"Working on {a0_opt[0]}"
+                a1_stat = "Idle/Finished" if a1_success[0] else f"Working on {a1_opt[0]}"
                 
                 prompt = prompt_builder.build_hrl_prompt(inv_str, a0_stat, a1_stat)
                 def _cb(res):
