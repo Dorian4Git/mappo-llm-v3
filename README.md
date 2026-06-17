@@ -29,8 +29,6 @@ python scripts/run_llm_dynamic.py --enable-logging
 python scripts/run_llm_dynamic.py --enable-logging --llm-backend gemini --llm-model gemini-2.5-flash
 
 python scripts/run_llm_dynamic.py --enable-logging --llm-backend gemini --llm-model gemini-3.1-flash-lite
-
-
 ```
 
 Run the complete fine-tuning pipeline on collected trajectories:

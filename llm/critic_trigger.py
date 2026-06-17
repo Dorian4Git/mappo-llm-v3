@@ -114,19 +114,14 @@ class CriticTrigger:
     def on_update_end(self, update: int, metrics: dict, td_stats: dict) -> Optional[dict]:
         """
         Callback fired after each training update.
-
-        Implements the two-stage trigger logic and fires LLM intervention
-        if conditions are met.
-
-        Args:
-            update: Current training update number.
-            metrics: Dict with success_rate, avg_env_reward, subtask_pcts, etc.
-            td_stats: Dict with mean_td_error, std_td_error, variance_td_error, etc.
-
-        Returns:
-            Optional dict with 'adaptive_weights' to override current weights,
-            or None if no intervention triggered.
         """
+        # ── Apply pending weights from async LLM queries ──
+        if getattr(self, "_pending_weights", None) is not None:
+            new_weights = self._pending_weights
+            self._pending_weights = None
+            print(f"      [CriticTrigger] Applying async weights from update {update}")
+            return {"adaptive_weights": new_weights}
+
         # ── Record histories ─────────────────────────────────────────
         success_rate = metrics.get("success_rate", 0.0)
         avg_env_reward = metrics.get("avg_env_reward", 0.0)
@@ -159,12 +154,12 @@ class CriticTrigger:
         print(f"      Reason: {trigger_reason}")
 
         # Build context for LLM
-        intervention_result = self._execute_intervention(update, metrics, td_stats, trigger_reason)
+        self._execute_intervention(update, metrics, td_stats, trigger_reason)
 
         # Log the trigger event
-        self._log_trigger(update, metrics, td_stats, trigger_reason, intervention_result)
+        self._log_trigger(update, metrics, td_stats, trigger_reason, None)
 
-        return intervention_result
+        return None
 
     def _evaluate_trigger(
         self, update: int, metrics: dict, td_stats: dict
@@ -177,6 +172,10 @@ class CriticTrigger:
         """
         # ── Cooldown check ───────────────────────────────────────────
         if update - self._last_trigger_update < self.cooldown_updates:
+            return False, ""
+
+        # ── Warmup check ───────────────────────────────────────────
+        if update < 50:
             return False, ""
 
         # Need enough history
@@ -299,23 +298,28 @@ class CriticTrigger:
             trigger_count=self._total_triggers,
         )
 
-        # Query LLM
-        response = self.orchestrator.query_intervention(prompt)
-        if response is None:
-            print("      [CriticTrigger] LLM returned None — no intervention applied")
-            return None
+        def _async_callback(raw_text: Optional[str]):
+            if not raw_text:
+                print("      [CriticTrigger] LLM returned None — no intervention applied")
+                return
+            try:
+                clean_text = raw_text.replace("```json", "").replace("```", "").strip()
+                response = json.loads(clean_text)
+                
+                if self.reward_injector:
+                    new_weights = self.reward_injector.process_intervention(
+                        response=response,
+                        current_weights=metrics.get("adaptive_weights", {}),
+                        metrics=metrics,
+                        update=update,
+                    )
+                    if new_weights:
+                        self._pending_weights = new_weights
+            except Exception as e:
+                print(f"      [CriticTrigger] Async callback failed: {e}")
 
-        # Process through reward injector
-        if self.reward_injector:
-            new_weights = self.reward_injector.process_intervention(
-                response=response,
-                current_weights=metrics.get("adaptive_weights", {}),
-                metrics=metrics,
-                update=update,
-            )
-            if new_weights:
-                return {"adaptive_weights": new_weights}
-
+        # Query LLM asynchronously
+        self.orchestrator.query_intervention_async(prompt, callback=_async_callback)
         return None
 
     def _log_trigger(

@@ -220,9 +220,9 @@ class BatchCraftingEnvV2:
         self.total_mined[stone_ok, 1] += 1
         rewards[stone_ok, :] += 2.0
 
-        # Pickaxe (both at workbench, costs 1W, 1S)
-        wb_ok_a0 = interact_a0 & (self.inventory[:, I_WOOD] >= 1) & (self.inventory[:, I_STONE] >= 1) & (self.inventory[:, I_PICKAXE] < 1) & both_at(2)
-        wb_ok_a1 = interact_a1 & (self.inventory[:, I_WOOD] >= 1) & (self.inventory[:, I_STONE] >= 1) & (self.inventory[:, I_PICKAXE] < 1) & both_at(2)
+        # Pickaxe (either at workbench, costs 1W, 1S)
+        wb_ok_a0 = interact_a0 & (self.inventory[:, I_WOOD] >= 1) & (self.inventory[:, I_STONE] >= 1) & (self.inventory[:, I_PICKAXE] < 1) & (dist_a(0, 2) < DIST_THRESHOLD)
+        wb_ok_a1 = interact_a1 & (self.inventory[:, I_WOOD] >= 1) & (self.inventory[:, I_STONE] >= 1) & (self.inventory[:, I_PICKAXE] < 1) & (dist_a(1, 2) < DIST_THRESHOLD)
         wb_ok = wb_ok_a0 | wb_ok_a1
         self.inventory[wb_ok, I_WOOD] -= 1
         self.inventory[wb_ok, I_STONE] -= 1
@@ -235,27 +235,27 @@ class BatchCraftingEnvV2:
         self.total_mined[iron_ok, 2] += 1
         rewards[iron_ok, :] += 2.0
 
-        # Sword (both at workbench, costs 1 Iron)
-        sword_ok = interact_a1 & (self.inventory[:, I_IRON] >= 1) & (self.inventory[:, I_SWORD] < 1) & (dist_a(1, 2) < DIST_THRESHOLD) & both_at(2)
+        # Sword (A1 at workbench, costs 1 Iron)
+        sword_ok = interact_a1 & (self.inventory[:, I_IRON] >= 1) & (self.inventory[:, I_SWORD] < 1) & (dist_a(1, 2) < DIST_THRESHOLD)
         self.inventory[sword_ok, I_IRON] -= 1
         self.inventory[sword_ok, I_SWORD] += 1
         rewards[sword_ok, :] += 3.0
 
-        # Armor (both at workbench, costs 1 Iron)
-        armor_ok = interact_a1 & (self.inventory[:, I_IRON] >= 1) & (self.inventory[:, I_ARMOR] < 1) & (dist_a(1, 2) < DIST_THRESHOLD) & both_at(2)
+        # Armor (A1 at workbench, costs 1 Iron)
+        armor_ok = interact_a1 & (self.inventory[:, I_IRON] >= 1) & (self.inventory[:, I_ARMOR] < 1) & (dist_a(1, 2) < DIST_THRESHOLD)
         self.inventory[armor_ok, I_IRON] -= 1
         self.inventory[armor_ok, I_ARMOR] += 1
         rewards[armor_ok, :] += 3.0
 
-        # Bridge (A0 triggers, requires both at bridge, costs 1W)
-        bridge_ok = interact_a0 & (self.inventory[:, I_WOOD] >= 1) & (self.inventory[:, F_BRIDGE] == 0) & (dist_a(0, 4) < DIST_THRESHOLD) & both_at(4)
+        # Bridge (A0 triggers, requires A0 at bridge, costs 1W)
+        bridge_ok = interact_a0 & (self.inventory[:, I_WOOD] >= 1) & (self.inventory[:, F_BRIDGE] == 0) & (dist_a(0, 4) < DIST_THRESHOLD)
         self.inventory[bridge_ok, I_WOOD] -= 1
         self.inventory[bridge_ok, F_BRIDGE] = 1
         rewards[bridge_ok, :] += 3.0
 
-        # Enemy
+        # Enemy (A1 triggers, requires A1 at enemy)
         enemy_interact = interact_a1 & (self.inventory[:, F_BRIDGE] == 1) & (self.inventory[:, F_ENEMY_DEFEATED] == 0) & (self.inventory[:, F_GAME_OVER] == 0) & (dist_a(1, 5) < DIST_THRESHOLD)
-        enemy_success = enemy_interact & (self.inventory[:, I_SWORD] >= 1) & (self.inventory[:, I_ARMOR] >= 1) & both_at(5)
+        enemy_success = enemy_interact & (self.inventory[:, I_SWORD] >= 1) & (self.inventory[:, I_ARMOR] >= 1)
         self.inventory[enemy_success, F_ENEMY_DEFEATED] = 1
         rewards[enemy_success, :] += 10.0
 

@@ -178,7 +178,10 @@ def compute_shaped_reward_batch_v2(
     dist_next = np.linalg.norm(pos_next - goal_targets, axis=2)
     dist_prev = np.linalg.norm(pos_prev - goal_targets, axis=2)
 
-    F = (gamma * (-dist_next) - (-dist_prev)) * R_LLM_SCALE * goal_active
+    MAX_DIST = 85.0
+    phi_next = MAX_DIST - dist_next
+    phi_prev = MAX_DIST - dist_prev
+    F = (gamma * phi_next - phi_prev) * R_LLM_SCALE * goal_active
 
     # We do NOT scale F by agent_w anymore.
     # Scaling F by transient LLM weights (especially EMA-dragged weights) destroys PPO's value function stability.
@@ -316,19 +319,44 @@ Respond ONLY with valid JSON exactly matching this schema:
             print(f"[LLM] Error querying adaptive weights: {e}")
             return prev_weights
 
+    def query_intervention_async(self, prompt: str, callback) -> None:
+        """
+        Query the LLM for an intervention asynchronously.
+        """
+        try:
+            if self._bridge:
+                self._bridge.query_async(prompt, callback=callback)
+            else:
+                # Fallback to sync if no bridge (e.g. testing)
+                import requests
+                import threading
+                def _run():
+                    try:
+                        payload = {
+                            "model": self.model_name,
+                            "prompt": prompt,
+                            "stream": False,
+                            "format": "json",
+                            "options": {
+                                "temperature": 0.0,
+                                "top_p": 1.0,
+                                "seed": 42
+                            }
+                        }
+                        response = requests.post(self.host, json=payload, timeout=30)
+                        raw_text = response.json()["response"]
+                        callback(raw_text)
+                    except Exception as e:
+                        print(f"[LLM] Intervention query failed: {e}")
+                        callback(None)
+                threading.Thread(target=_run, daemon=True).start()
+
+        except Exception as e:
+            print(f"[LLM] Intervention query failed to start: {e}")
+            callback(None)
+
     def query_intervention(self, prompt: str) -> Optional[dict]:
-        """
-        Query the LLM for a critic-triggered intervention.
-
-        Used by Phase 2 critic trigger. Takes a fully formed prompt
-        (built by prompt_builder.py) and returns parsed JSON response.
-
-        Args:
-            prompt: The intervention prompt.
-
-        Returns:
-            Parsed JSON dict from the LLM, or None on failure.
-        """
+        # Kept for backward compatibility
         try:
             if self._bridge:
                 raw_text = self._bridge.query_sync(prompt)
