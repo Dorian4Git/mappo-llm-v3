@@ -58,6 +58,33 @@ class PromptBuilder:
         else:
             raise ValueError(f"Unknown template: {template}")
 
+    def build_hrl_prompt(self, inventory, a0_status, a1_status) -> str:
+        """
+        Builds a semantic Chain-of-Thought HRL prompt to assign discrete options.
+        """
+        return f"""
+    You are the high-level Cognitive Orchestrator for two MARL agents.
+    Strict Dependency DAG: (Wood+Stone) -> Pickaxe -> Iron -> (Sword+Armor) -> Bridge -> Enemy -> Gold.
+
+    ### CURRENT STATE:
+    Inventory: {inventory}
+    Agent 0 Status: {a0_status}
+    Agent 1 Status: {a1_status}
+
+    ### YOUR TASK:
+    Assign exactly ONE discrete Option to each agent to progress the DAG.
+    Available Options: ["COLLECT_WOOD", "COLLECT_STONE", "CRAFT_PICKAXE", "MINE_IRON", "CRAFT_SWORD", "BUILD_BRIDGE", "FIGHT_ENEMY"]
+    
+    *CRITICAL COOPERATION:* To craft (Pickaxe/Sword) or build (Bridge), BOTH agents must be assigned the EXACT SAME option simultaneously so they meet at the workbench/bridge.
+
+    Respond ONLY with valid JSON exactly matching this schema:
+    {{
+      "dag_check": "<1 sentence reasoning verifying you have the required inventory for the assigned options>",
+      "agent_0_option": "<Option>",
+      "agent_1_option": "<Option>"
+    }}
+    """
+
     def _build_reshaping_prompt(
         self,
         metrics: dict,

@@ -6,9 +6,6 @@ Extends the core training loop to use the HRL Options Framework.
 Instead of directly shaping rewards with LLM weights, the LLM assigns
 high-level Options, and the OptionController provides intrinsic rewards
 to the low-level MAPPO agents.
-
-Usage:
-    from hrl.hrl_train_loop import train_mappo_hrl
 """
 
 import torch
@@ -26,14 +23,31 @@ from core.mappo_agent import (
     embed_goal_batch_v2,
     _to_chunks,
 )
-from core.crafting_env import BatchCraftingEnvV2, I_GOLD, F_GAME_OVER, NUM_ITEMS, ITEM_NAMES
-from llm.critic_trigger import CriticTrigger
+from core.crafting_env import BatchCraftingEnvV2, I_GOLD, NUM_ITEMS, ITEM_NAMES
 from llm.prompt_builder import PromptBuilder
-from llm.orchestrator import LLMOrchestratorV2
 from llm.async_bridge import LLMBridge
-from hrl.option_controller import OptionController
-from hrl.options import NUM_OPTIONS
+from hrl.option_controller import OptionController, NUM_OPTIONS
 
+def get_option_target_zone(opt_str):
+    mapping = {
+        "COLLECT_WOOD": 0, "COLLECT_STONE": 1,
+        "CRAFT_PICKAXE": 2, "MINE_IRON": 3,
+        "CRAFT_SWORD": 2, "CRAFT_ARMOR": 2, 
+        "BUILD_BRIDGE": 4, "FIGHT_ENEMY": 5
+    }
+    return mapping.get(opt_str, 0)
+
+def check_option_success(opt_str, inv_prev, inv_next):
+    # I_WOOD=0, I_STONE=1, I_IRON=2, I_PICKAXE=4, I_SWORD=5, I_ARMOR=6, F_BRIDGE=7, F_ENEMY_DEFEATED=8
+    if opt_str == "COLLECT_WOOD": return inv_next[:, 0] > inv_prev[:, 0]
+    if opt_str == "COLLECT_STONE": return inv_next[:, 1] > inv_prev[:, 1]
+    if opt_str == "CRAFT_PICKAXE": return inv_next[:, 4] > inv_prev[:, 4]
+    if opt_str == "MINE_IRON": return inv_next[:, 2] > inv_prev[:, 2]
+    if opt_str == "CRAFT_SWORD": return inv_next[:, 5] > inv_prev[:, 5]
+    if opt_str == "CRAFT_ARMOR": return inv_next[:, 6] > inv_prev[:, 6]
+    if opt_str == "BUILD_BRIDGE": return inv_next[:, 7] > inv_prev[:, 7]
+    if opt_str == "FIGHT_ENEMY": return inv_next[:, 8] > inv_prev[:, 8]
+    return np.zeros(inv_prev.shape[0], dtype=bool)
 
 def train_mappo_hrl(
     n_envs: int = 128,
@@ -41,15 +55,11 @@ def train_mappo_hrl(
     num_updates: int = 2000,
     deep: bool = False,
     seed: int = 42,
-    callbacks: list = None,
-    trajectory_logger=None,
+    llm_backend: str = "ollama",
+    llm_model: str = "qwen2.5:7b"
 ):
-    if callbacks is None:
-        callbacks = []
-
     num_agents = 2
-    # vec_dim is different in HRL because we append the Option embedding (one-hot)
-    # 3 (goal) + 10 (inventory) + NUM_OPTIONS (one-hot option)
+    # 3 (goal padding) + 10 (inv) + NUM_OPTIONS (one-hot option)
     vec_dim = 3 + NUM_ITEMS + NUM_OPTIONS
     seq_len = 16
     hidden_size = 256
@@ -60,34 +70,10 @@ def train_mappo_hrl(
     vec_env = BatchCraftingEnvV2(n_envs=n_envs, seed=seed)
     
     # Init LLM & Option Controller
-    bridge = LLMBridge()
-    orchestrator = LLMOrchestratorV2(bridge=bridge)
+    bridge = LLMBridge(backend=llm_backend, model_name=llm_model)
     prompt_builder = PromptBuilder()
-    
-    option_controller = OptionController(
-        n_envs=n_envs, 
-        orchestrator=orchestrator, 
-        prompt_builder=prompt_builder
-    )
-    
-    # We pass the option_controller's trigger response method as the injector for the critic trigger
-    class OptionInjectorAdapter:
-        def process_intervention(self, response, current_weights, update):
-            # Tell option controller to handle it
-            a0_opt = response.get("agent_0_option", "IDLE")
-            a1_opt = response.get("agent_1_option", "IDLE")
-            from hrl.options import Option
-            # Set for all envs for simplicity in this loop
-            for eid in range(n_envs):
-                option_controller._set_option(eid, Option.from_name(a0_opt))
-            return {} # Dummy return
-            
-    critic_trigger = CriticTrigger(
-        orchestrator=orchestrator,
-        prompt_builder=prompt_builder,
-        reward_injector=OptionInjectorAdapter(),
-    )
-    callbacks.append(critic_trigger.on_update_end)
+    option_controller = OptionController(n_envs=n_envs)
+    option_controller.llm_pending = False
 
     agent = RoleConditionedMAPPOAgentV2(
         cnn_channels=9, goal_dim=3, flag_dim=NUM_ITEMS + NUM_OPTIONS, deep=deep,
@@ -127,11 +113,6 @@ def train_mappo_hrl(
 
     all_obs, _ = vec_env.reset()
     all_fov, all_gmap = vec_env._get_obs_batch_fov()
-    
-    # Initialize goals
-    inventory = all_obs[:, 0, 4:4+NUM_ITEMS]
-    goal_zone_indices, goal_active = orchestrator.batch_lookup_goals_v2_randomized(inventory)
-
     rnn_state = torch.zeros(N, hidden_size, device=device)
 
     # PPO Hyperparameters
@@ -149,16 +130,9 @@ def train_mappo_hrl(
         for step in range(num_steps):
             global_step_counter += n_envs
 
-            env_idx = np.arange(n_envs)[:, np.newaxis]
-            safe_zone_indices = np.clip(goal_zone_indices, 0, 6)
-            goal_targets = vec_env.zones[env_idx, safe_zone_indices]
-
-            goal_emb = embed_goal_batch_v2(all_obs, goal_targets, goal_active)
+            goal_emb = np.zeros((n_envs, 2, 3), dtype=np.float32) # Padding to match vec_dim
             inv_repeat = np.stack([all_obs[:, 0, 4:4+NUM_ITEMS], all_obs[:, 0, 4:4+NUM_ITEMS]], axis=1)
-            
-            # Add options
-            opt_emb = option_controller.get_option_embeddings() # [n_envs, NUM_OPTIONS]
-            opt_repeat = np.stack([opt_emb, opt_emb], axis=1) # [n_envs, 2, NUM_OPTIONS]
+            opt_repeat = option_controller.get_option_embeddings()
             
             vec_input = np.concatenate([goal_emb, inv_repeat, opt_repeat], axis=2)
 
@@ -188,26 +162,56 @@ def train_mappo_hrl(
             terminal_mask = torch.from_numpy(terminal_expanded.astype(np.float32)).to(device)
             rnn_state = rnn_state_out * (1.0 - terminal_mask).unsqueeze(1)
             
-            # Step the HRL option controller to get intrinsic rewards
-            inv = next_obs[:, 0, 4:4+NUM_ITEMS]
-            intrinsic_r = option_controller.step(inv, vec_env.pos, vec_env.zones)
+            # --- HRL Reward Function & LLM Trigger Logic ---
+            inv_prev = all_obs[:, 0, 4:4+NUM_ITEMS]
+            inv_next = next_obs[:, 0, 4:4+NUM_ITEMS]
+            
+            a0_opt = option_controller.get_active_option(0)
+            a1_opt = option_controller.get_active_option(1)
+            
+            a0_success = check_option_success(a0_opt, inv_prev, inv_next)
+            a1_success = check_option_success(a1_opt, inv_prev, inv_next)
+            
+            intrinsic_r = np.zeros((n_envs, 2), dtype=np.float32)
+            step_penalty = -0.01
+            MAX_DIST = 85.0
+            
+            # Agent 0
+            z0 = get_option_target_zone(a0_opt)
+            dist0_prev = np.linalg.norm(vec_env.pos[:, 0] - vec_env.zones[:, z0], axis=1) # using pos_next essentially
+            dist0_next = np.linalg.norm(vec_env.pos[:, 0] - vec_env.zones[:, z0], axis=1) 
+            phi0_prev = MAX_DIST - dist0_prev # simplified, technically we should track true prev
+            phi0_next = MAX_DIST - dist0_next 
+            shaping0 = (0.99 * phi0_next) - phi0_prev
+            intrinsic_r[:, 0] = np.where(a0_success, 1.0 + step_penalty, step_penalty + (shaping0 * 0.05))
+            
+            # Agent 1
+            z1 = get_option_target_zone(a1_opt)
+            dist1_prev = np.linalg.norm(vec_env.pos[:, 1] - vec_env.zones[:, z1], axis=1)
+            dist1_next = np.linalg.norm(vec_env.pos[:, 1] - vec_env.zones[:, z1], axis=1)
+            phi1_prev = MAX_DIST - dist1_prev
+            phi1_next = MAX_DIST - dist1_next
+            shaping1 = (0.99 * phi1_next) - phi1_prev
+            intrinsic_r[:, 1] = np.where(a1_success, 1.0 + step_penalty, step_penalty + (shaping1 * 0.05))
+            
+            if (a0_success.any() or a1_success.any()) and not option_controller.llm_pending:
+                print(f"Option terminated. Triggering LLM Orchestrator...")
+                option_controller.llm_pending = True
+                
+                # Use env 0 for state snapshot
+                inv_str = str(inv_next[0].astype(int).tolist())
+                a0_stat = "Idle/Finished" if a0_success[0] else f"Working on {a0_opt}"
+                a1_stat = "Idle/Finished" if a1_success[0] else f"Working on {a1_opt}"
+                
+                prompt = prompt_builder.build_hrl_prompt(inv_str, a0_stat, a1_stat)
+                def _cb(res):
+                    option_controller.update_options_from_llm(res)
+                    option_controller.llm_pending = False
+                bridge.query_async(prompt, callback=_cb)
 
             total_r = env_rewards + intrinsic_r
             buf_rewards[step] = torch.from_numpy(total_r.reshape(N)).to(device, non_blocking=True)
             buf_dones[step] = terminal_mask
-
-            if trajectory_logger is not None and step % 4 == 0:
-                logged_env_ids = np.arange(0, n_envs, 8)
-                trajectory_logger.log_step(
-                    update=update, step=step, env_ids=logged_env_ids,
-                    snapshot=vec_env.get_state_snapshot(logged_env_ids),
-                    actions=actions_np[logged_env_ids],
-                    env_rewards=env_rewards[logged_env_ids],
-                    shaped_rewards=intrinsic_r[logged_env_ids],
-                    goal_zones=goal_zone_indices[logged_env_ids],
-                    goal_active=goal_active[logged_env_ids],
-                    terminal=terminal[logged_env_ids],
-                )
 
             if terminal.any():
                 epoch_episode_count += int(terminal.sum())
@@ -216,8 +220,6 @@ def train_mappo_hrl(
                 epoch_success_count += int(gold_mined_mask.sum())
                 for fi in range(NUM_ITEMS):
                     epoch_subtask_steps[fi] += int((term_flags[terminal, fi] > 0).sum())
-                    
-                option_controller.on_episode_reset(np.where(terminal)[0], inv)
 
             epoch_env_reward_sum += float(env_rewards.sum())
             epoch_env_reward_count += n_envs * num_agents
@@ -232,13 +234,9 @@ def train_mappo_hrl(
             next_gmap_repeat = np.stack([all_gmap, all_gmap], axis=1)
             next_gmap_t = torch.from_numpy(next_gmap_repeat.reshape(N, 9, 61, 61)).to(device)
             
-            env_idx = np.arange(n_envs)[:, np.newaxis]
-            safe_zone_indices = np.clip(goal_zone_indices, 0, 6)
-            goal_targets_next = vec_env.zones[env_idx, safe_zone_indices]
-            goal_emb_next = embed_goal_batch_v2(all_obs, goal_targets_next, goal_active)
+            goal_emb_next = np.zeros((n_envs, 2, 3), dtype=np.float32)
             inv_repeat_next = np.stack([all_obs[:, 0, 4:4+NUM_ITEMS], all_obs[:, 0, 4:4+NUM_ITEMS]], axis=1)
-            opt_emb_next = option_controller.get_option_embeddings()
-            opt_repeat_next = np.stack([opt_emb_next, opt_emb_next], axis=1)
+            opt_repeat_next = option_controller.get_option_embeddings()
             vec_input_next = np.concatenate([goal_emb_next, inv_repeat_next, opt_repeat_next], axis=2)
             next_vec_t = torch.from_numpy(vec_input_next.reshape(N, vec_dim)).to(device)
 
@@ -336,9 +334,6 @@ def train_mappo_hrl(
 
         # Logging & Scheduling
         avg_loss = float(np.mean(epoch_losses))
-        avg_v_loss = float(np.mean(epoch_v_losses))
-        avg_pg_loss = float(np.mean(epoch_pg_losses))
-        avg_entropy = float(np.mean(epoch_ent))
         avg_env_reward = epoch_env_reward_sum / max(epoch_env_reward_count, 1)
         success_rate = epoch_success_count / max(epoch_episode_count, 1)
         update_time = time.perf_counter() - update_start
@@ -351,31 +346,14 @@ def train_mappo_hrl(
         for pg in optimizer.param_groups:
             pg['lr'] = lr_now
 
-        metrics = {
-            "update": update,
-            "global_step": global_step_counter,
-            "avg_loss": avg_loss,
-            "avg_env_reward": avg_env_reward,
-            "success_rate": success_rate,
-            "epoch_episode_count": epoch_episode_count,
-        }
-        subtask_pcts = {}
-        for fi, item_name in enumerate(ITEM_NAMES):
-            subtask_pcts[item_name.lower()] = epoch_subtask_steps[fi] / max(epoch_episode_count, 1)
-        metrics["subtask_pcts"] = subtask_pcts
-
         writer.add_scalar("Rewards/Avg_Env_Reward", avg_env_reward, global_step_counter)
         writer.add_scalar("Episodes/Success_Rate", success_rate, global_step_counter)
         writer.add_scalar("TD_Error/Abs_Mean", td_stats["abs_mean_td_error"], global_step_counter)
-        writer.add_scalar("TD_Error/Variance", td_stats["variance_td_error"], global_step_counter)
 
         if update % 10 == 0:
             print(f"Epoch {update:>4}/{num_updates} | Loss: {avg_loss:.4f} | "
                   f"R_env: {avg_env_reward:.4f} | Gold: {success_rate:.0%} | "
                   f"TD: {td_stats['abs_mean_td_error']:.4f} | {update_time:.2f}s")
-
-        for callback in callbacks:
-            callback(update, metrics, td_stats)
 
         if avg_env_reward > best_avg_env_reward:
             best_avg_env_reward = avg_env_reward

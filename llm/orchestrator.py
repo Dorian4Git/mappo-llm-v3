@@ -112,7 +112,17 @@ def _greedy_heuristic_planner(w, s, i, p, sw, a, g, b, e, go, subtask_weights=No
     if g == 0:
         a1_scores["Gold"] = R_GOLD * w_gold
         
+    a0_target = max(a0_scores.items(), key=lambda x: x[1])[0] if a0_scores else "None"
     a1_target = max(a1_scores.items(), key=lambda x: x[1])[0] if a1_scores else "None"
+
+    # Cooperative Coupling Guardrail:
+    # If either agent selects a cooperative task, pull the other agent to it if their inventory allows.
+    if a0_target == "Workbench" and needs_wb_a1:
+        a1_target = "Workbench"
+    elif a1_target == "Workbench" and needs_wb_a0:
+        a0_target = "Workbench"
+    elif a0_target == "Bridge" and "Bridge" in a1_scores: # Assuming A1 can help with bridge
+        a1_target = "Bridge"
 
     return a0_target, a1_target
 
