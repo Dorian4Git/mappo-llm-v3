@@ -326,6 +326,18 @@ def train_mappo_hrl(
 
                 logratio = new_lp - old_lp
                 ratio = logratio.exp()
+                
+                # --- NEW TARGET KL GUARD ---
+                with torch.no_grad():
+                    # Calculate approximate KL Divergence
+                    approx_kl = (-logratio).mean().item()
+                
+                # If the policy has shifted too far, abort the remaining epochs for this batch
+                target_kl = 0.015
+                if approx_kl > target_kl:
+                    break
+                # ---------------------------
+
                 pg_loss1 = -adv_flat * ratio
                 pg_loss2 = -adv_flat * torch.clamp(ratio, 1.0 - clip_coef, 1.0 + clip_coef)
                 pg_loss = torch.max(pg_loss1, pg_loss2).mean()
