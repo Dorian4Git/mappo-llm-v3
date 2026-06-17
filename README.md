@@ -25,6 +25,12 @@ python scripts/run_baseline.py --enable-logging --static-shaping  # Fair compari
 Run LLM dynamic shaping (with standard 2-layer critic):
 ```bash
 python scripts/run_llm_dynamic.py --enable-logging
+
+python scripts/run_llm_dynamic.py --enable-logging --llm-backend gemini --llm-model gemini-2.5-flash
+
+python scripts/run_llm_dynamic.py --enable-logging --llm-backend gemini --llm-model gemini-3.1-flash-lite
+
+
 ```
 
 Run the complete fine-tuning pipeline on collected trajectories:

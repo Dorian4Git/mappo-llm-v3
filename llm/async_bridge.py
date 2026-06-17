@@ -1,0 +1,330 @@
+"""
+async_bridge.py — Async Communication Layer for LLM Inference
+==============================================================
+
+Threading-based async bridge between the RL training loop and the LLM
+inference engine. Avoids CUDA fork issues by using threads instead of
+multiprocessing.
+
+Supports:
+    - Non-blocking query submission
+    - Blocking query with timeout
+    - Model hot-swap (Ollama ↔ HuggingFace)
+    - Retry logic with exponential backoff
+
+Usage:
+    bridge = LLMBridge(backend="ollama", model_name="qwen2.5:7b")
+    result = bridge.query_sync(prompt, timeout=30)
+    # or
+    bridge.query_async(prompt, callback=on_result)
+"""
+
+import json
+import time
+import threading
+import queue
+import requests
+from typing import Optional, Callable
+
+
+class LLMBridge:
+    """
+    Async communication bridge to an LLM inference backend.
+
+    Supports Ollama HTTP API and (future) direct HuggingFace inference.
+    """
+
+    def __init__(
+        self,
+        backend: str = "ollama",
+        model_name: str = "qwen2.5:7b",
+        host: str = "http://localhost:11434/api/generate",
+        timeout: int = 30,
+        max_retries: int = 3,
+        temperature: float = 0.0,
+        top_p: float = 1.0,
+        seed: int = 42,
+    ):
+        self.backend = backend
+        self.model_name = model_name
+        self.host = host
+        self.timeout = timeout
+        self.max_retries = max_retries
+        self.temperature = temperature
+        self.top_p = top_p
+        self.seed = seed
+
+        # Async query infrastructure
+        self._request_queue: queue.Queue = queue.Queue()
+        self._result_store: dict[str, dict] = {}
+        self._lock = threading.Lock()
+        self._worker_thread: Optional[threading.Thread] = None
+        self._running = False
+
+        # HuggingFace model (loaded on demand for hot-swap)
+        self._hf_model = None
+        self._hf_tokenizer = None
+
+        self._start_worker()
+
+    def _start_worker(self):
+        """Start the background worker thread for async queries."""
+        self._running = True
+        self._worker_thread = threading.Thread(
+            target=self._worker_loop, daemon=True, name="LLMBridge-Worker"
+        )
+        self._worker_thread.start()
+
+    def _worker_loop(self):
+        """Background worker that processes queued LLM requests."""
+        while self._running:
+            try:
+                request = self._request_queue.get(timeout=1.0)
+            except queue.Empty:
+                continue
+
+            query_id = request["id"]
+            prompt = request["prompt"]
+            callback = request.get("callback", None)
+
+            try:
+                result = self._execute_query(prompt)
+                with self._lock:
+                    self._result_store[query_id] = {
+                        "success": True,
+                        "response": result,
+                    }
+                if callback:
+                    callback(result)
+            except Exception as e:
+                with self._lock:
+                    self._result_store[query_id] = {
+                        "success": False,
+                        "error": str(e),
+                    }
+                if callback:
+                    callback(None)
+
+    def _execute_query(self, prompt: str) -> str:
+        """
+        Execute a single LLM query with retries.
+
+        Returns:
+            Raw text response from the LLM.
+        """
+        if self.backend == "ollama":
+            return self._query_ollama(prompt)
+        elif self.backend == "huggingface":
+            return self._query_huggingface(prompt)
+        elif self.backend == "gemini":
+            return self._query_gemini(prompt)
+        else:
+            raise ValueError(f"Unknown backend: {self.backend}")
+
+    def _query_gemini(self, prompt: str) -> str:
+        """Query Google Gemini API."""
+        import os
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError:
+            raise ImportError(
+                "google-genai is not installed. Please run: pip install google-genai"
+            )
+
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY environment variable is not set.")
+
+        client = genai.Client(api_key=api_key)
+        
+        # Use gemini-2.5-flash as default if model name is empty or not gemini
+        model_id = self.model_name if "gemini" in self.model_name else "gemini-2.5-flash"
+        
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                response = client.models.generate_content(
+                    model=model_id,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=self.temperature,
+                        top_p=self.top_p,
+                    )
+                )
+                return response.text
+            except Exception as e:
+                last_error = e
+                wait_time = 2 ** attempt
+                print(f"[LLMBridge] Gemini attempt {attempt + 1} failed: {e}. Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+
+        raise RuntimeError(
+            f"Gemini query failed after {self.max_retries} retries: {last_error}"
+        )
+
+    def _query_ollama(self, prompt: str) -> str:
+        """Query Ollama HTTP API with retry logic."""
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": False,
+            "format": "json",
+            "options": {
+                "temperature": self.temperature,
+                "top_p": self.top_p,
+                "seed": self.seed,
+            },
+        }
+
+        last_error = None
+        for attempt in range(self.max_retries):
+            try:
+                response = requests.post(
+                    self.host, json=payload, timeout=self.timeout
+                )
+                response.raise_for_status()
+                return response.json()["response"]
+            except Exception as e:
+                last_error = e
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                print(f"[LLMBridge] Ollama attempt {attempt + 1} failed: {e}. "
+                      f"Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+
+        raise RuntimeError(
+            f"LLM query failed after {self.max_retries} retries: {last_error}"
+        )
+
+    def _query_huggingface(self, prompt: str) -> str:
+        """Query a locally loaded HuggingFace model."""
+        if self._hf_model is None or self._hf_tokenizer is None:
+            raise RuntimeError(
+                "HuggingFace model not loaded. Call swap_model() first."
+            )
+
+        inputs = self._hf_tokenizer(prompt, return_tensors="pt").to(
+            self._hf_model.device
+        )
+        outputs = self._hf_model.generate(
+            **inputs,
+            max_new_tokens=512,
+            temperature=max(self.temperature, 0.01),  # avoid div by zero
+            top_p=self.top_p,
+            do_sample=(self.temperature > 0),
+        )
+        response = self._hf_tokenizer.decode(
+            outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True
+        )
+        return response
+
+    def query_sync(self, prompt: str, timeout: Optional[int] = None) -> str:
+        """
+        Synchronous (blocking) query. Blocks until the LLM responds.
+
+        Args:
+            prompt: The prompt to send.
+            timeout: Override the default timeout (seconds).
+
+        Returns:
+            Raw text response from the LLM.
+
+        Raises:
+            RuntimeError: If the query fails after retries.
+        """
+        return self._execute_query(prompt)
+
+    def query_async(
+        self,
+        prompt: str,
+        callback: Optional[Callable[[Optional[str]], None]] = None,
+    ) -> str:
+        """
+        Asynchronous (non-blocking) query. Returns a query ID immediately.
+
+        Args:
+            prompt: The prompt to send.
+            callback: Optional function called with the result (or None on failure).
+
+        Returns:
+            query_id: A unique ID to retrieve the result later.
+        """
+        query_id = f"q_{time.monotonic_ns()}"
+        self._request_queue.put({
+            "id": query_id,
+            "prompt": prompt,
+            "callback": callback,
+        })
+        return query_id
+
+    def get_async_result(self, query_id: str, timeout: float = 0.0) -> Optional[dict]:
+        """
+        Check if an async query has completed.
+
+        Args:
+            query_id: The ID returned by query_async().
+            timeout: How long to wait (0 = non-blocking check).
+
+        Returns:
+            Result dict with 'success' and 'response'/'error' keys, or None if not ready.
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            with self._lock:
+                if query_id in self._result_store:
+                    return self._result_store.pop(query_id)
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(0.05)
+
+    def swap_model(self, model_path: str, backend: str = "huggingface"):
+        """
+        Hot-swap the LLM model. Used to switch from generic Ollama to fine-tuned model.
+
+        Args:
+            model_path: Path to HuggingFace model or Ollama model name.
+            backend: "ollama" or "huggingface".
+        """
+        print(f"[LLMBridge] Swapping model to: {model_path} (backend={backend})")
+
+        if backend == "huggingface":
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+
+            self._hf_tokenizer = AutoTokenizer.from_pretrained(model_path)
+            self._hf_model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                torch_dtype=torch.float16,
+                device_map="auto",
+            )
+            self.backend = "huggingface"
+            print(f"[LLMBridge] HuggingFace model loaded: {model_path}")
+
+        elif backend == "ollama":
+            self.model_name = model_path
+            self.backend = "ollama"
+            self._hf_model = None
+            self._hf_tokenizer = None
+            print(f"[LLMBridge] Switched to Ollama model: {model_path}")
+
+        else:
+            raise ValueError(f"Unknown backend: {backend}")
+
+    def close(self):
+        """Stop the worker thread."""
+        self._running = False
+        if self._worker_thread and self._worker_thread.is_alive():
+            self._worker_thread.join(timeout=5)
+
+
+if __name__ == "__main__":
+    # Quick test — requires Ollama running
+    bridge = LLMBridge()
+    try:
+        result = bridge.query_sync("Say hello in JSON format: {\"greeting\": \"...\"}")
+        print(f"Response: {result}")
+    except Exception as e:
+        print(f"Test failed (Ollama not running?): {e}")
+    finally:
+        bridge.close()

@@ -1,0 +1,35 @@
+environment:
+  n_envs: 128
+  max_steps: 800
+  seed: 42
+
+training:
+  num_updates: 2000
+  num_steps: 256
+  seq_len: 16
+  hidden_size: 256
+  lr_initial: 3.0e-4
+  lr_final: 1.0e-5
+  warmup_updates: 20
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_coef: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.05
+  ppo_epochs: 4
+  num_minibatches: 8
+  max_grad_norm: 0.5
+
+shaping:
+  lambda_initial: 1.0
+  lambda_final: 0.01
+  decay_trigger_bridge_pct: 0.4
+  decay_duration_updates: 500
+
+logging:
+  log_every_k_envs: 8
+  tensorboard_dir: runs/
+  trajectory_dir: data/trajectories/
+  checkpoint_dir: checkpoints/
+  checkpoint_interval: 50
+  print_interval: 10

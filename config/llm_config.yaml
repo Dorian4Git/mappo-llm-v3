@@ -1,0 +1,65 @@
+llm:
+  backend: ollama          # ollama | huggingface
+  model_name: "qwen2.5:7b"
+  host: "http://localhost:11434/api/generate"
+  timeout: 30
+  max_retries: 3
+  temperature: 0.0
+  top_p: 1.0
+  seed: 42
+
+critic_trigger:
+  # Rolling window for TD error statistics
+  window_size: 100
+  # Minimum updates between LLM interventions
+  cooldown_updates: 25
+  # Stage 1 — Plateau Gate: success rate improvement threshold over last N updates
+  success_rate_plateau_threshold: 0.02
+  success_rate_plateau_window: 50
+  # Stage 2 — Z-score Trigger: TD error variance spike
+  td_error_sigma: 1.5
+  # Subtask-specific plateau detection
+  subtask_plateau_updates: 100
+  # Sensitivity decay: reduce trigger frequency as training progresses
+  sensitivity_decay_rate: 0.995
+
+reward_injector:
+  # Safety bounds for LLM-suggested weights
+  max_weight_multiplier: 3.0
+  weight_sum_bound: 15.0
+  # Auto-rollback if performance drops post-intervention
+  rollback_enabled: true
+  rollback_window: 25
+  rollback_drop_threshold: 0.20
+  # EMA smoothing for weight transitions
+  ema_alpha: 0.2
+
+finetune:
+  base_model: "Qwen/Qwen2.5-7B"
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+  quantization: "4bit"
+  compute_dtype: "bfloat16"
+  learning_rate: 2.0e-4
+  epochs: 3
+  batch_size: 4
+  gradient_accumulation_steps: 4
+  warmup_ratio: 0.1
+  max_seq_length: 1024
+  output_dir: "data/models/qlora_adapter"
+  merged_dir: "data/models/merged"
+
+hrl:
+  option_timeout_steps: 200
+  intrinsic_reward_scale: 0.1
+  # When True, LLM can propose compound options beyond the hard-coded set
+  allow_compound_options: false

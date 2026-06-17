@@ -1,0 +1,17 @@
+venv
+__pycache__
+runs
+checkpoints
+data/trajectories
+data/datasets
+data/models
+data/interventions
+*.pth
+*.jsonl
+*.pdf
+*.png
+*train.csv
+*.csv
+*.pt
+*.gguf
+.env
