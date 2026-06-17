@@ -50,10 +50,10 @@ def check_option_success(opt_strs, inv_prev, inv_next):
         opt = opt_strs[i]
         if opt == "COLLECT_WOOD": success[i] = inv_next[i, 0] > inv_prev[i, 0]
         elif opt == "COLLECT_STONE": success[i] = inv_next[i, 1] > inv_prev[i, 1]
-        elif opt == "CRAFT_PICKAXE": success[i] = inv_next[i, 4] > inv_prev[i, 4]
+        elif opt == "CRAFT_PICKAXE": success[i] = inv_next[i, 3] > inv_prev[i, 3]
         elif opt == "MINE_IRON": success[i] = inv_next[i, 2] > inv_prev[i, 2]
-        elif opt == "CRAFT_SWORD": success[i] = inv_next[i, 5] > inv_prev[i, 5]
-        elif opt == "CRAFT_ARMOR": success[i] = inv_next[i, 6] > inv_prev[i, 6]
+        elif opt == "CRAFT_SWORD": success[i] = inv_next[i, 4] > inv_prev[i, 4]
+        elif opt == "CRAFT_ARMOR": success[i] = inv_next[i, 5] > inv_prev[i, 5]
         elif opt == "BUILD_BRIDGE": success[i] = inv_next[i, 7] > inv_prev[i, 7]
         elif opt == "FIGHT_ENEMY": success[i] = inv_next[i, 8] > inv_prev[i, 8]
     return success
@@ -164,6 +164,7 @@ def train_mappo_hrl(
             buf_rnn[step] = rnn_state
 
             actions_np = action.cpu().numpy().reshape(n_envs, num_agents)
+            pos_prev = vec_env.pos.copy()
             next_obs, env_rewards, dones, truncs, info = vec_env.step(actions_np)
             terminal = dones | truncs
 
@@ -187,16 +188,16 @@ def train_mappo_hrl(
             
             # Agent 0
             z0 = get_option_target_zone(a0_opt)
-            dist0_prev = np.linalg.norm(vec_env.pos[:, 0] - vec_env.zones[np.arange(n_envs), z0], axis=1) # using pos_next essentially
+            dist0_prev = np.linalg.norm(pos_prev[:, 0] - vec_env.zones[np.arange(n_envs), z0], axis=1) 
             dist0_next = np.linalg.norm(vec_env.pos[:, 0] - vec_env.zones[np.arange(n_envs), z0], axis=1) 
-            phi0_prev = MAX_DIST - dist0_prev # simplified, technically we should track true prev
+            phi0_prev = MAX_DIST - dist0_prev 
             phi0_next = MAX_DIST - dist0_next 
             shaping0 = (0.99 * phi0_next) - phi0_prev
             intrinsic_r[:, 0] = np.where(a0_success, 1.0 + step_penalty, step_penalty + (shaping0 * 0.05))
             
             # Agent 1
             z1 = get_option_target_zone(a1_opt)
-            dist1_prev = np.linalg.norm(vec_env.pos[:, 1] - vec_env.zones[np.arange(n_envs), z1], axis=1)
+            dist1_prev = np.linalg.norm(pos_prev[:, 1] - vec_env.zones[np.arange(n_envs), z1], axis=1)
             dist1_next = np.linalg.norm(vec_env.pos[:, 1] - vec_env.zones[np.arange(n_envs), z1], axis=1)
             phi1_prev = MAX_DIST - dist1_prev
             phi1_next = MAX_DIST - dist1_next

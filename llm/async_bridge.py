@@ -138,8 +138,8 @@ class LLMBridge:
 
         client = genai.Client(api_key=api_key)
         
-        # Use gemini-2.5-flash as default if model name is empty or not gemini
-        model_id = self.model_name if "gemini" in self.model_name else "gemini-2.5-flash"
+        # Use gemini-2.5-flash as default if model name is empty
+        model_id = self.model_name if self.model_name else "gemini-2.5-flash"
         
         last_error = None
         for attempt in range(self.max_retries):
