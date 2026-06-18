@@ -204,6 +204,13 @@ class LLMBridge:
                 "HuggingFace model not loaded. Call swap_model() first."
             )
 
+        if hasattr(self._hf_tokenizer, "apply_chat_template"):
+            messages = [
+                {"role": "system", "content": "You are a helpful assistant orchestrating RL agents."},
+                {"role": "user", "content": prompt}
+            ]
+            prompt = self._hf_tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
         inputs = self._hf_tokenizer(prompt, return_tensors="pt").to(
             self._hf_model.device
         )
@@ -284,7 +291,7 @@ class LLMBridge:
 
         Args:
             model_path: Path to HuggingFace model or Ollama model name.
-            backend: "ollama" or "huggingface".
+            backend: "ollama", "huggingface", or "huggingface_peft".
         """
         print(f"[LLMBridge] Swapping model to: {model_path} (backend={backend})")
 
@@ -300,6 +307,28 @@ class LLMBridge:
             )
             self.backend = "huggingface"
             print(f"[LLMBridge] HuggingFace model loaded: {model_path}")
+            
+        elif backend == "huggingface_peft":
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+            from peft import PeftModel
+            
+            base_model = "Qwen/Qwen2.5-7B-Instruct"
+            print(f"[LLMBridge] Loading base model {base_model} in 4-bit...")
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_use_double_quant=True,
+            )
+            self._hf_tokenizer = AutoTokenizer.from_pretrained(base_model)
+            base = AutoModelForCausalLM.from_pretrained(
+                base_model,
+                quantization_config=bnb_config,
+                device_map="auto",
+            )
+            print(f"[LLMBridge] Loading LoRA adapter from {model_path}...")
+            self._hf_model = PeftModel.from_pretrained(base, model_path)
+            self.backend = "huggingface"
 
         elif backend == "ollama":
             self.model_name = model_path

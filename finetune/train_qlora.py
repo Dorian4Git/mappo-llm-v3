@@ -35,7 +35,7 @@ def load_llm_config() -> dict:
 def train_qlora(
     dataset_path: str = "data/datasets/train.jsonl",
     val_path: str = "data/datasets/val.jsonl",
-    base_model: str = "Qwen/Qwen2.5-7B",
+    base_model: str = "Qwen/Qwen2.5-7B-Instruct",
     output_dir: str = "data/models/qlora_adapter",
     max_steps: int = -1,
     **kwargs,
@@ -60,7 +60,7 @@ def train_qlora(
         TrainingArguments,
     )
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-    from trl import SFTTrainer
+    from trl import SFTTrainer, SFTConfig
 
     config = load_llm_config()
     base_model = kwargs.get("base_model", config.get("base_model", base_model))
@@ -124,12 +124,12 @@ def train_qlora(
     # ── Training Arguments ───────────────────────────────────────────
     lr = config.get("learning_rate", 2e-4)
     epochs = config.get("epochs", 3)
-    batch_size = config.get("batch_size", 4)
-    grad_accum = config.get("gradient_accumulation_steps", 4)
+    batch_size = 1  # Forced for 12GB VRAM
+    grad_accum = 8  # Forced for 12GB VRAM
     warmup_ratio = config.get("warmup_ratio", 0.1)
-    max_seq_len = config.get("max_seq_length", 1024)
+    max_seq_len = 1024  # Forced for 12GB VRAM
 
-    training_args = TrainingArguments(
+    training_args = SFTConfig(
         output_dir=output_dir,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
@@ -146,18 +146,20 @@ def train_qlora(
         max_steps=max_steps if max_steps > 0 else -1,
         report_to="tensorboard",
         logging_dir=os.path.join(output_dir, "logs"),
-        gradient_checkpointing=True,
+        gradient_checkpointing=True, # Forced for 12GB VRAM
         optim="paged_adamw_8bit",
+        max_length=max_seq_len,
     )
 
     # ── Format Function ──────────────────────────────────────────────
     def formatting_func(examples):
-        """Convert prompt/completion pairs to a single text for SFT."""
-        texts = []
-        for prompt, completion in zip(examples["prompt"], examples["completion"]):
-            text = f"### Input:\n{prompt}\n\n### Response:\n{completion}"
-            texts.append(text)
-        return texts
+        """Use Qwen's native ChatML template."""
+        if isinstance(examples.get("messages", [None])[0], list):
+            # Batched
+            return [tokenizer.apply_chat_template(m, tokenize=False) for m in examples["messages"]]
+        else:
+            # Single example
+            return tokenizer.apply_chat_template(examples["messages"], tokenize=False)
 
     # ── Trainer ──────────────────────────────────────────────────────
     trainer = SFTTrainer(
@@ -165,9 +167,8 @@ def train_qlora(
         train_dataset=dataset["train"],
         eval_dataset=dataset["validation"],
         args=training_args,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         formatting_func=formatting_func,
-        max_seq_length=max_seq_len,
     )
 
     # ── Train ────────────────────────────────────────────────────────
@@ -190,7 +191,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="QLoRA fine-tuning for bottleneck expert LLM")
     parser.add_argument("--dataset", type=str, default="data/datasets/train.jsonl")
     parser.add_argument("--val", type=str, default="data/datasets/val.jsonl")
-    parser.add_argument("--base-model", type=str, default="Qwen/Qwen2.5-7B")
+    parser.add_argument("--base-model", type=str, default="Qwen/Qwen2.5-7B-Instruct")
     parser.add_argument("--output", type=str, default="data/models/qlora_adapter")
     parser.add_argument("--max-steps", type=int, default=-1,
                         help="Max training steps (-1 for full). Use 1 for dry run.")
