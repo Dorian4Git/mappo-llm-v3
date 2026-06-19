@@ -65,7 +65,8 @@ def train_mappo_hrl(
     deep: bool = False,
     seed: int = 42,
     llm_backend: str = "ollama",
-    llm_model: str = "qwen2.5:7b"
+    llm_model: str = "qwen2.5:7b",
+    disable_lora: bool = False,
 ):
     num_agents = 2
     # 3 (goal padding) + 10 (inv) + NUM_OPTIONS (one-hot option)
@@ -82,6 +83,8 @@ def train_mappo_hrl(
     bridge = LLMBridge(backend=llm_backend, model_name=llm_model)
     if llm_backend.startswith("huggingface"):
         bridge.swap_model(llm_model, backend=llm_backend)
+        if disable_lora:
+            bridge.disable_lora()
         
     prompt_builder = PromptBuilder()
     option_controller = OptionController(n_envs=n_envs)

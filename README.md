@@ -35,3 +35,13 @@ Run the complete fine-tuning pipeline on collected trajectories:
 ```bash
 python scripts/run_finetune.py
 ```
+
+Run HRL Options Framework (defaults to using the fine-tuned LoRA adapter):
+```bash
+python scripts/run_hrl.py --enable-logging
+```
+
+To benchmark the fine-tuned adapter against the base Qwen model, use the `--disable-lora` flag to dynamically run inference without the fine-tuned weights:
+```bash
+python scripts/run_hrl.py --enable-logging --disable-lora
+```

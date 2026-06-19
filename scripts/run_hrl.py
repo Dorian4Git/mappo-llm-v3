@@ -22,6 +22,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--deep", action="store_true")
     parser.add_argument("--enable-logging", action="store_true")
+    parser.add_argument("--disable-lora", action="store_true", help="Run the base Qwen model without the LoRA adapter")
     parser.add_argument("--llm-backend", type=str, default="huggingface_peft", choices=["ollama", "huggingface", "huggingface_peft", "gemini"])
     
     adapter_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "models", "qlora_adapter"))
@@ -36,4 +37,5 @@ if __name__ == "__main__":
         seed=args.seed,
         llm_backend=args.llm_backend,
         llm_model=args.llm_model,
+        disable_lora=args.disable_lora,
     )
