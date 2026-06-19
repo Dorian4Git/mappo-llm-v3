@@ -52,7 +52,7 @@ def main():
 
     # To avoid overfitting to a tiny dataset, duplicate the examples to create a decent sized dataset for QLoRA
     # Since it's an oracle dataset of strict logic rules, we can safely duplicate it
-    examples = examples * 10
+    examples = examples * 1
     
     random.seed(42)
     random.shuffle(examples)

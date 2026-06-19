@@ -80,6 +80,9 @@ def train_mappo_hrl(
     
     # Init LLM & Option Controller
     bridge = LLMBridge(backend=llm_backend, model_name=llm_model)
+    if llm_backend.startswith("huggingface"):
+        bridge.swap_model(llm_model, backend=llm_backend)
+        
     prompt_builder = PromptBuilder()
     option_controller = OptionController(n_envs=n_envs)
     option_controller.llm_pending = False
@@ -213,11 +216,22 @@ def train_mappo_hrl(
                 option_controller.cooldown_counter = 50 # Cooldown of 50 steps
                 
                 # Use env 0 for state snapshot
-                inv_str = str(inv_next[0].astype(int).tolist())
+                inv_arr = inv_next[0].astype(int)
+                inv_dict = {
+                    "wood": int(inv_arr[0]),
+                    "stone": int(inv_arr[1]),
+                    "iron": int(inv_arr[2]),
+                    "pickaxe": int(inv_arr[3]),
+                    "sword": int(inv_arr[4]),
+                    "armor": int(inv_arr[5]),
+                    "gold": int(inv_arr[6]),
+                    "bridge": int(inv_arr[7]),
+                    "enemy": int(inv_arr[8]),
+                }
                 a0_stat = "Idle/Finished" if a0_success[0] else f"Working on {a0_opt[0]}"
                 a1_stat = "Idle/Finished" if a1_success[0] else f"Working on {a1_opt[0]}"
                 
-                prompt = prompt_builder.build_hrl_prompt(inv_str, a0_stat, a1_stat)
+                prompt = prompt_builder.build_hrl_prompt(inv_dict, a0_stat, a1_stat)
                 def _cb(res):
                     option_controller.update_options_from_llm(res)
                     option_controller.llm_pending = False

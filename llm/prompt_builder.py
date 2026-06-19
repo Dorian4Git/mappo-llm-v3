@@ -73,9 +73,7 @@ class PromptBuilder:
 
     ### YOUR TASK:
     Assign exactly ONE discrete Option to each agent to progress the DAG.
-    Available Options: ["COLLECT_WOOD", "COLLECT_STONE", "CRAFT_PICKAXE", "MINE_IRON", "CRAFT_SWORD", "BUILD_BRIDGE", "FIGHT_ENEMY"]
-    
-    *CRITICAL COOPERATION:* To craft (Pickaxe/Sword) or build (Bridge), BOTH agents must be assigned the EXACT SAME option simultaneously so they meet at the workbench/bridge.
+    Available Options: ["COLLECT_WOOD", "COLLECT_STONE", "CRAFT_PICKAXE", "MINE_IRON", "CRAFT_SWORD", "CRAFT_ARMOR", "BUILD_BRIDGE", "FIGHT_ENEMY"]
 
     Respond ONLY with valid JSON exactly matching this schema:
     {{

@@ -22,8 +22,10 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--deep", action="store_true")
     parser.add_argument("--enable-logging", action="store_true")
-    parser.add_argument("--llm-backend", type=str, default="ollama", choices=["ollama", "huggingface", "gemini"])
-    parser.add_argument("--llm-model", type=str, default="qwen2.5:7b")
+    parser.add_argument("--llm-backend", type=str, default="huggingface_peft", choices=["ollama", "huggingface", "huggingface_peft", "gemini"])
+    
+    adapter_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "models", "qlora_adapter"))
+    parser.add_argument("--llm-model", type=str, default=adapter_path)
     args = parser.parse_args()
 
     train_mappo_hrl(

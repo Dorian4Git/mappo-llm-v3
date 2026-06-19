@@ -205,9 +205,17 @@ class LLMBridge:
             )
 
         if hasattr(self._hf_tokenizer, "apply_chat_template"):
+            if "### CURRENT STATE:" in prompt:
+                parts = prompt.split("### CURRENT STATE:")
+                system_content = parts[0].strip()
+                user_content = "### CURRENT STATE:\n" + parts[1].strip()
+            else:
+                system_content = "You are a helpful assistant orchestrating RL agents."
+                user_content = prompt.strip()
+                
             messages = [
-                {"role": "system", "content": "You are a helpful assistant orchestrating RL agents."},
-                {"role": "user", "content": prompt}
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": user_content}
             ]
             prompt = self._hf_tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 

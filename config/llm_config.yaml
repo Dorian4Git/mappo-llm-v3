@@ -50,7 +50,7 @@ finetune:
   quantization: "4bit"
   compute_dtype: "bfloat16"
   learning_rate: 2.0e-4
-  epochs: 3
+  epochs: 2
   batch_size: 4
   gradient_accumulation_steps: 4
   warmup_ratio: 0.1
