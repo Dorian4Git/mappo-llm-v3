@@ -60,6 +60,7 @@ def train_mappo_v3(
     no_shaping: bool = False,
     llm_dynamic: bool = False,
     llm_interval: int = 10,
+    llm_model_name: str = "unknown",
     deep: bool = False,
     seed: int = 42,
     # V3 additions
@@ -139,7 +140,8 @@ def train_mappo_v3(
 
     prefix = "v3_Baseline"
     if llm_dynamic:
-        prefix = "v3_LLMDynamic_Deep" if deep else "v3_LLMDynamic_Std"
+        safe_model = llm_model_name.replace(":", "-").replace("/", "-")
+        prefix = f"v3_LLMDynamic_{'Deep' if deep else 'Std'}_{safe_model}"
     elif no_shaping:
         prefix = "v3_Baseline_Sparse"
 
@@ -665,7 +667,7 @@ def train_mappo_v3(
                 'optimizer_state_dict': optimizer.state_dict(),
                 'avg_env_reward': avg_env_reward,
                 'success_rate': success_rate,
-            }, "checkpoints/best_agent.pt")
+            }, f"checkpoints/best_agent_{prefix}.pt")
 
         # ══════════════════════════════════════════════════════════
         # LLM ADAPTIVE WEIGHTS (legacy V2 behavior, still supported)

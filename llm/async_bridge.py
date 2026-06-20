@@ -84,11 +84,14 @@ class LLMBridge:
                 continue
 
             query_id = request["id"]
-            prompt = request["prompt"]
             callback = request.get("callback", None)
 
             try:
-                result = self._execute_query(prompt)
+                if "prompts" in request:
+                    result = self._execute_batch(request["prompts"])
+                else:
+                    result = self._execute_query(request["prompt"])
+
                 with self._lock:
                     self._result_store[query_id] = {
                         "success": True,
@@ -97,13 +100,26 @@ class LLMBridge:
                 if callback:
                     callback(result)
             except Exception as e:
+                print(f"\n[LLMBridge Worker Error] Query failed: {e}")
                 with self._lock:
                     self._result_store[query_id] = {
                         "success": False,
                         "error": str(e),
                     }
                 if callback:
-                    callback(None)
+                    if "prompts" in request:
+                        callback([None] * len(request["prompts"]))
+                    else:
+                        callback(None)
+
+    def query_batch_async(self, prompts: list, callback: Callable):
+        """Submits a batch of prompts to the background worker."""
+        query_id = f"batch_{id(prompts)}_{self.seed}"
+        self._request_queue.put({
+            "id": query_id,
+            "prompts": prompts,
+            "callback": callback
+        })
 
     def _execute_query(self, prompt: str) -> str:
         """
@@ -114,12 +130,62 @@ class LLMBridge:
         """
         if self.backend == "ollama":
             return self._query_ollama(prompt)
-        elif self.backend == "huggingface":
+        elif self.backend == "huggingface_peft" or self.backend == "huggingface":
             return self._query_huggingface(prompt)
         elif self.backend == "gemini":
             return self._query_gemini(prompt)
         else:
             raise ValueError(f"Unknown backend: {self.backend}")
+
+    def _execute_batch(self, prompts: list) -> list:
+        if self.backend == "huggingface_peft" or self.backend == "huggingface":
+            return self._query_huggingface_batch(prompts)
+        else:
+            # Fallback for Ollama/Gemini (sequential)
+            return [self._execute_query(p) for p in prompts]
+
+    def _query_huggingface_batch(self, prompts: list) -> list:
+        if self._hf_model is None or self._hf_tokenizer is None:
+            raise RuntimeError("HuggingFace model not loaded. Call swap_model() first.")
+            
+        formatted_prompts = []
+        for prompt in prompts:
+            if hasattr(self._hf_tokenizer, "apply_chat_template"):
+                if "### CURRENT STATE:" in prompt:
+                    parts = prompt.split("### CURRENT STATE:")
+                    system_content = parts[0].strip()
+                    user_content = "### CURRENT STATE:\n" + parts[1].strip()
+                else:
+                    system_content = "You are a helpful assistant orchestrating RL agents."
+                    user_content = prompt.strip()
+                    
+                messages = [
+                    {"role": "system", "content": system_content},
+                    {"role": "user", "content": user_content}
+                ]
+                formatted_prompts.append(self._hf_tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True))
+            else:
+                formatted_prompts.append(prompt)
+
+        # We can just batch the inputs
+        self._hf_tokenizer.padding_side = 'left' 
+        if self._hf_tokenizer.pad_token is None:
+            self._hf_tokenizer.pad_token = self._hf_tokenizer.eos_token
+            
+        inputs = self._hf_tokenizer(formatted_prompts, return_tensors="pt", padding=True).to(self._hf_model.device)
+        
+        outputs = self._hf_model.generate(
+            **inputs,
+            max_new_tokens=512,
+            temperature=max(self.temperature, 0.01),
+            top_p=self.top_p,
+            do_sample=(self.temperature > 0)
+        )
+        responses = []
+        for i, output in enumerate(outputs):
+            response = self._hf_tokenizer.decode(output[inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+            responses.append(response)
+        return responses
 
     def _query_gemini(self, prompt: str) -> str:
         """Query Google Gemini API."""

@@ -15,6 +15,11 @@ This project extends MAPPO-LLM-V2 with:
 
 ## Quickstart
 
+First set the API key from google AI studio in case you are using Gemini. Use this command to set it:
+```bash
+$env:GEMINI_API_KEY="your-api-key"
+```
+
 Run a baseline without LLM shaping (to collect trajectories):
 ```bash
 python scripts/run_baseline.py --enable-logging

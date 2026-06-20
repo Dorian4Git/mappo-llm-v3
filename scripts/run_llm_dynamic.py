@@ -72,6 +72,7 @@ if __name__ == "__main__":
         seed=args.seed,
         callbacks=callbacks,
         trajectory_logger=traj_logger,
+        llm_model_name=args.llm_model,
     )
 
     # Cleanup

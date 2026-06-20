@@ -88,7 +88,6 @@ def train_mappo_hrl(
         
     prompt_builder = PromptBuilder()
     option_controller = OptionController(n_envs=n_envs)
-    option_controller.llm_pending = False
 
     agent = RoleConditionedMAPPOAgentV2(
         cnn_channels=9, goal_dim=3, flag_dim=NUM_ITEMS + NUM_OPTIONS, deep=deep,
@@ -107,7 +106,14 @@ def train_mappo_hrl(
         dtype=torch.long, device=device,
     )
 
-    run_name = f"v3_HRL_{'Deep' if deep else 'Std'}_E{n_envs}_s{seed}_{time.strftime('%Y%m%d-%H%M%S')}"
+    if llm_backend == "gemini":
+        model_str = "Gemini"
+    elif llm_backend == "ollama":
+        model_str = "Ollama"
+    else:
+        model_str = "NoLoRA" if disable_lora else "LoRA"
+        
+    run_name = f"v3_HRL_{'Deep' if deep else 'Std'}_{model_str}_E{n_envs}_s{seed}_{time.strftime('%Y%m%d-%H%M%S')}"
     os.makedirs("runs", exist_ok=True)
     writer = SummaryWriter(f"runs/{run_name}")
     os.makedirs("checkpoints", exist_ok=True)
@@ -210,35 +216,51 @@ def train_mappo_hrl(
             shaping1 = (0.99 * phi1_next) - phi1_prev
             intrinsic_r[:, 1] = np.where(a1_success, 1.0 + step_penalty, step_penalty + (shaping1 * 0.05))
             
-            if option_controller.cooldown_counter > 0:
-                option_controller.cooldown_counter -= 1
+            # --- HRL Vectorized LLM Trigger Logic ---
             
-            if (a0_success.any() or a1_success.any()) and not option_controller.llm_pending and option_controller.cooldown_counter == 0:
-                print(f"Option terminated. Triggering LLM Orchestrator...")
-                option_controller.llm_pending = True
-                option_controller.cooldown_counter = 50 # Cooldown of 50 steps
+            # Decrement cooldowns
+            option_controller.cooldown_counter = np.maximum(0, option_controller.cooldown_counter - 1)
+            
+            # 1. Identify environments that succeeded
+            success_mask = a0_success | a1_success
+            
+            # 2. Filter out envs that are already pending or on cooldown
+            ready_mask = success_mask & (~option_controller.llm_pending) & (option_controller.cooldown_counter == 0)
+            trigger_envs = np.where(ready_mask)[0]
+            
+            if len(trigger_envs) > 0:
+                print(f"Batching LLM queries for {len(trigger_envs)} environments...")
                 
-                # Use env 0 for state snapshot
-                inv_arr = inv_next[0].astype(int)
-                inv_dict = {
-                    "wood": int(inv_arr[0]),
-                    "stone": int(inv_arr[1]),
-                    "iron": int(inv_arr[2]),
-                    "pickaxe": int(inv_arr[3]),
-                    "sword": int(inv_arr[4]),
-                    "armor": int(inv_arr[5]),
-                    "gold": int(inv_arr[6]),
-                    "bridge": int(inv_arr[7]),
-                    "enemy": int(inv_arr[8]),
-                }
-                a0_stat = "Idle/Finished" if a0_success[0] else f"Working on {a0_opt[0]}"
-                a1_stat = "Idle/Finished" if a1_success[0] else f"Working on {a1_opt[0]}"
+                # Lock these environments
+                option_controller.set_pending(trigger_envs, True)
+                option_controller.cooldown_counter[trigger_envs] = 50 
                 
-                prompt = prompt_builder.build_hrl_prompt(inv_dict, a0_stat, a1_stat)
-                def _cb(res):
-                    option_controller.update_options_from_llm(res)
-                    option_controller.llm_pending = False
-                bridge.query_async(prompt, callback=_cb)
+                # Build the prompt batch
+                batched_prompts = []
+                for env_idx in trigger_envs:
+                    inv_arr = inv_next[env_idx].astype(int)
+                    inv_dict = {
+                        "wood": int(inv_arr[0]), "stone": int(inv_arr[1]), "iron": int(inv_arr[2]),
+                        "pickaxe": int(inv_arr[3]), "sword": int(inv_arr[4]), "armor": int(inv_arr[5]),
+                        "gold": int(inv_arr[6]), "bridge": int(inv_arr[7]), "enemy": int(inv_arr[8]),
+                    }
+                    
+                    a0_stat = "Finished" if a0_success[env_idx] else f"Working on {a0_opt[env_idx]}"
+                    a1_stat = "Finished" if a1_success[env_idx] else f"Working on {a1_opt[env_idx]}"
+                    
+                    prompt = prompt_builder.build_hrl_prompt(inv_dict, a0_stat, a1_stat)
+                    batched_prompts.append(prompt)
+                
+                # 3. Define the asynchronous callback for the batch
+                def make_batch_cb(env_indices):
+                    def _cb(batch_responses):
+                        option_controller.update_options_from_batch(batch_responses, env_indices)
+                        # Unlock environments upon completion
+                        option_controller.set_pending(env_indices, False)
+                    return _cb
+                    
+                # 4. Dispatch to the async bridge
+                bridge.query_batch_async(batched_prompts, callback=make_batch_cb(trigger_envs))
 
             total_r = env_rewards + intrinsic_r
             buf_rewards[step] = torch.from_numpy(total_r.reshape(N)).to(device, non_blocking=True)
@@ -393,6 +415,9 @@ def train_mappo_hrl(
         writer.add_scalar("Episodes/Success_Rate", success_rate, global_step_counter)
         writer.add_scalar("TD_Error/Abs_Mean", td_stats["abs_mean_td_error"], global_step_counter)
 
+        for fi in range(NUM_ITEMS):
+            writer.add_scalar(f"Subtasks/{ITEM_NAMES[fi]}_Pct", epoch_subtask_steps[fi] / max(epoch_episode_count, 1), global_step_counter)
+
         if update % 10 == 0:
             print(f"Epoch {update:>4}/{num_updates} | Loss: {avg_loss:.4f} | "
                   f"R_env: {avg_env_reward:.4f} | Gold: {success_rate:.0%} | "
@@ -400,7 +425,8 @@ def train_mappo_hrl(
 
         if avg_env_reward > best_avg_env_reward:
             best_avg_env_reward = avg_env_reward
-            torch.save({'update': update, 'model_state_dict': agent.state_dict()}, "checkpoints/best_agent.pt")
+            ckpt_name = "checkpoints/best_agent_nolora.pt" if disable_lora else "checkpoints/best_agent.pt"
+            torch.save({'update': update, 'model_state_dict': agent.state_dict()}, ckpt_name)
 
     vec_env.close()
     writer.close()
