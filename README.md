@@ -46,6 +46,14 @@ Run HRL Options Framework (defaults to using the fine-tuned LoRA adapter):
 python scripts/run_hrl.py --enable-logging
 ```
 
+Run HRL Options Framework using Gemini (Google AI Studio):
+```bash
+python scripts/run_hrl.py --enable-logging --llm-backend gemini --llm-model gemini-2.5-flash
+
+# Or with the 3.1-flash-lite model:
+python scripts/run_hrl.py --enable-logging --llm-backend gemini --llm-model gemini-3.1-flash-lite
+```
+
 To benchmark the fine-tuned adapter against the base Qwen model, use the `--disable-lora` flag to dynamically run inference without the fine-tuned weights:
 ```bash
 python scripts/run_hrl.py --enable-logging --disable-lora
