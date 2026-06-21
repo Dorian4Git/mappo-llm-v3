@@ -117,6 +117,8 @@ def train_mappo_hrl(
     os.makedirs("runs", exist_ok=True)
     writer = SummaryWriter(f"runs/{run_name}")
     os.makedirs("checkpoints", exist_ok=True)
+    
+    llm_log_path = os.path.join(f"runs/{run_name}", "llm_queries.jsonl")
 
     T = num_steps
     num_chunks = T // seq_len
@@ -237,6 +239,7 @@ def train_mappo_hrl(
                 
                 # Build the prompt batch
                 batched_prompts = []
+                batched_inventories = []
                 for env_idx in trigger_envs:
                     inv_arr = inv_next[env_idx].astype(int)
                     inv_dict = {
@@ -244,6 +247,7 @@ def train_mappo_hrl(
                         "pickaxe": int(inv_arr[3]), "sword": int(inv_arr[4]), "armor": int(inv_arr[5]),
                         "gold": int(inv_arr[6]), "bridge": int(inv_arr[7]), "enemy": int(inv_arr[8]),
                     }
+                    batched_inventories.append(inv_dict)
                     
                     a0_stat = "Finished" if a0_success[env_idx] else f"Working on {a0_opt[env_idx]}"
                     a1_stat = "Finished" if a1_success[env_idx] else f"Working on {a1_opt[env_idx]}"
@@ -252,15 +256,33 @@ def train_mappo_hrl(
                     batched_prompts.append(prompt)
                 
                 # 3. Define the asynchronous callback for the batch
-                def make_batch_cb(env_indices):
+                def make_batch_cb(env_indices, prompts, inventories, current_step):
                     def _cb(batch_responses):
-                        option_controller.update_options_from_batch(batch_responses, env_indices)
+                        parsed_options = option_controller.update_options_from_batch(batch_responses, env_indices)
                         # Unlock environments upon completion
                         option_controller.set_pending(env_indices, False)
+                        
+                        # Log to JSONL
+                        try:
+                            with open(llm_log_path, "a") as f:
+                                for env_idx, prompt, raw_response, inv, parsed in zip(env_indices, prompts, batch_responses, inventories, parsed_options):
+                                    log_entry = {
+                                        "global_step": current_step,
+                                        "env_id": int(env_idx),
+                                        "prompt": prompt,
+                                        "raw_response": raw_response,
+                                        "parsed_a0_option": parsed.get("agent_0_option"),
+                                        "parsed_a1_option": parsed.get("agent_1_option"),
+                                        "inventory": inv
+                                    }
+                                    f.write(json.dumps(log_entry) + "\n")
+                        except Exception as e:
+                            print(f"[Logging Error] Failed to write LLM log: {e}")
+                            
                     return _cb
                     
                 # 4. Dispatch to the async bridge
-                bridge.query_batch_async(batched_prompts, callback=make_batch_cb(trigger_envs))
+                bridge.query_batch_async(batched_prompts, callback=make_batch_cb(trigger_envs, batched_prompts, batched_inventories, global_step_counter))
 
             total_r = env_rewards + intrinsic_r
             buf_rewards[step] = torch.from_numpy(total_r.reshape(N)).to(device, non_blocking=True)

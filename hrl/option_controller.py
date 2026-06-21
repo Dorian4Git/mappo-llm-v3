@@ -38,22 +38,30 @@ class OptionController:
         self.llm_pending[env_indices] = status
 
     def update_options_from_batch(self, batch_results, env_indices):
-        """Parses a batch of LLM responses and updates specific environments."""
+        """Parses a batch of LLM responses and updates specific environments.
+        Returns a list of dictionaries containing the parsed options for logging.
+        """
+        parsed_results = []
         for env_idx, llm_json_str in zip(env_indices, batch_results):
-            if llm_json_str is None:
-                continue
-            try:
-                clean_str = llm_json_str.replace("```json", "").replace("```", "").strip()
-                data = json.loads(clean_str)
-                
-                if data.get("agent_0_option") and data.get("agent_1_option"):
-                    a0_opt = data.get("agent_0_option")
-                    a1_opt = data.get("agent_1_option")
+            parsed_data = {"agent_0_option": None, "agent_1_option": None}
+            if llm_json_str is not None:
+                try:
+                    clean_str = llm_json_str.replace("```json", "").replace("```", "").strip()
+                    data = json.loads(clean_str)
                     
-                    self._active_options_a0[env_idx] = OPTION_NAMES.index(a0_opt) if a0_opt in OPTION_NAMES else 0
-                    self._active_options_a1[env_idx] = OPTION_NAMES.index(a1_opt) if a1_opt in OPTION_NAMES else 0
-            except json.JSONDecodeError:
-                pass
+                    if data.get("agent_0_option") and data.get("agent_1_option"):
+                        a0_opt = data.get("agent_0_option")
+                        a1_opt = data.get("agent_1_option")
+                        
+                        self._active_options_a0[env_idx] = OPTION_NAMES.index(a0_opt) if a0_opt in OPTION_NAMES else 0
+                        self._active_options_a1[env_idx] = OPTION_NAMES.index(a1_opt) if a1_opt in OPTION_NAMES else 0
+                        
+                        parsed_data["agent_0_option"] = a0_opt
+                        parsed_data["agent_1_option"] = a1_opt
+                except json.JSONDecodeError:
+                    pass
+            parsed_results.append(parsed_data)
+        return parsed_results
 
     def get_option_embeddings(self) -> np.ndarray:
         """Returns [n_envs, 2, NUM_OPTIONS] one-hot embeddings for the NN."""

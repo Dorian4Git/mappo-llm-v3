@@ -416,14 +416,14 @@ class LLMBridge:
 
     def disable_lora(self):
         """Dynamically disable the LoRA adapter to run base model inference."""
-        if hasattr(self._hf_model, "disable_adapter"):
-            self._hf_model.disable_adapter()
+        if hasattr(self._hf_model, "base_model") and hasattr(self._hf_model.base_model, "disable_adapter_layers"):
+            self._hf_model.base_model.disable_adapter_layers()
             print("[LLMBridge] LoRA adapter disabled. Using base model.")
 
     def enable_lora(self):
         """Dynamically enable the LoRA adapter."""
-        if hasattr(self._hf_model, "enable_adapter"):
-            self._hf_model.enable_adapter()
+        if hasattr(self._hf_model, "base_model") and hasattr(self._hf_model.base_model, "enable_adapter_layers"):
+            self._hf_model.base_model.enable_adapter_layers()
             print("[LLMBridge] LoRA adapter enabled.")
 
     def close(self):
