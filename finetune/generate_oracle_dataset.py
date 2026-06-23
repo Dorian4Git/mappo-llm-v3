@@ -32,106 +32,52 @@ from llm.prompt_builder import PromptBuilder
 # Valid options — must match option_controller.py
 VALID_OPTIONS = [
     "COLLECT_WOOD", "COLLECT_STONE", "CRAFT_PICKAXE",
-    "MINE_IRON", "CRAFT_SWORD", "CRAFT_ARMOR", "BUILD_BRIDGE", "FIGHT_ENEMY"
+    "MINE_IRON", "CRAFT_SWORD", "CRAFT_ARMOR", "BUILD_BRIDGE", "FIGHT_ENEMY", "COLLECT_GOLD"
 ]
 
 def determine_options(inv: dict) -> tuple[str, str, str]:
     """
     Given an inventory state, determine the correct (a0_option, a1_option, reasoning).
-    
-    Returns the optimal assignment based on the DAG dependencies.
-    Agent 0 (Lumberjack): COLLECT_WOOD, CRAFT_PICKAXE, BUILD_BRIDGE
-    Agent 1 (Miner): COLLECT_STONE, CRAFT_PICKAXE, MINE_IRON, CRAFT_SWORD, CRAFT_ARMOR, FIGHT_ENEMY
-    
-    Key constraints from crafting_env.py:
-    - Wood: A0 only, max 2 total (1 for pickaxe, 1 for bridge)
-    - Stone: A1 only, max 1 total
-    - Iron: A1 only, needs pickaxe, max 2 total (1 for sword, 1 for armor)  
-    - Pickaxe: either agent at workbench, costs 1W+1S
-    - Sword: A1 at workbench, costs 1 Iron
-    - Armor: A1 at workbench, costs 1 Iron
-    - Bridge: A0, costs 1W
-    - Enemy: A1, needs bridge + sword + armor
-    - Gold: A1, needs enemy defeated
+    Strictly adhere to DAG constraints.
     """
-    wood = inv["wood"]
-    stone = inv["stone"]
-    iron = inv["iron"]
-    pickaxe = inv["pickaxe"]
-    sword = inv["sword"]
-    armor = inv["armor"]
-    bridge = inv["bridge"]
-    enemy = inv["enemy"]
+    w, s, p, i, sw, a = inv['wood'], inv['stone'], inv['pickaxe'], inv['iron'], inv['sword'], inv['armor']
+    b, e, g = inv.get('bridge', 0), inv.get('enemy', 0), inv.get('gold', 0)
     
-    # === PHASE 6: Enemy defeated, go for gold ===
-    if enemy >= 1:
-        # A1 fights/collects gold. A0 has nothing productive left.
-        return "COLLECT_WOOD", "FIGHT_ENEMY", "Enemy defeated. Agent 1 goes to collect Gold while Agent 0 stays productive."
-    
-    # === PHASE 5: Have sword + armor + bridge, fight enemy ===
-    if sword >= 1 and armor >= 1 and bridge >= 1:
-        return "COLLECT_WOOD", "FIGHT_ENEMY", "We have Sword, Armor, and Bridge. Agent 1 fights the Enemy."
-
-    # === PHASE 4: Need bridge and/or combat gear ===
-    # Determine what's still needed
-    need_sword = sword < 1
-    need_armor = armor < 1
-    need_bridge = bridge < 1
-    
-    # Sub-case: Have all combat gear, just need bridge
-    if not need_sword and not need_armor and need_bridge:
-        if wood >= 1:
-            return "BUILD_BRIDGE", "FIGHT_ENEMY", "Sword and Armor ready. Agent 0 builds Bridge with available Wood."
-        else:
-            return "COLLECT_WOOD", "FIGHT_ENEMY", "Need Wood for Bridge. Agent 0 collects Wood."
-    
-    # Sub-case: Need to craft sword or armor (need iron)
-    if need_sword and iron >= 1:
-        # A1 crafts sword, A0 works on bridge prep
-        if need_bridge and wood < 1:
-            return "COLLECT_WOOD", "CRAFT_SWORD", "Have Iron. Agent 1 crafts Sword. Agent 0 collects Wood for Bridge."
-        elif need_bridge and wood >= 1:
-            return "BUILD_BRIDGE", "CRAFT_SWORD", "Have Iron and Wood. Agent 1 crafts Sword. Agent 0 builds Bridge."
-        else:
-            return "COLLECT_WOOD", "CRAFT_SWORD", "Have Iron. Agent 1 crafts Sword."
-    
-    if need_armor and iron >= 1:
-        if need_bridge and wood < 1:
-            return "COLLECT_WOOD", "CRAFT_ARMOR", "Have Iron. Agent 1 crafts Armor. Agent 0 collects Wood for Bridge."
-        elif need_bridge and wood >= 1:
-            return "BUILD_BRIDGE", "CRAFT_ARMOR", "Have Iron and Wood. Agent 1 crafts Armor. Agent 0 builds Bridge."
-        else:
-            return "COLLECT_WOOD", "CRAFT_ARMOR", "Have Iron. Agent 1 crafts Armor."
-    
-    # Sub-case: Need iron (have pickaxe but no iron)
-    if (need_sword or need_armor) and pickaxe >= 1 and iron < 1:
-        if need_bridge and wood < 1:
-            return "COLLECT_WOOD", "MINE_IRON", "Have Pickaxe. Agent 1 mines Iron. Agent 0 collects Wood for Bridge."
-        elif need_bridge and wood >= 1:
-            return "BUILD_BRIDGE", "MINE_IRON", "Have Pickaxe and Wood. Agent 1 mines Iron. Agent 0 builds Bridge."
-        else:
-            return "COLLECT_WOOD", "MINE_IRON", "Have Pickaxe. Agent 1 mines Iron."
-    
-    # === PHASE 3: Need pickaxe ===
-    if pickaxe < 1:
-        if wood >= 1 and stone >= 1:
+    if p == 0:
+        if w >= 1 and s >= 1:
             return "CRAFT_PICKAXE", "CRAFT_PICKAXE", "Have Wood and Stone. Both agents craft Pickaxe at workbench."
-        elif wood < 1 and stone < 1:
-            return "COLLECT_WOOD", "COLLECT_STONE", "Missing Wood and Stone. Agents collect resources in parallel."
-        elif wood < 1:
-            return "COLLECT_WOOD", "COLLECT_STONE", "Missing Wood. Agent 0 collects Wood, Agent 1 waits at Stone zone."
-        else:  # stone < 1
-            return "COLLECT_WOOD", "COLLECT_STONE", "Missing Stone. Agent 1 collects Stone, Agent 0 collects more Wood."
-    
-    # === PHASE 2: Have pickaxe, need iron ===
-    if pickaxe >= 1 and iron < 1:
-        if wood < 1 and need_bridge:
-            return "COLLECT_WOOD", "MINE_IRON", "Have Pickaxe. Agent 1 mines Iron. Agent 0 collects Wood."
+        elif w >= 1 and b == 0:
+            return "BUILD_BRIDGE", "COLLECT_STONE", "Agent 0 builds bridge early, Agent 1 gets stone."
+        elif s >= 1:
+            return "COLLECT_WOOD", "CRAFT_PICKAXE", "Agent 0 gets wood, Agent 1 waits at workbench."
         else:
-            return "COLLECT_WOOD", "MINE_IRON", "Have Pickaxe. Agent 1 mines Iron."
-    
-    # === Fallback: collect resources ===
-    return "COLLECT_WOOD", "COLLECT_STONE", "Collecting basic resources to progress the DAG."
+            return "COLLECT_WOOD", "COLLECT_STONE", "Need pickaxe. Agent 0 gets wood, Agent 1 gets stone."
+    else:
+        # Determine A1 (Miner/Fighter) option
+        if i == 0 and sw == 0 and a == 0:
+            a1_opt = "MINE_IRON"
+        elif sw == 0 and i >= 1:
+            a1_opt = "CRAFT_SWORD"
+        elif a == 0 and i >= 1:
+            a1_opt = "CRAFT_ARMOR"
+        elif i == 0 and (sw == 0 or a == 0):
+            a1_opt = "MINE_IRON"
+        elif sw >= 1 and a >= 1 and e == 0:
+            a1_opt = "FIGHT_ENEMY"
+        elif e >= 1 and g == 0:
+            a1_opt = "COLLECT_GOLD"
+        else:
+            a1_opt = "COLLECT_GOLD" # Fallback
+            
+        # Determine A0 (Lumberjack/Builder) option
+        if b == 0 and w == 0:
+            a0_opt = "COLLECT_WOOD"
+        elif b == 0 and w >= 1:
+            a0_opt = "BUILD_BRIDGE"
+        else:
+            a0_opt = "COLLECT_WOOD" # Just idle A0 at Wood.
+            
+        return a0_opt, a1_opt, "A0 handles bridge, A1 handles mining and combat."
 
 
 def generate_inventory_states():

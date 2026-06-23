@@ -34,14 +34,14 @@ def get_option_target_zone(opt_strs):
         "COLLECT_WOOD": 0, "COLLECT_STONE": 1,
         "CRAFT_PICKAXE": 2, "MINE_IRON": 3,
         "CRAFT_SWORD": 2, "CRAFT_ARMOR": 2, 
-        "BUILD_BRIDGE": 4, "FIGHT_ENEMY": 5
+        "BUILD_BRIDGE": 4, "FIGHT_ENEMY": 5, "COLLECT_GOLD": 6
     }
     if isinstance(opt_strs, str):
-        return mapping.get(opt_strs, 0)
-    return np.array([mapping.get(s, 0) for s in opt_strs])
+        return mapping.get(opt_strs, -1)
+    return np.array([mapping.get(s, -1) for s in opt_strs])
 
 def check_option_success(opt_strs, inv_prev, inv_next):
-    # I_WOOD=0, I_STONE=1, I_IRON=2, I_PICKAXE=4, I_SWORD=5, I_ARMOR=6, F_BRIDGE=7, F_ENEMY_DEFEATED=8
+    # I_WOOD=0, I_STONE=1, I_IRON=2, I_PICKAXE=3, I_SWORD=4, I_ARMOR=5, I_GOLD=6, F_BRIDGE=7, F_ENEMY_DEFEATED=8
     n_envs = inv_prev.shape[0]
     success = np.zeros(n_envs, dtype=bool)
     if isinstance(opt_strs, str):
@@ -57,6 +57,7 @@ def check_option_success(opt_strs, inv_prev, inv_next):
         elif opt == "CRAFT_ARMOR": success[i] = inv_next[i, 5] > inv_prev[i, 5]
         elif opt == "BUILD_BRIDGE": success[i] = inv_next[i, 7] > inv_prev[i, 7]
         elif opt == "FIGHT_ENEMY": success[i] = inv_next[i, 8] > inv_prev[i, 8]
+        elif opt == "COLLECT_GOLD": success[i] = inv_next[i, 6] > inv_prev[i, 6]
     return success
 
 def train_mappo_hrl(
@@ -70,8 +71,8 @@ def train_mappo_hrl(
     disable_lora: bool = False,
 ):
     num_agents = 2
-    # 3 (goal padding) + 10 (inv) + NUM_OPTIONS (one-hot option)
-    vec_dim = 3 + NUM_ITEMS + NUM_OPTIONS
+    # 2 (pos) + 3 (goal padding) + 10 (inv) + NUM_OPTIONS (one-hot option)
+    vec_dim = 2 + 3 + NUM_ITEMS + NUM_OPTIONS
     seq_len = 16
     hidden_size = 256
 
@@ -91,7 +92,7 @@ def train_mappo_hrl(
     option_controller = OptionController(n_envs=n_envs)
 
     agent = RoleConditionedMAPPOAgentV2(
-        cnn_channels=9, goal_dim=3, flag_dim=NUM_ITEMS + NUM_OPTIONS, deep=deep,
+        cnn_channels=9, goal_dim=3, flag_dim=2 + NUM_ITEMS + NUM_OPTIONS, deep=deep,
     ).to(device)
     optimizer = optim.Adam(agent.parameters(), lr=2.5e-4, eps=1e-5)
 
@@ -157,8 +158,9 @@ def train_mappo_hrl(
             goal_emb = np.zeros((n_envs, 2, 3), dtype=np.float32) # Padding to match vec_dim
             inv_repeat = np.stack([all_obs[:, 0, 4:4+NUM_ITEMS], all_obs[:, 0, 4:4+NUM_ITEMS]], axis=1)
             opt_repeat = option_controller.get_option_embeddings()
+            pos_repeat = vec_env.pos.copy()
             
-            vec_input = np.concatenate([goal_emb, inv_repeat, opt_repeat], axis=2)
+            vec_input = np.concatenate([pos_repeat, goal_emb, inv_repeat, opt_repeat], axis=2)
 
             fov_t = torch.from_numpy(all_fov.reshape(N, 9, 7, 7)).to(device, non_blocking=True)
             gmap_repeat = np.stack([all_gmap, all_gmap], axis=1)
@@ -209,6 +211,7 @@ def train_mappo_hrl(
             phi0_next = MAX_DIST - dist0_next 
             shaping0 = (0.99 * phi0_next) - phi0_prev
             intrinsic_r[:, 0] = np.where(a0_success, 1.0 + step_penalty, step_penalty + (shaping0 * 0.05))
+            intrinsic_r[:, 0] = np.where(z0 == -1, step_penalty, intrinsic_r[:, 0])
             
             # Agent 1
             z1 = get_option_target_zone(a1_opt)
@@ -218,6 +221,7 @@ def train_mappo_hrl(
             phi1_next = MAX_DIST - dist1_next
             shaping1 = (0.99 * phi1_next) - phi1_prev
             intrinsic_r[:, 1] = np.where(a1_success, 1.0 + step_penalty, step_penalty + (shaping1 * 0.05))
+            intrinsic_r[:, 1] = np.where(z1 == -1, step_penalty, intrinsic_r[:, 1])
             
             # --- HRL Vectorized LLM Trigger Logic ---
             
@@ -238,52 +242,56 @@ def train_mappo_hrl(
                 option_controller.set_pending(trigger_envs, True)
                 option_controller.cooldown_counter[trigger_envs] = 50 
                 
-                # Build the prompt batch
+                inv_batch = inv_next[trigger_envs].astype(int)
+                unique_invs, inverse_indices = np.unique(inv_batch, axis=0, return_inverse=True)
+                
                 batched_prompts = []
                 batched_inventories = []
-                for env_idx in trigger_envs:
-                    inv_arr = inv_next[env_idx].astype(int)
+                unique_to_envs = [trigger_envs[inverse_indices == i] for i in range(len(unique_invs))]
+                
+                for state_idx, unique_state in enumerate(unique_invs):
                     inv_dict = {
-                        "wood": int(inv_arr[0]), "stone": int(inv_arr[1]), "iron": int(inv_arr[2]),
-                        "pickaxe": int(inv_arr[3]), "sword": int(inv_arr[4]), "armor": int(inv_arr[5]),
-                        "gold": int(inv_arr[6]), "bridge": int(inv_arr[7]), "enemy": int(inv_arr[8]),
+                        "wood": int(unique_state[0]), "stone": int(unique_state[1]), "iron": int(unique_state[2]),
+                        "pickaxe": int(unique_state[3]), "sword": int(unique_state[4]), "armor": int(unique_state[5]),
+                        "gold": int(unique_state[6]), "bridge": int(unique_state[7]), "enemy": int(unique_state[8]),
                     }
                     batched_inventories.append(inv_dict)
                     
-                    a0_stat = "Finished" if a0_success[env_idx] else f"Working on {a0_opt[env_idx]}"
-                    a1_stat = "Finished" if a1_success[env_idx] else f"Working on {a1_opt[env_idx]}"
+                    rep_env = unique_to_envs[state_idx][0]
+                    a0_stat = "Finished" if a0_success[rep_env] else f"Working on {a0_opt[rep_env]}"
+                    a1_stat = "Finished" if a1_success[rep_env] else f"Working on {a1_opt[rep_env]}"
                     
                     prompt = prompt_builder.build_hrl_prompt(inv_dict, a0_stat, a1_stat)
                     batched_prompts.append(prompt)
                 
                 # 3. Define the asynchronous callback for the batch
-                def make_batch_cb(env_indices, prompts, inventories, current_step):
+                def make_batch_cb(unique_env_groups, prompts, inventories, current_step):
                     def _cb(batch_responses):
-                        parsed_options = option_controller.update_options_from_batch(batch_responses, env_indices)
-                        # Unlock environments upon completion
-                        option_controller.set_pending(env_indices, False)
-                        
-                        # Log to JSONL
-                        try:
-                            with open(llm_log_path, "a") as f:
-                                for env_idx, prompt, raw_response, inv, parsed in zip(env_indices, prompts, batch_responses, inventories, parsed_options):
-                                    log_entry = {
-                                        "global_step": current_step,
-                                        "env_id": int(env_idx),
-                                        "prompt": prompt,
-                                        "raw_response": raw_response,
-                                        "parsed_a0_option": parsed.get("agent_0_option"),
-                                        "parsed_a1_option": parsed.get("agent_1_option"),
-                                        "inventory": inv
-                                    }
-                                    f.write(json.dumps(log_entry) + "\n")
-                        except Exception as e:
-                            print(f"[Logging Error] Failed to write LLM log: {e}")
+                        for state_idx, response in enumerate(batch_responses):
+                            env_group = unique_env_groups[state_idx]
+                            # Apply the response to all environments sharing this state
+                            option_controller.update_options_from_llm(response, env_group)
+                            option_controller.set_pending(env_group, False)
                             
+                            try:
+                                with open(llm_log_path, "a") as f:
+                                    for env_idx in env_group:
+                                        log_entry = {
+                                            "global_step": current_step,
+                                            "env_id": int(env_idx),
+                                            "prompt": prompts[state_idx],
+                                            "raw_response": response,
+                                            "parsed_a0_option": option_controller.get_active_option(0, env_idx),
+                                            "parsed_a1_option": option_controller.get_active_option(1, env_idx),
+                                            "inventory": inventories[state_idx]
+                                        }
+                                        f.write(json.dumps(log_entry) + "\n")
+                            except Exception as e:
+                                print(f"[Logging Error] Failed to write LLM log: {e}")
                     return _cb
                     
                 # 4. Dispatch to the async bridge
-                bridge.query_batch_async(batched_prompts, callback=make_batch_cb(trigger_envs, batched_prompts, batched_inventories, global_step_counter))
+                bridge.query_batch_async(batched_prompts, callback=make_batch_cb(unique_to_envs, batched_prompts, batched_inventories, global_step_counter))
 
             total_r = env_rewards + intrinsic_r
             buf_rewards[step] = torch.from_numpy(total_r.reshape(N)).to(device, non_blocking=True)
@@ -313,7 +321,8 @@ def train_mappo_hrl(
             goal_emb_next = np.zeros((n_envs, 2, 3), dtype=np.float32)
             inv_repeat_next = np.stack([all_obs[:, 0, 4:4+NUM_ITEMS], all_obs[:, 0, 4:4+NUM_ITEMS]], axis=1)
             opt_repeat_next = option_controller.get_option_embeddings()
-            vec_input_next = np.concatenate([goal_emb_next, inv_repeat_next, opt_repeat_next], axis=2)
+            pos_repeat_next = vec_env.pos.copy()
+            vec_input_next = np.concatenate([pos_repeat_next, goal_emb_next, inv_repeat_next, opt_repeat_next], axis=2)
             next_vec_t = torch.from_numpy(vec_input_next.reshape(N, vec_dim)).to(device)
 
             next_value = agent.get_value(next_gmap_t, next_vec_t).flatten()

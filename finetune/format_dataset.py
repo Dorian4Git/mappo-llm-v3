@@ -50,10 +50,8 @@ def main():
             if line:
                 examples.append(convert_to_chatml(json.loads(line)))
 
-    # To avoid overfitting to a tiny dataset, duplicate the examples to create a decent sized dataset for QLoRA
-    # Since it's an oracle dataset of strict logic rules, we can safely duplicate it
-    examples = examples * 1
-    
+    # Since the new dataset generator already permutations over all agent statuses,
+    # the dataset is naturally 550 examples. We do not need artificial inflation anymore.
     random.seed(42)
     random.shuffle(examples)
     

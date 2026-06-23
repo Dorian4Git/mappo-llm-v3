@@ -73,7 +73,7 @@ class PromptBuilder:
 
     ### YOUR TASK:
     Assign exactly ONE discrete Option to each agent to progress the DAG.
-    Available Options: ["COLLECT_WOOD", "COLLECT_STONE", "CRAFT_PICKAXE", "MINE_IRON", "CRAFT_SWORD", "CRAFT_ARMOR", "BUILD_BRIDGE", "FIGHT_ENEMY"]
+    Available Options: ["COLLECT_WOOD", "COLLECT_STONE", "CRAFT_PICKAXE", "MINE_IRON", "CRAFT_SWORD", "CRAFT_ARMOR", "BUILD_BRIDGE", "FIGHT_ENEMY", "COLLECT_GOLD"]
 
     Respond ONLY with valid JSON exactly matching this schema:
     {{

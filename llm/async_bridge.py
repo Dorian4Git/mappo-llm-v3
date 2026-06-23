@@ -64,6 +64,7 @@ class LLMBridge:
         # HuggingFace model (loaded on demand for hot-swap)
         self._hf_model = None
         self._hf_tokenizer = None
+        self._lora_disabled = False
 
         self._start_worker()
 
@@ -174,13 +175,23 @@ class LLMBridge:
             
         inputs = self._hf_tokenizer(formatted_prompts, return_tensors="pt", padding=True).to(self._hf_model.device)
         
-        outputs = self._hf_model.generate(
-            **inputs,
-            max_new_tokens=512,
-            temperature=max(self.temperature, 0.01),
-            top_p=self.top_p,
-            do_sample=(self.temperature > 0)
-        )
+        if getattr(self, "_lora_disabled", False) and hasattr(self._hf_model, "disable_adapter"):
+            with self._hf_model.disable_adapter():
+                outputs = self._hf_model.generate(
+                    **inputs,
+                    max_new_tokens=512,
+                    temperature=max(self.temperature, 0.01),
+                    top_p=self.top_p,
+                    do_sample=(self.temperature > 0)
+                )
+        else:
+            outputs = self._hf_model.generate(
+                **inputs,
+                max_new_tokens=512,
+                temperature=max(self.temperature, 0.01),
+                top_p=self.top_p,
+                do_sample=(self.temperature > 0)
+            )
         responses = []
         for i, output in enumerate(outputs):
             response = self._hf_tokenizer.decode(output[inputs["input_ids"].shape[1]:], skip_special_tokens=True)
@@ -288,13 +299,24 @@ class LLMBridge:
         inputs = self._hf_tokenizer(prompt, return_tensors="pt").to(
             self._hf_model.device
         )
-        outputs = self._hf_model.generate(
-            **inputs,
-            max_new_tokens=512,
-            temperature=max(self.temperature, 0.01),  # avoid div by zero
-            top_p=self.top_p,
-            do_sample=(self.temperature > 0),
-        )
+        
+        if getattr(self, "_lora_disabled", False) and hasattr(self._hf_model, "disable_adapter"):
+            with self._hf_model.disable_adapter():
+                outputs = self._hf_model.generate(
+                    **inputs,
+                    max_new_tokens=512,
+                    temperature=max(self.temperature, 0.01),
+                    top_p=self.top_p,
+                    do_sample=(self.temperature > 0),
+                )
+        else:
+            outputs = self._hf_model.generate(
+                **inputs,
+                max_new_tokens=512,
+                temperature=max(self.temperature, 0.01),  # avoid div by zero
+                top_p=self.top_p,
+                do_sample=(self.temperature > 0),
+            )
         response = self._hf_tokenizer.decode(
             outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True
         )
@@ -416,15 +438,13 @@ class LLMBridge:
 
     def disable_lora(self):
         """Dynamically disable the LoRA adapter to run base model inference."""
-        if hasattr(self._hf_model, "base_model") and hasattr(self._hf_model.base_model, "disable_adapter_layers"):
-            self._hf_model.base_model.disable_adapter_layers()
-            print("[LLMBridge] LoRA adapter disabled. Using base model.")
+        self._lora_disabled = True
+        print("[LLMBridge] LoRA adapter disabled. Using base model.")
 
     def enable_lora(self):
         """Dynamically enable the LoRA adapter."""
-        if hasattr(self._hf_model, "base_model") and hasattr(self._hf_model.base_model, "enable_adapter_layers"):
-            self._hf_model.base_model.enable_adapter_layers()
-            print("[LLMBridge] LoRA adapter enabled.")
+        self._lora_disabled = False
+        print("[LLMBridge] LoRA adapter enabled.")
 
     def close(self):
         """Stop the worker thread."""
