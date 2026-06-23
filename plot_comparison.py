@@ -73,13 +73,14 @@ def plot_comparison(main_run1, label1, main_run2, label2, subtask_run1, subtask_
 if __name__ == "__main__":
     runs_dir = "C:/PROJECTS/_SCHOOL/MasterIS/TM/mappo-llm-v3/runs"
     
-    main_lora = os.path.join(runs_dir, "v3_HRL_Std_E128_s42_20260619-202112")
-    main_base = os.path.join(runs_dir, "v3_HRL_Std_NoLoRA_E128_s42_20260620-092622")
+    # We use the same runs for main and subtask metrics since all metrics are logged in the same run folder
+    main_lora = os.path.join(runs_dir, "v3_HRL_Std_LoRA_E128_s42_20260622-140157")
+    main_base = os.path.join(runs_dir, "v3_HRL_Std_NoLoRA_E128_s42_20260622-082759")
     
-    subtask_lora = os.path.join(runs_dir, "v3_HRL_Std_LoRA_E128_s42_20260620-121351")
-    subtask_base = os.path.join(runs_dir, "v3_HRL_Std_NoLoRA_E128_s42_20260620-135743")
+    subtask_lora = main_lora
+    subtask_base = main_base
     
-    out_dir = r"C:\Users\doria\OneDrive\Documents\school\master IS\Semestre 4\Travail de Master\rev_v3\20260620\plots"
+    out_dir = r"C:\Users\doria\OneDrive\Documents\school\master IS\Semestre 4\Travail de Master\rev_v3\meet_20260625\plots"
     
     print("Generating comparative plots...")
     plot_comparison(main_lora, "QLoRA Fine-tuned", main_base, "Base (No LoRA)", subtask_lora, subtask_base, out_dir)

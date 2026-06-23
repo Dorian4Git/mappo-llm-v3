@@ -24,16 +24,16 @@ if __name__ == "__main__":
                         help="Also merge adapter after training")
     args = parser.parse_args()
 
-    # Step 1: Generate dataset from trajectories
+    # Step 1: Generate dataset from oracle DAG logic
     if not args.skip_generate:
         print("=" * 60)
-        print("STEP 1: Generating dataset from trajectories")
+        print("STEP 1: Generating oracle dataset from DAG logic")
         print("=" * 60)
-        from finetune.dataset_generator import main as gen_main
-        sys.argv = ["dataset_generator",
-                     "--input", "data/trajectories",
-                     "--output", "data/datasets/raw"]
-        gen_main()
+        from finetune.generate_oracle_dataset import generate_dataset
+        generate_dataset(
+            output_path="data/datasets/raw/oracle_dataset.jsonl",
+            target_size=1200,
+        )
     else:
         print("Skipping dataset generation.")
 
@@ -44,7 +44,7 @@ if __name__ == "__main__":
         print("=" * 60)
         from finetune.format_dataset import main as fmt_main
         sys.argv = ["format_dataset",
-                     "--input", "data/datasets/raw/bottleneck_examples.jsonl",
+                     "--input", "data/datasets/raw/oracle_dataset.jsonl",
                      "--output", "data/datasets"]
         fmt_main()
     else:
@@ -69,4 +69,4 @@ if __name__ == "__main__":
         from finetune.merge_adapter import merge_adapter
         merge_adapter()
 
-    print("\n✅ Fine-tuning pipeline complete!")
+    print("\n[DONE] Fine-tuning pipeline complete!")
