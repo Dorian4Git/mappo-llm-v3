@@ -55,6 +55,8 @@ def main():
     random.seed(42)
     random.shuffle(examples)
     
+    # Duplicate dataset to ensure enough gradient updates (augmentation)
+    examples = examples * 10
     n_val = max(1, int(len(examples) * args.val_ratio))
     val_examples = examples[:n_val]
     train_examples = examples[n_val:]

@@ -123,7 +123,7 @@ def train_qlora(
 
     # ── Training Arguments ───────────────────────────────────────────
     lr = config.get("learning_rate", 2e-4)
-    epochs = config.get("epochs", 15)
+    epochs = config.get("epochs", 2)
     batch_size = 1  # Forced for 12GB VRAM
     grad_accum = 8  # Forced for 12GB VRAM
     warmup_ratio = config.get("warmup_ratio", 0.1)

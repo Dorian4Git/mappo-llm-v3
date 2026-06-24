@@ -34,7 +34,7 @@ def get_option_target_zone(opt_strs):
         "COLLECT_WOOD": 0, "COLLECT_STONE": 1,
         "CRAFT_PICKAXE": 2, "MINE_IRON": 3,
         "CRAFT_SWORD": 2, "CRAFT_ARMOR": 2, 
-        "BUILD_BRIDGE": 4, "FIGHT_ENEMY": 5, "COLLECT_GOLD": 6
+        "BUILD_BRIDGE": 4, "FIGHT_ENEMY": 5, "COLLECT_GOLD": 6, "IDLE": -1
     }
     if isinstance(opt_strs, str):
         return mapping.get(opt_strs, -1)
@@ -58,6 +58,7 @@ def check_option_success(opt_strs, inv_prev, inv_next):
         elif opt == "BUILD_BRIDGE": success[i] = inv_next[i, 7] > inv_prev[i, 7]
         elif opt == "FIGHT_ENEMY": success[i] = inv_next[i, 8] > inv_prev[i, 8]
         elif opt == "COLLECT_GOLD": success[i] = inv_next[i, 6] > inv_prev[i, 6]
+        elif opt == "IDLE": success[i] = False
     return success
 
 def train_mappo_hrl(
@@ -381,6 +382,7 @@ def train_mappo_hrl(
         epoch_losses, epoch_v_losses, epoch_pg_losses, epoch_ent = [], [], [], []
 
         for _ppo_epoch in range(ppo_epochs):
+            target_kl_reached = False
             indices = np.random.permutation(total_samples)
             for start in range(0, total_samples, mb_chunk_size):
                 end = min(start + mb_chunk_size, total_samples)
@@ -406,6 +408,7 @@ def train_mappo_hrl(
                 # If the policy has shifted too far, abort the remaining epochs for this batch
                 target_kl = 0.015
                 if approx_kl > target_kl:
+                    target_kl_reached = True
                     break
                 # ---------------------------
 
@@ -428,6 +431,9 @@ def train_mappo_hrl(
                 epoch_v_losses.append(v_loss.item())
                 epoch_pg_losses.append(pg_loss.item())
                 epoch_ent.append(entropy_loss.item())
+
+            if target_kl_reached:
+                break
 
         # Logging & Scheduling
         avg_loss = float(np.mean(epoch_losses))

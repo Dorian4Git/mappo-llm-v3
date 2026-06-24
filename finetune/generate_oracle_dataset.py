@@ -32,7 +32,7 @@ from llm.prompt_builder import PromptBuilder
 # Valid options — must match option_controller.py
 VALID_OPTIONS = [
     "COLLECT_WOOD", "COLLECT_STONE", "CRAFT_PICKAXE",
-    "MINE_IRON", "CRAFT_SWORD", "CRAFT_ARMOR", "BUILD_BRIDGE", "FIGHT_ENEMY", "COLLECT_GOLD"
+    "MINE_IRON", "CRAFT_SWORD", "CRAFT_ARMOR", "BUILD_BRIDGE", "FIGHT_ENEMY", "COLLECT_GOLD", "IDLE"
 ]
 
 def determine_options(inv: dict) -> tuple[str, str, str]:
@@ -67,7 +67,7 @@ def determine_options(inv: dict) -> tuple[str, str, str]:
         elif e >= 1 and g == 0:
             a1_opt = "COLLECT_GOLD"
         else:
-            a1_opt = "COLLECT_GOLD" # Fallback
+            a1_opt = "IDLE" # Fallback
             
         # Determine A0 (Lumberjack/Builder) option
         if b == 0 and w == 0:
@@ -75,7 +75,7 @@ def determine_options(inv: dict) -> tuple[str, str, str]:
         elif b == 0 and w >= 1:
             a0_opt = "BUILD_BRIDGE"
         else:
-            a0_opt = "COLLECT_WOOD" # Just idle A0 at Wood.
+            a0_opt = "IDLE" # A0 waits.
             
         return a0_opt, a1_opt, "A0 handles bridge, A1 handles mining and combat."
 
