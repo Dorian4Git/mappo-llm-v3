@@ -94,8 +94,9 @@ class ModelServer:
         """Generate using direct HuggingFace inference."""
         import torch
 
-        # Format with the same template used during fine-tuning
-        formatted = f"### Input:\n{prompt}\n\n### Response:\n"
+        # Format with the same ChatML template used during fine-tuning
+        messages = [{"role": "user", "content": prompt}]
+        formatted = self._tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
         inputs = self._tokenizer(formatted, return_tensors="pt").to(self._device)
 
