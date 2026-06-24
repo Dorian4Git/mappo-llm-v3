@@ -185,9 +185,7 @@ Respond ONLY with valid JSON matching this schema:
 {subtask_block}
 
 ### YOUR TASK:
-Assign the next high-level Option for each agent. Choose from:
-COLLECT_WOOD, COLLECT_STONE, CRAFT_PICKAXE, MINE_IRON, CRAFT_SWORD,
-CRAFT_ARMOR, BUILD_BRIDGE, DEFEAT_ENEMY, MINE_GOLD, IDLE
+Assign the next high-level Option for each agent. Available Options: ["COLLECT_WOOD", "COLLECT_STONE", "CRAFT_PICKAXE", "MINE_IRON", "CRAFT_SWORD", "CRAFT_ARMOR", "BUILD_BRIDGE", "FIGHT_ENEMY", "COLLECT_GOLD", "IDLE"]
 
 Respond ONLY with valid JSON:
 {{

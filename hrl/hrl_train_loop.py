@@ -268,6 +268,10 @@ def train_mappo_hrl(
                 # 3. Define the asynchronous callback for the batch
                 def make_batch_cb(unique_env_groups, prompts, inventories, current_step):
                     def _cb(batch_responses):
+                        if batch_responses is None:
+                            for env_group in unique_env_groups:
+                                option_controller.set_pending(env_group, False)
+                            return
                         for state_idx, response in enumerate(batch_responses):
                             env_group = unique_env_groups[state_idx]
                             # Apply the response to all environments sharing this state

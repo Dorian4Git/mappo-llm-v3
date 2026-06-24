@@ -62,6 +62,42 @@ def train_qlora(
     from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
     from trl import SFTTrainer, SFTConfig
 
+    class DataCollatorForCompletionOnlyLM:
+        def __init__(self, response_template, tokenizer):
+            self.response_template = response_template
+            self.tokenizer = tokenizer
+            self.response_token_ids = tokenizer.encode(response_template, add_special_tokens=False)
+            
+        def __call__(self, features):
+            import torch
+            batch_inputs = [{"input_ids": f["input_ids"]} for f in features]
+            if "attention_mask" in features[0]:
+                for i, f in enumerate(features):
+                    batch_inputs[i]["attention_mask"] = f["attention_mask"]
+            
+            batch = self.tokenizer.pad(
+                batch_inputs,
+                padding=True,
+                return_tensors="pt"
+            )
+            labels = batch["input_ids"].clone()
+            
+            # Mask out everything before the response_template
+            for i in range(len(labels)):
+                seq = labels[i].tolist()
+                response_len = len(self.response_token_ids)
+                found = False
+                for j in range(len(seq) - response_len + 1):
+                    if seq[j:j+response_len] == self.response_token_ids:
+                        labels[i, :j+response_len] = -100
+                        found = True
+                        break
+                if not found:
+                    labels[i, :] = -100
+                    
+            batch["labels"] = labels
+            return batch
+
     config = load_llm_config()
     base_model = kwargs.get("base_model", config.get("base_model", base_model))
 
@@ -162,6 +198,9 @@ def train_qlora(
             return tokenizer.apply_chat_template(examples["messages"], tokenize=False)
 
     # ── Trainer ──────────────────────────────────────────────────────
+    response_template = "<|im_start|>assistant\n"
+    collator = DataCollatorForCompletionOnlyLM(response_template, tokenizer=tokenizer)
+
     trainer = SFTTrainer(
         model=model,
         train_dataset=dataset["train"],
@@ -169,6 +208,7 @@ def train_qlora(
         args=training_args,
         processing_class=tokenizer,
         formatting_func=formatting_func,
+        data_collator=collator,
     )
 
     # ── Train ────────────────────────────────────────────────────────

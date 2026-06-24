@@ -52,11 +52,10 @@ def main():
 
     # Since the new dataset generator already permutations over all agent statuses,
     # the dataset is naturally 550 examples. We do not need artificial inflation anymore.
-    random.seed(42)
-    random.shuffle(examples)
-    
     # Duplicate dataset to ensure enough gradient updates (augmentation)
     examples = examples * 10
+    random.shuffle(examples)
+    
     n_val = max(1, int(len(examples) * args.val_ratio))
     val_examples = examples[:n_val]
     train_examples = examples[n_val:]

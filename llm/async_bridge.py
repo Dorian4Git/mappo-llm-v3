@@ -85,44 +85,58 @@ class LLMBridge:
                 continue
 
             query_id = request["id"]
-            callback = request.get("callback", None)
+            prompts = request["prompts"]
+            callback = request.get("callback")
+            require_json = request.get("require_json", False)
 
             try:
-                if "prompts" in request:
-                    result = self._execute_batch(request["prompts"])
+                # If backend is huggingface, we can batch natively
+                if len(prompts) > 1 and (self.backend == "huggingface" or self.backend == "huggingface_peft"):
+                    results = self._query_huggingface_batch(prompts)
                 else:
-                    result = self._execute_query(request["prompt"])
-
-                with self._lock:
-                    self._result_store[query_id] = {
-                        "success": True,
-                        "response": result,
-                    }
+                    results = [self._execute_query(p, require_json=require_json) for p in prompts]
+                
+                is_batch = request.get("is_batch", False)
                 if callback:
-                    callback(result)
+                    callback(results if is_batch else results[0])
             except Exception as e:
-                print(f"\n[LLMBridge Worker Error] Query failed: {e}")
-                with self._lock:
-                    self._result_store[query_id] = {
-                        "success": False,
-                        "error": str(e),
-                    }
+                print(f"[LLMBridge] Async query failed: {e}")
                 if callback:
-                    if "prompts" in request:
-                        callback([None] * len(request["prompts"]))
-                    else:
-                        callback(None)
+                    callback(None)
+            finally:
+                self._request_queue.task_done()
 
-    def query_batch_async(self, prompts: list, callback: Callable):
+    def query_async(
+        self,
+        prompt: str,
+        callback: Optional[Callable[[Optional[str]], None]] = None,
+        require_json: bool = False
+    ) -> str:
+        """
+        Asynchronous query. Returns immediately with a query_id.
+        """
+        query_id = f"query_{id(prompt)}_{self.seed}"
+        self._request_queue.put({
+            "id": query_id,
+            "prompts": [prompt],
+            "callback": callback,
+            "require_json": require_json,
+            "is_batch": False
+        })
+        return query_id
+
+    def query_batch_async(self, prompts: list, callback: Callable, require_json: bool = False):
         """Submits a batch of prompts to the background worker."""
         query_id = f"batch_{id(prompts)}_{self.seed}"
         self._request_queue.put({
             "id": query_id,
             "prompts": prompts,
-            "callback": callback
+            "callback": callback,
+            "require_json": require_json,
+            "is_batch": True
         })
 
-    def _execute_query(self, prompt: str) -> str:
+    def _execute_query(self, prompt: str, require_json: bool = False) -> str:
         """
         Execute a single LLM query with retries.
 
@@ -130,7 +144,7 @@ class LLMBridge:
             Raw text response from the LLM.
         """
         if self.backend == "ollama":
-            return self._query_ollama(prompt)
+            return self._query_ollama(prompt, require_json=require_json)
         elif self.backend == "huggingface_peft" or self.backend == "huggingface":
             return self._query_huggingface(prompt)
         elif self.backend == "gemini":
@@ -179,18 +193,18 @@ class LLMBridge:
             with self._hf_model.disable_adapter():
                 outputs = self._hf_model.generate(
                     **inputs,
-                    max_new_tokens=512,
-                    temperature=max(self.temperature, 0.01),
-                    top_p=self.top_p,
-                    do_sample=(self.temperature > 0)
+                    max_new_tokens=128,
+                    temperature=1.0,
+                    top_p=1.0,
+                    do_sample=False
                 )
         else:
             outputs = self._hf_model.generate(
                 **inputs,
-                max_new_tokens=512,
-                temperature=max(self.temperature, 0.01),
-                top_p=self.top_p,
-                do_sample=(self.temperature > 0)
+                max_new_tokens=128,
+                temperature=1.0,
+                top_p=1.0,
+                do_sample=False
             )
         responses = []
         for i, output in enumerate(outputs):
@@ -241,19 +255,22 @@ class LLMBridge:
             f"Gemini query failed after {self.max_retries} retries: {last_error}"
         )
 
-    def _query_ollama(self, prompt: str) -> str:
+    def _query_ollama(self, prompt: str, require_json: bool = False) -> str:
         """Query Ollama HTTP API with retry logic."""
         payload = {
             "model": self.model_name,
             "prompt": prompt,
+            "raw": True,
             "stream": False,
-            "format": "json",
             "options": {
                 "temperature": self.temperature,
                 "top_p": self.top_p,
                 "seed": self.seed,
             },
         }
+
+        if require_json:
+            payload["format"] = "json"
 
         last_error = None
         for attempt in range(self.max_retries):
@@ -322,44 +339,20 @@ class LLMBridge:
         )
         return response
 
-    def query_sync(self, prompt: str, timeout: Optional[int] = None) -> str:
+    def query_sync(self, prompt: str, timeout: Optional[int] = None, require_json: bool = False) -> str:
         """
         Synchronous (blocking) query. Blocks until the LLM responds.
 
         Args:
             prompt: The prompt to send.
-            timeout: Override the default timeout (seconds).
-
-        Returns:
-            Raw text response from the LLM.
-
-        Raises:
-            RuntimeError: If the query fails after retries.
+            timeout: Optional override for timeout.
+            require_json: Whether to enforce JSON formatting via logits processor.
         """
-        return self._execute_query(prompt)
+        if timeout:
+            self.timeout = timeout
+        return self._execute_query(prompt, require_json=require_json)
 
-    def query_async(
-        self,
-        prompt: str,
-        callback: Optional[Callable[[Optional[str]], None]] = None,
-    ) -> str:
-        """
-        Asynchronous (non-blocking) query. Returns a query ID immediately.
 
-        Args:
-            prompt: The prompt to send.
-            callback: Optional function called with the result (or None on failure).
-
-        Returns:
-            query_id: A unique ID to retrieve the result later.
-        """
-        query_id = f"q_{time.monotonic_ns()}"
-        self._request_queue.put({
-            "id": query_id,
-            "prompt": prompt,
-            "callback": callback,
-        })
-        return query_id
 
     def get_async_result(self, query_id: str, timeout: float = 0.0) -> Optional[dict]:
         """

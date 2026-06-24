@@ -270,12 +270,13 @@ Respond ONLY with valid JSON exactly matching this schema:
         try:
             # V3: Use bridge if available, otherwise direct request
             if self._bridge:
-                raw_text = self._bridge.query_sync(prompt)
+                raw_text = self._bridge.query_sync(prompt, require_json=True)
             else:
                 import requests
                 payload = {
                     "model": self.model_name,
                     "prompt": prompt,
+                    "raw": True,
                     "stream": False,
                     "format": "json",
                     "options": {
@@ -345,8 +346,8 @@ Respond ONLY with valid JSON exactly matching this schema:
                         payload = {
                             "model": self.model_name,
                             "prompt": prompt,
+                            "raw": True,
                             "stream": False,
-                            "format": "json",
                             "options": {
                                 "temperature": 0.0,
                                 "top_p": 1.0,
@@ -375,8 +376,8 @@ Respond ONLY with valid JSON exactly matching this schema:
                 payload = {
                     "model": self.model_name,
                     "prompt": prompt,
+                    "raw": True,
                     "stream": False,
-                    "format": "json",
                     "options": {
                         "temperature": 0.0,
                         "top_p": 1.0,
