@@ -48,6 +48,8 @@ def determine_options(inv: dict) -> tuple[str, str, str]:
             return "CRAFT_PICKAXE", "CRAFT_PICKAXE", "Have Wood and Stone. Both agents craft Pickaxe at workbench."
         elif w >= 1 and b == 0:
             return "BUILD_BRIDGE", "COLLECT_STONE", "Agent 0 builds bridge early, Agent 1 gets stone."
+        elif w >= 1 and b == 1:
+            return "CRAFT_PICKAXE", "COLLECT_STONE", "Agent 0 waits, Agent 1 gets stone."
         elif s >= 1:
             return "COLLECT_WOOD", "CRAFT_PICKAXE", "Agent 0 gets wood, Agent 1 waits at workbench."
         else:
@@ -62,8 +64,10 @@ def determine_options(inv: dict) -> tuple[str, str, str]:
             a1_opt = "CRAFT_ARMOR"
         elif i == 0 and (sw == 0 or a == 0):
             a1_opt = "MINE_IRON"
-        elif sw >= 1 and a >= 1 and e == 0:
+        elif sw >= 1 and a >= 1 and b >= 1 and e == 0:
             a1_opt = "FIGHT_ENEMY"
+        elif sw >= 1 and a >= 1 and b == 0 and e == 0:
+            a1_opt = "IDLE"
         elif e >= 1 and g == 0:
             a1_opt = "COLLECT_GOLD"
         else:
@@ -91,34 +95,37 @@ def generate_inventory_states():
     # Phase 1: Early game - collecting wood and stone
     for wood in range(3):  # 0, 1, 2
         for stone in range(2):  # 0, 1
-            states.append({
-                "wood": wood, "stone": stone, "iron": 0,
-                "pickaxe": 0, "sword": 0, "armor": 0,
-                "gold": 0, "bridge": 0, "enemy": 0
-            })
+            for bridge in range(2):
+                states.append({
+                    "wood": wood, "stone": stone, "iron": 0,
+                    "pickaxe": 0, "sword": 0, "armor": 0,
+                    "gold": 0, "bridge": bridge, "enemy": 0
+                })
     
     # Phase 2: Have pickaxe, mining iron
     for wood in range(3):
         for iron in range(3):  # 0, 1, 2
-            states.append({
-                "wood": wood, "stone": 0, "iron": iron,
-                "pickaxe": 1, "sword": 0, "armor": 0,
-                "gold": 0, "bridge": 0, "enemy": 0
-            })
+            for bridge in range(2):
+                states.append({
+                    "wood": wood, "stone": 0, "iron": iron,
+                    "pickaxe": 1, "sword": 0, "armor": 0,
+                    "gold": 0, "bridge": bridge, "enemy": 0
+                })
     
     # Phase 3: Crafting sword and armor (need 2 iron total)
     for wood in range(3):
         for iron in range(3):
             for sword in range(2):
                 for armor in range(2):
-                    # Skip impossible: can't have sword/armor without having used iron
-                    if sword + armor > 2:
-                        continue
-                    states.append({
-                        "wood": wood, "stone": 0, "iron": iron,
-                        "pickaxe": 1, "sword": sword, "armor": armor,
-                        "gold": 0, "bridge": 0, "enemy": 0
-                    })
+                    for bridge in range(2):
+                        # Skip impossible: can't have sword/armor without having used iron
+                        if sword + armor > 2:
+                            continue
+                        states.append({
+                            "wood": wood, "stone": 0, "iron": iron,
+                            "pickaxe": 1, "sword": sword, "armor": armor,
+                            "gold": 0, "bridge": bridge, "enemy": 0
+                        })
     
     # Phase 4: Building bridge (need wood)
     for wood in range(3):
