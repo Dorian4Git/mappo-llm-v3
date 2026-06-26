@@ -191,13 +191,20 @@ def generate_dataset(output_path: str, target_size: int = 1200):
     
     for inv in base_states:
         for a0_status, a1_status in agent_statuses:
-            a0_opt, a1_opt, reasoning = determine_options(inv)
+            # Phase 2: Stochastic Oracle Augmentation (SOA)
+            # 10% chance to apply random masking dropout
+            inv_to_oracle = inv.copy()
+            if random.random() < 0.10:
+                key_to_corrupt = random.choice(list(inv_to_oracle.keys()))
+                inv_to_oracle[key_to_corrupt] = 0
+
+            a0_opt, a1_opt, reasoning = determine_options(inv_to_oracle)
             
             # Validate options
             assert a0_opt in VALID_OPTIONS, f"Invalid A0 option: {a0_opt}"
             assert a1_opt in VALID_OPTIONS, f"Invalid A1 option: {a1_opt}"
             
-            prompt = prompt_builder.build_hrl_prompt(inv, a0_status, a1_status)
+            prompt = prompt_builder.build_hrl_prompt(inv_to_oracle, a0_status, a1_status)
             
             completion = json.dumps({
                 "dag_check": reasoning,

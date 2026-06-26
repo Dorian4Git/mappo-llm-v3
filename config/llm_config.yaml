@@ -1,6 +1,6 @@
 llm:
   backend: ollama          # ollama | huggingface
-  model_name: "qwen2.5:7b"
+  model_name: "mappo-expert"
   host: "http://localhost:11434/api/generate"
   timeout: 30
   max_retries: 3

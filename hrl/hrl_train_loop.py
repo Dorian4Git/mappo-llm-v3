@@ -102,6 +102,10 @@ def train_mappo_hrl(
 
     global_step_counter = 0
     best_avg_env_reward = -float("inf")
+    
+    # Tracking for tensorboard
+    epoch_intrinsic_reward_sum = 0.0
+    epoch_intrinsic_reward_count = 0
 
     N = n_envs * num_agents
     step_role_ids = torch.tensor(
@@ -206,23 +210,27 @@ def train_mappo_hrl(
             
             # Agent 0
             z0 = get_option_target_zone(a0_opt)
-            dist0_prev = np.linalg.norm(pos_prev[:, 0] - vec_env.zones[np.arange(n_envs), z0], axis=1) 
-            dist0_next = np.linalg.norm(vec_env.pos[:, 0] - vec_env.zones[np.arange(n_envs), z0], axis=1) 
+            idle_mask_0 = (z0 == -1)
+            safe_z0 = np.where(idle_mask_0, 0, z0)
+            
+            dist0_prev = np.linalg.norm(pos_prev[:, 0] - vec_env.zones[np.arange(n_envs), safe_z0], axis=1) 
+            dist0_next = np.linalg.norm(vec_env.pos[:, 0] - vec_env.zones[np.arange(n_envs), safe_z0], axis=1) 
             phi0_prev = MAX_DIST - dist0_prev 
             phi0_next = MAX_DIST - dist0_next 
-            shaping0 = (0.99 * phi0_next) - phi0_prev
+            shaping0 = np.where(idle_mask_0, 0.0, (0.99 * phi0_next) - phi0_prev)
             intrinsic_r[:, 0] = np.where(a0_success, 1.0 + step_penalty, step_penalty + (shaping0 * 0.05))
-            intrinsic_r[:, 0] = np.where(z0 == -1, step_penalty, intrinsic_r[:, 0])
             
             # Agent 1
             z1 = get_option_target_zone(a1_opt)
-            dist1_prev = np.linalg.norm(pos_prev[:, 1] - vec_env.zones[np.arange(n_envs), z1], axis=1)
-            dist1_next = np.linalg.norm(vec_env.pos[:, 1] - vec_env.zones[np.arange(n_envs), z1], axis=1)
+            idle_mask_1 = (z1 == -1)
+            safe_z1 = np.where(idle_mask_1, 0, z1)
+            
+            dist1_prev = np.linalg.norm(pos_prev[:, 1] - vec_env.zones[np.arange(n_envs), safe_z1], axis=1)
+            dist1_next = np.linalg.norm(vec_env.pos[:, 1] - vec_env.zones[np.arange(n_envs), safe_z1], axis=1)
             phi1_prev = MAX_DIST - dist1_prev
             phi1_next = MAX_DIST - dist1_next
-            shaping1 = (0.99 * phi1_next) - phi1_prev
+            shaping1 = np.where(idle_mask_1, 0.0, (0.99 * phi1_next) - phi1_prev)
             intrinsic_r[:, 1] = np.where(a1_success, 1.0 + step_penalty, step_penalty + (shaping1 * 0.05))
-            intrinsic_r[:, 1] = np.where(z1 == -1, step_penalty, intrinsic_r[:, 1])
             
             # --- HRL Vectorized LLM Trigger Logic ---
             
@@ -303,6 +311,9 @@ def train_mappo_hrl(
             buf_dones[step] = terminal_mask
 
             if terminal.any():
+                term_idx = np.where(terminal)[0]
+                option_controller.reset_options(term_idx)
+                
                 epoch_episode_count += int(terminal.sum())
                 term_flags = info['terminal_flags']
                 gold_mined_mask = term_flags[terminal, I_GOLD] > 0
@@ -312,6 +323,9 @@ def train_mappo_hrl(
 
             epoch_env_reward_sum += float(env_rewards.sum())
             epoch_env_reward_count += n_envs * num_agents
+            
+            epoch_intrinsic_reward_sum += float(intrinsic_r.sum())
+            epoch_intrinsic_reward_count += n_envs * num_agents
 
             all_obs = next_obs
             all_fov, all_gmap = vec_env._get_obs_batch_fov()
@@ -441,8 +455,9 @@ def train_mappo_hrl(
 
         # Logging & Scheduling
         avg_loss = float(np.mean(epoch_losses))
-        avg_env_reward = epoch_env_reward_sum / max(epoch_env_reward_count, 1)
-        success_rate = epoch_success_count / max(epoch_episode_count, 1)
+        avg_env_reward = epoch_env_reward_sum / max(1, epoch_env_reward_count)
+        avg_intrinsic = epoch_intrinsic_reward_sum / max(1, epoch_intrinsic_reward_count)
+        gold_pct = (epoch_success_count / max(1, epoch_episode_count)) * 100.0
         update_time = time.perf_counter() - update_start
 
         if update <= warmup_updates:
@@ -454,7 +469,8 @@ def train_mappo_hrl(
             pg['lr'] = lr_now
 
         writer.add_scalar("Rewards/Avg_Env_Reward", avg_env_reward, global_step_counter)
-        writer.add_scalar("Episodes/Success_Rate", success_rate, global_step_counter)
+        writer.add_scalar("Rewards/Avg_Intrinsic_Reward", avg_intrinsic, global_step_counter)
+        writer.add_scalar("Subtasks/Gold_Pct", gold_pct, global_step_counter)
         writer.add_scalar("TD_Error/Abs_Mean", td_stats["abs_mean_td_error"], global_step_counter)
 
         for fi in range(NUM_ITEMS):
@@ -462,7 +478,7 @@ def train_mappo_hrl(
 
         if update % 10 == 0:
             print(f"Epoch {update:>4}/{num_updates} | Loss: {avg_loss:.4f} | "
-                  f"R_env: {avg_env_reward:.4f} | Gold: {success_rate:.0%} | "
+                  f"R_env: {avg_env_reward:.4f} | Gold: {gold_pct/100.0:.0%} | "
                   f"TD: {td_stats['abs_mean_td_error']:.4f} | {update_time:.2f}s")
 
         if avg_env_reward > best_avg_env_reward:

@@ -33,6 +33,13 @@ class OptionController:
         self.llm_pending = np.zeros(n_envs, dtype=bool)
         self.cooldown_counter = np.zeros(n_envs, dtype=int)
 
+    def reset_options(self, env_indices):
+        """Resets the options and states for terminal environments."""
+        self._active_options_a0[env_indices] = 0 # COLLECT_WOOD
+        self._active_options_a1[env_indices] = 1 # COLLECT_STONE
+        self.llm_pending[env_indices] = False
+        self.cooldown_counter[env_indices] = 0
+
     def set_pending(self, env_indices, status: bool):
         """Locks or unlocks the LLM query status for specific environments."""
         self.llm_pending[env_indices] = status

@@ -1,0 +1,4 @@
+FROM data/models/mappo-expert.gguf
+PARAMETER temperature 0.0
+PARAMETER top_p 1.0
+SYSTEM "You are an expert RL reward designer specialized in cooperative MARL environments."
