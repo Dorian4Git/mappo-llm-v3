@@ -58,3 +58,8 @@ To benchmark the fine-tuned adapter against the base Qwen model, use the `--disa
 ```bash
 python scripts/run_hrl.py --enable-logging --disable-lora
 ```
+
+To resume training from a checkpoint:
+```bash
+python scripts/run_hrl.py --llm-backend ollama --llm-model mappo-expert --resume checkpoints/hrl_latest.pt 
+```

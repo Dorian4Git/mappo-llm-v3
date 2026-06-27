@@ -70,6 +70,7 @@ def train_mappo_hrl(
     llm_backend: str = "ollama",
     llm_model: str = "qwen2.5:7b",
     disable_lora: bool = False,
+    resume_path: str = None,
 ):
     num_agents = 2
     # 2 (pos) + 3 (goal padding) + 10 (inv) + NUM_OPTIONS (one-hot option)
@@ -100,7 +101,17 @@ def train_mappo_hrl(
     print(f"[HRL Train] Using HRL Options Framework")
     print(f"[HRL Train] Network: {'deep (3-layer)' if deep else 'standard (2-layer)'}")
 
-    global_step_counter = 0
+    start_update = 1
+    if resume_path and os.path.exists(resume_path):
+        print(f"[HRL Train] Resuming from checkpoint: {resume_path}")
+        checkpoint = torch.load(resume_path, map_location=device)
+        agent.load_state_dict(checkpoint["agent_state_dict"])
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        start_update = checkpoint["update"] + 1
+        global_step_counter = checkpoint.get("global_step_counter", 0)
+    else:
+        global_step_counter = 0
+
     best_avg_env_reward = -float("inf")
     
     # Tracking for tensorboard
@@ -151,7 +162,7 @@ def train_mappo_hrl(
     max_grad_norm = 0.5
     lr_initial, lr_final, warmup_updates = 3e-4, 1e-5, 20
 
-    for update in range(1, num_updates + 1):
+    for update in range(start_update, num_updates + 1):
         update_start = time.perf_counter()
         epoch_episode_count, epoch_success_count = 0, 0
         epoch_subtask_steps = np.zeros(NUM_ITEMS, dtype=np.int64)
@@ -507,6 +518,17 @@ def train_mappo_hrl(
             best_avg_env_reward = avg_env_reward
             ckpt_name = "checkpoints/best_agent_nolora.pt" if disable_lora else "checkpoints/best_agent.pt"
             torch.save({'update': update, 'model_state_dict': agent.state_dict()}, ckpt_name)
+            
+        if update % 50 == 0 or update == num_updates:
+            save_path = os.path.join("checkpoints", f"hrl_latest.pt")
+            torch.save({
+                "update": update,
+                "global_step_counter": global_step_counter,
+                "agent_state_dict": agent.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+            }, save_path)
+            if update % 10 == 0:
+                print(f"[HRL Train] Saved checkpoint to {save_path}")
 
     vec_env.close()
     writer.close()
