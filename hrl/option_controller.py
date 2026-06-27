@@ -32,6 +32,25 @@ class OptionController:
         # Track pending status PER environment
         self.llm_pending = np.zeros(n_envs, dtype=bool)
         self.cooldown_counter = np.zeros(n_envs, dtype=int)
+        
+        # Track active duration of the current option per environment
+        self.option_age = np.zeros(n_envs, dtype=np.int32)
+
+    def tick(self):
+        """Increment the age of active options. Called once per rollout step."""
+        self.option_age += 1
+
+    def get_stale_mask(self, threshold: int = 150) -> np.ndarray:
+        """Identify environments stuck beyond threshold.
+        
+        Excludes IDLE (index 9) — intentional waiting should never
+        trigger a staleness reset.
+        """
+        IDLE_IDX = OPTION_NAMES.index("IDLE")
+        age_exceeded = self.option_age >= threshold
+        # Exclude IDLE from staleness triggers
+        not_idle = (self._active_options_a0 != IDLE_IDX) | (self._active_options_a1 != IDLE_IDX)
+        return age_exceeded & not_idle
 
     def reset_options(self, env_indices):
         """Resets the options and states for terminal environments."""
@@ -39,6 +58,7 @@ class OptionController:
         self._active_options_a1[env_indices] = 1 # COLLECT_STONE
         self.llm_pending[env_indices] = False
         self.cooldown_counter[env_indices] = 0
+        self.option_age[env_indices] = 0
 
     def set_pending(self, env_indices, status: bool):
         """Locks or unlocks the LLM query status for specific environments."""
@@ -62,6 +82,7 @@ class OptionController:
                         
                         self._active_options_a0[env_idx] = OPTION_NAMES.index(a0_opt) if a0_opt in OPTION_NAMES else 0
                         self._active_options_a1[env_idx] = OPTION_NAMES.index(a1_opt) if a1_opt in OPTION_NAMES else 0
+                        self.option_age[env_idx] = 0
                         
                         parsed_data["agent_0_option"] = a0_opt
                         parsed_data["agent_1_option"] = a1_opt
@@ -101,9 +122,11 @@ class OptionController:
                 if env_indices is None:
                     self._active_options_a0[:] = a0_idx
                     self._active_options_a1[:] = a1_idx
+                    self.option_age[:] = 0
                 else:
                     self._active_options_a0[env_indices] = a0_idx
                     self._active_options_a1[env_indices] = a1_idx
+                    self.option_age[env_indices] = 0
                     
                 print(f"[Orchestrator Logic] {data.get('dag_check', 'No reasoning provided')}")
                 print(f"[Assigned Envs {env_indices}] A0: {OPTION_NAMES[a0_idx]} | A1: {OPTION_NAMES[a1_idx]}")

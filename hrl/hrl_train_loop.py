@@ -218,7 +218,8 @@ def train_mappo_hrl(
             phi0_prev = MAX_DIST - dist0_prev 
             phi0_next = MAX_DIST - dist0_next 
             shaping0 = np.where(idle_mask_0, 0.0, (0.99 * phi0_next) - phi0_prev)
-            intrinsic_r[:, 0] = np.where(a0_success, 1.0 + step_penalty, step_penalty + (shaping0 * 0.05))
+            # Intrinsic reward is PURE shaping + success bonus. No step penalty.
+            intrinsic_r[:, 0] = np.where(a0_success, 1.0, shaping0 * 0.05)
             
             # Agent 1
             z1 = get_option_target_zone(a1_opt)
@@ -230,10 +231,14 @@ def train_mappo_hrl(
             phi1_prev = MAX_DIST - dist1_prev
             phi1_next = MAX_DIST - dist1_next
             shaping1 = np.where(idle_mask_1, 0.0, (0.99 * phi1_next) - phi1_prev)
-            intrinsic_r[:, 1] = np.where(a1_success, 1.0 + step_penalty, step_penalty + (shaping1 * 0.05))
+            # Intrinsic reward is PURE shaping + success bonus. No step penalty.
+            intrinsic_r[:, 1] = np.where(a1_success, 1.0, shaping1 * 0.05)
             
             # --- HRL Vectorized LLM Trigger Logic ---
             
+            # Tick option ages at start of each step
+            option_controller.tick()
+
             # Decrement cooldowns
             option_controller.cooldown_counter = np.maximum(0, option_controller.cooldown_counter - 1)
             
@@ -241,7 +246,8 @@ def train_mappo_hrl(
             success_mask = a0_success | a1_success
             
             # 2. Filter out envs that are already pending or on cooldown
-            ready_mask = success_mask & (~option_controller.llm_pending) & (option_controller.cooldown_counter == 0)
+            stale_mask = option_controller.get_stale_mask(threshold=150)
+            ready_mask = (success_mask | stale_mask) & (~option_controller.llm_pending) & (option_controller.cooldown_counter == 0)
             trigger_envs = np.where(ready_mask)[0]
             
             if len(trigger_envs) > 0:
@@ -267,10 +273,19 @@ def train_mappo_hrl(
                     batched_inventories.append(inv_dict)
                     
                     rep_env = unique_to_envs[state_idx][0]
+                    is_stale = stale_mask[rep_env]
                     a0_stat = "Finished" if a0_success[rep_env] else f"Working on {a0_opt[rep_env]}"
                     a1_stat = "Finished" if a1_success[rep_env] else f"Working on {a1_opt[rep_env]}"
                     
-                    prompt = prompt_builder.build_hrl_prompt(inv_dict, a0_stat, a1_stat)
+                    if is_stale:
+                        prompt = prompt_builder.build_hrl_reflection_prompt(
+                            inv_dict,
+                            a0_option=a0_opt[rep_env], a1_option=a1_opt[rep_env],
+                            a0_status=a0_stat, a1_status=a1_stat,
+                            stale_steps=int(option_controller.option_age[rep_env])
+                        )
+                    else:
+                        prompt = prompt_builder.build_hrl_prompt(inv_dict, a0_stat, a1_stat)
                     batched_prompts.append(prompt)
                 
                 # 3. Define the asynchronous callback for the batch
@@ -306,7 +321,14 @@ def train_mappo_hrl(
                 # 4. Dispatch to the async bridge
                 bridge.query_batch_async(batched_prompts, callback=make_batch_cb(unique_to_envs, batched_prompts, batched_inventories, global_step_counter))
 
-            total_r = env_rewards + intrinsic_r
+            # Halve intrinsic influence to prevent drowning sparse env rewards
+            total_r = env_rewards + 0.5 * intrinsic_r
+            
+            writer.add_scalar("HRL/Option_Staleness_Resets", int(stale_mask.sum()), global_step_counter)
+            writer.add_scalar("HRL/LLM_Queries_Dispatched", len(trigger_envs), global_step_counter)
+            writer.add_scalar("Rewards/Avg_Intrinsic_A0", float(intrinsic_r[:, 0].mean()), global_step_counter)
+            writer.add_scalar("Rewards/Avg_Intrinsic_A1", float(intrinsic_r[:, 1].mean()), global_step_counter)
+            writer.add_scalar("Rewards/Avg_Total_Reward", float(total_r.mean()), global_step_counter)
             buf_rewards[step] = torch.from_numpy(total_r.reshape(N)).to(device, non_blocking=True)
             buf_dones[step] = terminal_mask
 

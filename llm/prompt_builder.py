@@ -83,6 +83,41 @@ class PromptBuilder:
     }}
     """
 
+    def build_hrl_reflection_prompt(self, inventory, a0_option, a1_option, a0_status, a1_status, stale_steps: int) -> str:
+        """Build a counterfactual reflection prompt for stale options.
+        
+        Forces the LLM to diagnose WHY the previous assignment failed before
+        issuing a new one, utilizing zero-shot reasoning to debug its own
+        prior hallucination.
+        """
+        return f"""
+    You are the high-level Cognitive Orchestrator for two MARL agents.
+    Strict Dependency DAG: (Wood+Stone) -> Pickaxe -> Iron -> (Sword+Armor) -> Bridge -> Enemy -> Gold.
+
+    ### REFLECTION REQUIRED:
+    Agent 0 was assigned "{a0_option}" and Agent 1 was assigned "{a1_option}".
+    After {stale_steps} steps, NEITHER agent has succeeded.
+
+    ### CURRENT STATE:
+    Inventory: {inventory}
+    Agent 0 Status: {a0_status}
+    Agent 1 Status: {a1_status}
+
+    ### YOUR TASK:
+    1. First, diagnose what prerequisite is MISSING that prevented success.
+    2. Then assign corrected options that respect the DAG.
+    Available Options: ["COLLECT_WOOD", "COLLECT_STONE", "CRAFT_PICKAXE", "MINE_IRON", "CRAFT_SWORD", "CRAFT_ARMOR", "BUILD_BRIDGE", "FIGHT_ENEMY", "COLLECT_GOLD", "IDLE"]
+
+    Respond ONLY with valid JSON exactly matching this schema:
+    {{
+      "reflection": "<1 sentence diagnosing why the previous assignment failed>",
+      "dag_check": "<1 sentence verifying prerequisites for new assignment>",
+      "agent_0_option": "<Option>",
+      "agent_1_option": "<Option>"
+    }}
+    """
+
+
     def _build_reshaping_prompt(
         self,
         metrics: dict,

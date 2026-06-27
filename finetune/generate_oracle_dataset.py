@@ -43,45 +43,72 @@ def determine_options(inv: dict) -> tuple[str, str, str]:
     w, s, p, i, sw, a = inv['wood'], inv['stone'], inv['pickaxe'], inv['iron'], inv['sword'], inv['armor']
     b, e, g = inv.get('bridge', 0), inv.get('enemy', 0), inv.get('gold', 0)
     
+    # ═══════════════════════════════════════════════════════════
+    # PHASE 1: Securing the Pickaxe is the STRICT priority.
+    #          Wood is RESERVED for Pickaxe. Never build bridge.
+    # ═══════════════════════════════════════════════════════════
     if p == 0:
         if w >= 1 and s >= 1:
             return "CRAFT_PICKAXE", "CRAFT_PICKAXE", "Have Wood and Stone. Both agents craft Pickaxe at workbench."
-        elif w >= 1 and b == 0:
-            return "BUILD_BRIDGE", "COLLECT_STONE", "Agent 0 builds bridge early, Agent 1 gets stone."
-        elif w >= 1 and b == 1:
-            return "CRAFT_PICKAXE", "COLLECT_STONE", "Agent 0 waits, Agent 1 gets stone."
-        elif s >= 1:
-            return "COLLECT_WOOD", "CRAFT_PICKAXE", "Agent 0 gets wood, Agent 1 waits at workbench."
-        else:
+        elif w == 0 and s == 0:
             return "COLLECT_WOOD", "COLLECT_STONE", "Need pickaxe. Agent 0 gets wood, Agent 1 gets stone."
-    else:
-        # Determine A1 (Miner/Fighter) option
+        elif w >= 1 and s == 0:
+            # A0 must NOT build the bridge. It idles or collects buffer wood.
+            return "COLLECT_WOOD", "COLLECT_STONE", "Have wood, waiting for stone. A0 collects buffer wood, A1 gets stone."
+        elif w == 0 and s >= 1:
+            return "COLLECT_WOOD", "IDLE", "Have stone, need wood for pickaxe. A0 gets wood, A1 waits."
+
+    # ═══════════════════════════════════════════════════════════
+    # PHASE 2: Iron, Gear, and Bridge Preparation.
+    #          Pickaxe secured. Bridge can now safely be built.
+    # ═══════════════════════════════════════════════════════════
+    elif p == 1 and (sw == 0 or a == 0):
+        # Determine A1's priority: mine iron → craft gear
         if i == 0 and sw == 0 and a == 0:
             a1_opt = "MINE_IRON"
+            a1_reason = "A1 mines iron"
         elif sw == 0 and i >= 1:
             a1_opt = "CRAFT_SWORD"
+            a1_reason = "A1 crafts sword"
         elif a == 0 and i >= 1:
             a1_opt = "CRAFT_ARMOR"
+            a1_reason = "A1 crafts armor"
         elif i == 0 and (sw == 0 or a == 0):
             a1_opt = "MINE_IRON"
-        elif sw >= 1 and a >= 1 and b >= 1 and e == 0:
-            a1_opt = "FIGHT_ENEMY"
-        elif sw >= 1 and a >= 1 and b == 0 and e == 0:
-            a1_opt = "IDLE"
-        elif e >= 1 and g == 0:
-            a1_opt = "COLLECT_GOLD"
+            a1_reason = "A1 needs more iron for remaining gear"
         else:
-            a1_opt = "IDLE" # Fallback
-            
-        # Determine A0 (Lumberjack/Builder) option
-        if b == 0 and w == 0:
+            a1_opt = "MINE_IRON"
+            a1_reason = "A1 mines iron (fallback)"
+
+        # Determine A0's priority: collect wood for bridge → build bridge
+        if b == 0 and w < 1:
             a0_opt = "COLLECT_WOOD"
+            a0_reason = "A0 collects wood for bridge"
         elif b == 0 and w >= 1:
             a0_opt = "BUILD_BRIDGE"
+            a0_reason = "A0 builds bridge (pickaxe secured)"
         else:
-            a0_opt = "IDLE" # A0 waits.
-            
-        return a0_opt, a1_opt, "A0 handles bridge, A1 handles mining and combat."
+            a0_opt = "IDLE"
+            a0_reason = "A0 waits (bridge done)"
+
+        return a0_opt, a1_opt, f"{a0_reason}, {a1_reason}."
+
+    # ═══════════════════════════════════════════════════════════
+    # PHASE 3: Endgame — Combat and Gold.
+    #          Requires: Sword + Armor + Bridge.
+    # ═══════════════════════════════════════════════════════════
+    else:
+        if sw >= 1 and a >= 1 and b >= 1 and e == 0:
+            return "IDLE", "FIGHT_ENEMY", "All gear ready. A1 fights enemy."
+        elif sw >= 1 and a >= 1 and b == 0 and e == 0:
+            if w >= 1:
+                return "BUILD_BRIDGE", "IDLE", "Gear ready but need bridge. A0 builds."
+            else:
+                return "COLLECT_WOOD", "IDLE", "Gear ready, A0 collects wood for bridge."
+        elif e >= 1 and g == 0:
+            return "IDLE", "COLLECT_GOLD", "Enemy defeated. A1 collects gold."
+        else:
+            return "IDLE", "IDLE", "Terminal or unknown state."
 
 
 def generate_inventory_states():
