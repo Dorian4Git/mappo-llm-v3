@@ -39,7 +39,7 @@ class LLMBridge:
         backend: str = "ollama",
         model_name: str = "qwen2.5:7b",
         host: str = "http://localhost:11434/api/generate",
-        timeout: int = 30,
+        timeout: int = 120,
         max_retries: int = 3,
         temperature: float = 0.0,
         top_p: float = 1.0,

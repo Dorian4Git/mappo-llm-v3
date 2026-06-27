@@ -46,6 +46,12 @@ Run HRL Options Framework (defaults to using the fine-tuned LoRA adapter):
 python scripts/run_hrl.py --enable-logging
 ```
 
+Run HRL Options Framework using the fine-tuned LoRA adapter:
+```bash
+python scripts/run_hrl.py --llm-backend huggingface_peft --llm-model "data/models/qlora_adapter"
+```
+
+
 Run HRL Options Framework using Gemini (Google AI Studio):
 ```bash
 python scripts/run_hrl.py --enable-logging --llm-backend gemini --llm-model gemini-2.5-flash
