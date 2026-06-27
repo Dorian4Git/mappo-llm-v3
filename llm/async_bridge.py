@@ -60,6 +60,8 @@ class LLMBridge:
         self._lock = threading.Lock()
         self._worker_thread: Optional[threading.Thread] = None
         self._running = False
+        self._cache = {}
+        self._cache_lock = threading.Lock()
 
         # HuggingFace model (loaded on demand for hot-swap)
         self._hf_model = None
@@ -76,6 +78,13 @@ class LLMBridge:
         )
         self._worker_thread.start()
 
+    def _get_cache_key(self, prompt):
+        """Serializes lists/dicts into hashable JSON strings for cache keys."""
+        if isinstance(prompt, str):
+            return prompt
+        import json
+        return json.dumps(prompt, sort_keys=True)
+
     def _worker_loop(self):
         """Background worker that processes queued LLM requests."""
         while self._running:
@@ -88,15 +97,37 @@ class LLMBridge:
             prompts = request["prompts"]
             callback = request.get("callback")
             require_json = request.get("require_json", False)
+            is_batch = request.get("is_batch", False)
 
             try:
-                # If backend is huggingface, we can batch natively
-                if len(prompts) > 1 and (self.backend == "huggingface" or self.backend == "huggingface_peft"):
-                    results = self._query_huggingface_batch(prompts)
-                else:
-                    results = [self._execute_query(p, require_json=require_json) for p in prompts]
-                
-                is_batch = request.get("is_batch", False)
+                results = [None] * len(prompts)
+                uncached_prompts = []
+                uncached_indices = []
+
+                # 1. Thread-safe Cache Retrieval
+                with self._cache_lock:
+                    for i, p in enumerate(prompts):
+                        key = self._get_cache_key(p)
+                        if key in self._cache:
+                            results[i] = self._cache[key]
+                        else:
+                            uncached_prompts.append(p)
+                            uncached_indices.append(i)
+
+                if uncached_prompts:
+                    # 2. Batch query ONLY the uncached prompts
+                    if len(uncached_prompts) > 1 and (self.backend == "huggingface" or self.backend == "huggingface_peft"):
+                        new_results = self._query_huggingface_batch(uncached_prompts)
+                    else:
+                        new_results = [self._execute_query(p, require_json=require_json) for p in uncached_prompts]
+                    
+                    # 3. Thread-safe Cache Update
+                    with self._cache_lock:
+                        for i, res in zip(uncached_indices, new_results):
+                            results[i] = res
+                            key = self._get_cache_key(uncached_prompts[i])
+                            self._cache[key] = res
+
                 if callback:
                     callback(results if is_batch else results[0])
             except Exception as e:

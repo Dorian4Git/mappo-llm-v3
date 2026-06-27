@@ -197,8 +197,27 @@ def train_mappo_hrl(
             buf_rnn[step] = rnn_state
 
             actions_np = action.cpu().numpy().reshape(n_envs, num_agents)
+            
+            # --- Environment Rollout Masking ---
+            pending_mask = option_controller.llm_pending.copy()
+            if pending_mask.any():
+                actions_np[pending_mask] = 4  # NO-OP action
+                saved_pos = vec_env.pos[pending_mask].copy()
+                saved_inv = vec_env.inventory[pending_mask].copy()
+                saved_mined = vec_env.total_mined[pending_mask].copy()
+
             pos_prev = vec_env.pos.copy()
             next_obs, env_rewards, dones, truncs, info = vec_env.step(actions_np)
+            
+            if pending_mask.any():
+                vec_env.pos[pending_mask] = saved_pos
+                vec_env.inventory[pending_mask] = saved_inv
+                vec_env.total_mined[pending_mask] = saved_mined
+                vec_env.step_counts[pending_mask] -= 1  # Pause the environment timer
+                env_rewards[pending_mask] = 0.0
+                # Revert next_obs using the previous obs (all_obs is shape: batch x 2 x obs_dim)
+                next_obs[pending_mask] = all_obs[pending_mask]
+                
             terminal = dones | truncs
 
             terminal_expanded = np.stack([terminal, terminal], axis=1).reshape(-1)
