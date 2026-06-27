@@ -14,8 +14,12 @@ def convert_to_chatml(example: dict) -> dict:
     prompt = example["prompt"]
     completion = example["completion"]
     
-    # Simple split: everything before "### CURRENT STATE:" goes to system
-    if "### CURRENT STATE:" in prompt:
+    # Advanced splitting: Check for Reflection override first
+    if "### REFLECTION REQUIRED:" in prompt:
+        parts = prompt.split("### REFLECTION REQUIRED:")
+        system_content = parts[0].strip()
+        user_content = "### REFLECTION REQUIRED:\n" + parts[1].strip()
+    elif "### CURRENT STATE:" in prompt:
         parts = prompt.split("### CURRENT STATE:")
         system_content = parts[0].strip()
         user_content = "### CURRENT STATE:\n" + parts[1].strip()

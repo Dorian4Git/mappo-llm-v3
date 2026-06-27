@@ -193,13 +193,27 @@ def generate_inventory_states():
     return unique
 
 
+def get_dag_phase(inv: dict) -> int:
+    """Classifies an inventory state into its corresponding DAG progression phase."""
+    if inv['pickaxe'] == 0: return 1
+    if inv['pickaxe'] == 1 and inv['sword'] == 0 and inv['armor'] == 0: return 2
+    if inv['sword'] + inv['armor'] in [1, 2] and inv['bridge'] == 0: return 3
+    if inv['bridge'] == 1 and inv['enemy'] == 0: return 4
+    if inv['enemy'] == 1 and inv['gold'] == 0: return 5
+    return 6
+
 def generate_dataset(output_path: str, target_size: int = 1200):
-    """Generate the oracle dataset."""
+    """Generate the balanced and reflection-augmented oracle dataset."""
     prompt_builder = PromptBuilder()
     
     base_states = generate_inventory_states()
     print(f"Generated {len(base_states)} unique inventory states")
     
+    # 1. Phase Grouping
+    phase_buckets = {i: [] for i in range(1, 7)}
+    for state in base_states:
+        phase_buckets[get_dag_phase(state)].append(state)
+        
     examples = []
     
     # Generate examples for each state with different agent statuses
@@ -216,10 +230,17 @@ def generate_dataset(output_path: str, target_size: int = 1200):
         ("Working on BUILD_BRIDGE", "Working on FIGHT_ENEMY"),
     ]
     
-    for inv in base_states:
+    # 2. Balanced Phase Upsampling
+    target_per_phase = target_size // 6
+    balanced_states = []
+    for phase_id, states in phase_buckets.items():
+        if states:
+            # Sample with replacement to ensure strict phase uniformity
+            balanced_states.extend(random.choices(states, k=target_per_phase))
+
+    for inv in balanced_states:
         for a0_status, a1_status in agent_statuses:
             # Phase 2: Stochastic Oracle Augmentation (SOA)
-            # 10% chance to apply random masking dropout
             inv_to_oracle = inv.copy()
             if random.random() < 0.10:
                 key_to_corrupt = random.choice(list(inv_to_oracle.keys()))
@@ -231,13 +252,32 @@ def generate_dataset(output_path: str, target_size: int = 1200):
             assert a0_opt in VALID_OPTIONS, f"Invalid A0 option: {a0_opt}"
             assert a1_opt in VALID_OPTIONS, f"Invalid A1 option: {a1_opt}"
             
-            prompt = prompt_builder.build_hrl_prompt(inv_to_oracle, a0_status, a1_status)
-            
-            completion = json.dumps({
-                "dag_check": reasoning,
-                "agent_0_option": a0_opt,
-                "agent_1_option": a1_opt
-            }, indent=2)
+            # 3. Reflection Augmentation (40% injection rate)
+            if random.random() < 0.40:
+                # Generate a synthetic hallucinated state to force reflection
+                stale_a0 = random.choice([opt for opt in VALID_OPTIONS if opt != a0_opt])
+                stale_a1 = random.choice([opt for opt in VALID_OPTIONS if opt != a1_opt])
+                stale_steps = random.randint(50, 200)
+                
+                prompt = prompt_builder.build_hrl_reflection_prompt(
+                    inv_to_oracle, stale_a0, stale_a1, a0_status, a1_status, stale_steps
+                )
+                
+                reflection_reason = f"Previous assignment of {stale_a0} and {stale_a1} failed because agents lacked the necessary sub-tier items or spatial coordination."
+                
+                completion = json.dumps({
+                    "reflection": reflection_reason,
+                    "dag_check": reasoning,
+                    "agent_0_option": a0_opt,
+                    "agent_1_option": a1_opt
+                }, indent=2)
+            else:
+                prompt = prompt_builder.build_hrl_prompt(inv_to_oracle, a0_status, a1_status)
+                completion = json.dumps({
+                    "dag_check": reasoning,
+                    "agent_0_option": a0_opt,
+                    "agent_1_option": a1_opt
+                }, indent=2)
             
             examples.append({
                 "prompt": prompt,

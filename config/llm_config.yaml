@@ -35,7 +35,7 @@ reward_injector:
   ema_alpha: 0.2
 
 finetune:
-  base_model: "Qwen/Qwen2.5-7B"
+  base_model: "Qwen/Qwen2.5-7B-Instruct"
   lora_r: 16
   lora_alpha: 32
   lora_dropout: 0.05
