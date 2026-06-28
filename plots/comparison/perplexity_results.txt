@@ -1,0 +1,2 @@
+Base Model Perplexity: 8.4757
+QLoRA Model Perplexity: 1.0012

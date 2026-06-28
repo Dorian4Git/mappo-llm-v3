@@ -54,15 +54,17 @@ def main():
             if line:
                 examples.append(convert_to_chatml(json.loads(line)))
 
-    # Since the new dataset generator already permutations over all agent statuses,
-    # the dataset is naturally 550 examples. We do not need artificial inflation anymore.
-    # Duplicate dataset to ensure enough gradient updates (augmentation)
-    examples = examples * 2
     random.shuffle(examples)
     
     n_val = max(1, int(len(examples) * args.val_ratio))
     val_examples = examples[:n_val]
     train_examples = examples[n_val:]
+
+    # Since the new dataset generator already permutations over all agent statuses,
+    # the dataset is naturally 550 examples. We do not need artificial inflation anymore.
+    # Duplicate training dataset to ensure enough gradient updates (augmentation)
+    train_examples = train_examples * 2
+    random.shuffle(train_examples)
 
     os.makedirs(args.output, exist_ok=True)
     train_path = os.path.join(args.output, "train.jsonl")
