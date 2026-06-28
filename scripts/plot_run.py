@@ -58,6 +58,15 @@ def plot_subtasks(run_dir, out_dir, smooth=10):
         full_tag = f"Subtasks/{tag}_Pct"
         steps, vals = get_scalars(run_dir, full_tag)
         if steps:
+            filt = [(s, v) for s, v in zip(steps, vals) if v > 0.0 or s == 0]
+            if filt:
+                steps, vals = zip(*filt)
+                
+            # Fix scaling bug: Gold is logged as 0-100, others are 0-1.
+            vals = np.array(vals)
+            if np.max(vals) <= 1.05:
+                vals = vals * 100.0
+                
             if smooth > 1:
                 plt.plot(steps[smooth-1:], moving_average(vals, smooth), label=tag, linewidth=2)
             else:
