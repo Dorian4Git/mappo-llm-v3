@@ -197,7 +197,11 @@ class LLMBridge:
         formatted_prompts = []
         for prompt in prompts:
             if hasattr(self._hf_tokenizer, "apply_chat_template"):
-                if "### CURRENT STATE:" in prompt:
+                if "### REFLECTION REQUIRED:" in prompt:
+                    parts = prompt.split("### REFLECTION REQUIRED:")
+                    system_content = parts[0].strip()
+                    user_content = "### REFLECTION REQUIRED:\n" + parts[1].strip()
+                elif "### CURRENT STATE:" in prompt:
                     parts = prompt.split("### CURRENT STATE:")
                     system_content = parts[0].strip()
                     user_content = "### CURRENT STATE:\n" + parts[1].strip()
@@ -330,7 +334,11 @@ class LLMBridge:
             )
 
         if hasattr(self._hf_tokenizer, "apply_chat_template"):
-            if "### CURRENT STATE:" in prompt:
+            if "### REFLECTION REQUIRED:" in prompt:
+                parts = prompt.split("### REFLECTION REQUIRED:")
+                system_content = parts[0].strip()
+                user_content = "### REFLECTION REQUIRED:\n" + parts[1].strip()
+            elif "### CURRENT STATE:" in prompt:
                 parts = prompt.split("### CURRENT STATE:")
                 system_content = parts[0].strip()
                 user_content = "### CURRENT STATE:\n" + parts[1].strip()
