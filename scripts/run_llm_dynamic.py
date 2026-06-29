@@ -36,13 +36,25 @@ if __name__ == "__main__":
                         help="Use only critic trigger (no periodic LLM queries)")
     parser.add_argument("--llm-backend", type=str, default="ollama", choices=["ollama", "huggingface", "gemini"])
     parser.add_argument("--llm-model", type=str, default="qwen2.5:7b")
+    parser.add_argument("--fair-mode", action="store_true",
+                        help="Disable programmatic DAG guardrails and enable softmax attention budget")
+    parser.add_argument("--softmax-temp", type=float, default=0.5,
+                        help="Temperature for softmax attention budget (lower = sharper, default 0.5)")
     args = parser.parse_args()
 
     # Set up the LLM pipeline
     bridge = LLMBridge(backend=args.llm_backend, model_name=args.llm_model)
-    orchestrator = LLMOrchestratorV2(model_name=args.llm_model, bridge=bridge)
+    orchestrator = LLMOrchestratorV2(
+        model_name=args.llm_model, 
+        bridge=bridge,
+        enforce_dag_guardrails=not args.fair_mode
+    )
     prompt_builder = PromptBuilder()
-    reward_injector = RewardInjector()
+    reward_injector = RewardInjector(
+        enforce_dag_guardrails=not args.fair_mode,
+        use_softmax_attention=args.fair_mode,
+        softmax_temperature=args.softmax_temp,
+    )
 
     critic_trigger = CriticTrigger(
         orchestrator=orchestrator,
@@ -73,6 +85,7 @@ if __name__ == "__main__":
         callbacks=callbacks,
         trajectory_logger=traj_logger,
         llm_model_name=args.llm_model,
+        fair_mode=args.fair_mode,
     )
 
     # Cleanup

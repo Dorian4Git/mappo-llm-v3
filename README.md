@@ -31,6 +31,8 @@ Run LLM dynamic shaping (with standard 2-layer critic):
 ```bash
 python scripts/run_llm_dynamic.py --enable-logging
 
+python scripts/run_llm_dynamic.py --fair-mode --enable-logging  # Removed the random weights from the start of the training
+
 python scripts/run_llm_dynamic.py --enable-logging --llm-backend gemini --llm-model gemini-2.5-flash
 
 python scripts/run_llm_dynamic.py --enable-logging --llm-backend gemini --llm-model gemini-3.1-flash-lite

@@ -63,6 +63,7 @@ def train_mappo_v3(
     llm_model_name: str = "unknown",
     deep: bool = False,
     seed: int = 42,
+    fair_mode: bool = False,
     # V3 additions
     config_path: str = "config/train_config.yaml",
     callbacks: list = None,
@@ -108,7 +109,8 @@ def train_mappo_v3(
             shutil.rmtree(d)
 
     vec_env = BatchCraftingEnvV2(n_envs=n_envs, seed=seed)
-    orchestrator = LLMOrchestratorV2()
+    # Using LLMOrchestratorV2 primarily for goal lookup in the train loop
+    orchestrator = LLMOrchestratorV2(enforce_dag_guardrails=not fair_mode)
 
     agent = RoleConditionedMAPPOAgentV2(
         cnn_channels=9, goal_dim=goal_dim, flag_dim=NUM_ITEMS + 4, deep=deep,
@@ -128,6 +130,8 @@ def train_mappo_v3(
         'w_wood': 1.0, 'w_stone': 1.0, 'w_workbench': 1.0,
         'w_iron': 1.0, 'w_bridge': 1.0, 'w_enemy': 1.0, 'w_gold': 1.0,
     }
+    raw_llm_weights = None
+    softmax_llm_weights = None
     prev_llm_metrics = {}
     decay_active = False
     decay_steps = 0
@@ -141,7 +145,10 @@ def train_mappo_v3(
     prefix = "v3_Baseline"
     if llm_dynamic:
         safe_model = llm_model_name.replace(":", "-").replace("/", "-")
-        prefix = f"v3_LLMDynamic_{'Deep' if deep else 'Std'}_{safe_model}"
+        if fair_mode:
+            prefix = f"v3_LLMDynamic_Fair_NoDAG_{safe_model}"
+        else:
+            prefix = f"v3_LLMDynamic_{'Deep' if deep else 'Std'}_{safe_model}"
     elif no_shaping:
         prefix = "v3_Baseline_Sparse"
 
@@ -298,6 +305,9 @@ def train_mappo_v3(
                     goal_zones=goal_zone_indices[logged_env_ids],
                     goal_active=goal_active[logged_env_ids],
                     terminal=terminal[logged_env_ids],
+                    llm_weights=adaptive_weights,
+                    raw_llm_weights=raw_llm_weights,
+                    softmax_llm_weights=softmax_llm_weights,
                 )
 
             if terminal.any():
@@ -610,6 +620,14 @@ def train_mappo_v3(
         for k, v in adaptive_weights.items():
             writer.add_scalar(f"LLM_Weights/{k}", v, global_step_counter)
 
+        if raw_llm_weights is not None:
+            for k, v in raw_llm_weights.items():
+                writer.add_scalar(f"LLM_Weights_Raw/{k}", v, global_step_counter)
+
+        if softmax_llm_weights is not None:
+            for k, v in softmax_llm_weights.items():
+                writer.add_scalar(f"LLM_Weights_Softmax/{k}", v, global_step_counter)
+
         if update % 10 == 0:
             sps = int(n_envs * num_steps / max(update_time, 1e-6))
             p_pick = epoch_subtask_steps[3] / max(epoch_episode_count, 1)
@@ -642,6 +660,10 @@ def train_mappo_v3(
                         for k, v in adaptive_weights.items()
                     )
                     print(f"      [Callback] Weights updated: {w_str}")
+                if "raw_weights" in result:
+                    raw_llm_weights = result["raw_weights"]
+                if "softmax_weights" in result:
+                    softmax_llm_weights = result["softmax_weights"]
 
         # ══════════════════════════════════════════════════════════
         # CHECKPOINTING
@@ -671,8 +693,9 @@ def train_mappo_v3(
 
         # ══════════════════════════════════════════════════════════
         # LLM ADAPTIVE WEIGHTS (legacy V2 behavior, still supported)
+        # Skipped in fair_mode — CriticTrigger is sole authority
         # ══════════════════════════════════════════════════════════
-        if llm_dynamic and update % llm_interval == 0:
+        if llm_dynamic and not fair_mode and update % llm_interval == 0:
             curr_metrics = {
                 "wood": 100 * epoch_subtask_steps[0] / max(epoch_episode_count, 1),
                 "stone": 100 * epoch_subtask_steps[1] / max(epoch_episode_count, 1),

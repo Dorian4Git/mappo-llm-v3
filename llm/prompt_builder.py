@@ -132,11 +132,19 @@ class PromptBuilder:
         avg_reward = metrics.get("avg_env_reward", 0.0)
         update = metrics.get("update", 0)
 
-        # Format subtask completion rates
+        # Format subtask completion rates with saturation flags
+        # Environment limits: wood=2, stone=1, iron=2, pickaxe/sword/armor/bridge/enemy/gold=1
+        SATURATION_THRESHOLDS = {
+            "wood": 0.95, "stone": 0.95, "pickaxe": 0.95,
+            "iron": 0.95, "sword": 0.95, "armor": 0.95,
+            "bridge": 0.95, "enemy": 0.95, "gold": 0.95,
+        }
         subtask_lines = []
         for name in ["wood", "stone", "pickaxe", "iron", "sword", "armor", "bridge", "enemy", "gold"]:
-            pct = subtask_pcts.get(name, 0.0) * 100
-            subtask_lines.append(f"  * {name.capitalize()}: {pct:.1f}%")
+            pct = subtask_pcts.get(name, 0.0)
+            threshold = SATURATION_THRESHOLDS.get(name, 0.95)
+            flag = " ✓ SATURATED" if pct >= threshold else ""
+            subtask_lines.append(f"  * {name.capitalize()}: {pct * 100:.1f}%{flag}")
         subtask_block = "\n".join(subtask_lines)
 
         # Format current weights
@@ -146,9 +154,19 @@ class PromptBuilder:
             weight_lines.append(f"  * {k}: {v:.3f}")
         weight_block = "\n".join(weight_lines)
 
-        return f"""You are an expert RL reward designer for a cooperative multi-agent POMDP environment.
+        # Episodic Memory Integration
+        memory_buffer = metrics.get("memory_buffer", [])
+        memory_lines = []
+        if memory_buffer:
+            memory_lines.append("\n### EPISODIC MEMORY (Recent Interventions & Results):")
+            for m in memory_buffer:
+                # compact dict formatting
+                w_str = ", ".join(f"{k.replace('w_','')}: {v:.2f}" for k,v in m['weights'].items())
+                memory_lines.append(f"  * Suggested Weights: {w_str}")
+                memory_lines.append(f"    -> Resulting TD Error Delta (Negative is better): {m['td_delta']:.4f}")
+        memory_block = "\n".join(memory_lines)
 
-{self.DAG_DESCRIPTION}
+        return f"""You are an expert RL reward designer for a cooperative multi-agent POMDP environment.
 
 ### TRIGGER EVENT:
 The system's automatic critic-monitoring has detected a learning problem.
@@ -170,30 +188,33 @@ Reason: {trigger_reason}
 * Agent 1 (Miner) Mean TD: {td_stats.get('td_error_agent1_mean', 0):.4f}
 
 ### CURRENT REWARD SHAPING WEIGHTS:
-{weight_block}
+{weight_block}{memory_block}
+
+### OUTPUT FORMAT:
+Your output values represent unnormalized log-probabilities (logits). They will be processed via a temperature-scaled softmax function and scaled to maintain a constant total reward budget. Focus on the RELATIVE MAGNITUDE and PRIORITY RANKING of subtasks.
 
 ### YOUR TASK:
-1. Diagnose which part of the dependency chain is the bottleneck.
+1. Diagnose which part of the dependency chain is the bottleneck based on the completion rates and memory feedback.
 2. Explain your reasoning in 1-2 sentences.
-3. Output updated reward shaping weights (0.0 to 3.0) to fix the bottleneck.
-   - INCREASE weights for bottleneck subtasks to make them more attractive.
-   - DECREASE weights for mastered subtasks to prevent reward hacking.
+3. Output priority logits for each subtask:
+   - Output HIGHER values for bottleneck subtasks (e.g., 5.0-10.0).
+   - Output LOWER values for mastered/SATURATED subtasks (e.g., 0.0-1.0).
+   - To completely SUPPRESS a subtask, output 0.0 while other subtasks are 5.0+.
    - Consider which AGENT is struggling based on the per-agent TD errors.
 
 ### CRITICAL INSTRUCTION ON TRAPS:
-The environment has "trap" goals (like Enemy and Gold) that have huge base rewards. Even if you give them a tiny weight like 0.1, the agents will be greedily distracted by them and get stuck!
-Therefore, you MUST set the weight to EXACTLY 0.0 for any task that is currently impossible because its prerequisites haven't been met yet (e.g. w_gold and w_enemy MUST be 0.0 if the agents haven't built tools yet).
+The environment has sequential dependencies. If a subtask's prerequisites have not been completed (check the completion rates above), the agents CANNOT complete it. Assigning priority to an impossible subtask creates noise in the value network. You must deduce the dependencies from the data and set impossible subtasks to 0.0.
 
 Respond ONLY with valid JSON matching this schema:
 {{
   "reasoning": "<1-2 sentences explaining the bottleneck and your fix>",
-  "w_wood": <float 0.0-3.0>,
-  "w_stone": <float 0.0-3.0>,
-  "w_workbench": <float 0.0-3.0>,
-  "w_iron": <float 0.0-3.0>,
-  "w_bridge": <float 0.0-3.0>,
-  "w_enemy": <float 0.0-3.0>,
-  "w_gold": <float 0.0-3.0>
+  "w_wood": <float, priority logit>,
+  "w_stone": <float, priority logit>,
+  "w_workbench": <float, priority logit>,
+  "w_iron": <float, priority logit>,
+  "w_bridge": <float, priority logit>,
+  "w_enemy": <float, priority logit>,
+  "w_gold": <float, priority logit>
 }}"""
 
     def _build_sub_objective_prompt(

@@ -81,6 +81,9 @@ class TrajectoryLogger:
         goal_active: np.ndarray,
         terminal: np.ndarray,
         td_errors: Optional[np.ndarray] = None,
+        llm_weights: Optional[dict] = None,
+        raw_llm_weights: Optional[dict] = None,
+        softmax_llm_weights: Optional[dict] = None,
     ):
         """
         Log a single step for multiple environments.
@@ -97,6 +100,9 @@ class TrajectoryLogger:
             goal_active: [K, 2] goal active flags.
             terminal: [K] terminal flags.
             td_errors: Optional [K, 2] TD errors at this step.
+            llm_weights: Optional dict of current active LLM weights (post-EMA).
+            raw_llm_weights: Optional dict of raw LLM weights from the last query.
+            softmax_llm_weights: Optional dict of post-softmax weights (pre-EMA).
         """
         for i, env_id in enumerate(env_ids):
             eid = int(env_id)
@@ -117,6 +123,12 @@ class TrajectoryLogger:
 
             if td_errors is not None:
                 step_data["td_errors"] = td_errors[i].tolist()
+            if llm_weights is not None:
+                step_data["llm_weights"] = llm_weights
+            if raw_llm_weights is not None:
+                step_data["raw_llm_weights"] = raw_llm_weights
+            if softmax_llm_weights is not None:
+                step_data["softmax_llm_weights"] = softmax_llm_weights
 
             # Subtask progress (compact)
             sp = snapshot["subtask_progress"]

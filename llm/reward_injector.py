@@ -43,6 +43,9 @@ class RewardInjector:
         rollback_window: int = 25,
         rollback_drop_threshold: float = 0.20,
         log_dir: str = "data/interventions",
+        enforce_dag_guardrails: bool = True,
+        use_softmax_attention: bool = False,
+        softmax_temperature: float = 0.5,
     ):
         self.max_weight = max_weight
         self.weight_sum_bound = weight_sum_bound
@@ -50,12 +53,21 @@ class RewardInjector:
         self.rollback_enabled = rollback_enabled
         self.rollback_window = rollback_window
         self.rollback_drop_threshold = rollback_drop_threshold
+        self.enforce_dag_guardrails = enforce_dag_guardrails
+        self.use_softmax_attention = use_softmax_attention
+        self.softmax_temperature = softmax_temperature
 
         # Rollback state
         self._pre_intervention_weights: Optional[dict] = None
         self._pre_intervention_reward: Optional[float] = None
         self._intervention_update: Optional[int] = None
         self._rollback_history: list[dict] = []
+
+        # Memory buffer for Episodic Memory Integration
+        self._memory_buffer = deque(maxlen=3)
+        self._last_intervention_td: Optional[float] = None
+        self._last_intervention_weights: Optional[dict] = None
+        self._last_raw_weights: Optional[dict] = None
 
         # Post-intervention reward tracking
         self._post_intervention_rewards: deque = deque(maxlen=rollback_window)
@@ -65,6 +77,21 @@ class RewardInjector:
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         self._log_path = os.path.join(log_dir, f"injector_log_{timestamp}.jsonl")
         self._log_file = open(self._log_path, "a", encoding="utf-8")
+
+    def update_memory_buffer(self, td_stats: dict):
+        """Update episodic memory buffer with TD error delta."""
+        current_td = td_stats.get('mean_td_error', 0.0)
+        if self._last_intervention_weights is not None and self._last_intervention_td is not None:
+            td_delta = current_td - self._last_intervention_td
+            self._memory_buffer.append({
+                "weights": self._last_intervention_weights,
+                "td_delta": td_delta
+            })
+        self._last_intervention_td = current_td
+
+    def get_memory_buffer(self) -> list:
+        """Return the current episodic memory buffer as a list."""
+        return list(self._memory_buffer)
 
     def process_intervention(
         self,
@@ -111,20 +138,54 @@ class RewardInjector:
             scale = self.weight_sum_bound / total
             clipped = {k: v * scale for k, v in clipped.items()}
 
-        # ── EMA Smoothing ────────────────────────────────────────────
-        alpha = self.ema_alpha
-        smoothed = {}
-        for k in WEIGHT_KEYS:
-            old = current_weights.get(k, 1.0)
-            smoothed[k] = alpha * clipped[k] + (1.0 - alpha) * old
+        # ── Normalization: Softmax Attention Budget or Legacy ─────────
+        if self.use_softmax_attention:
+            # Softmax Attention Budget: w_i = |W| * exp(c_i/τ) / Σ exp(c_j/τ)
+            keys = list(clipped.keys())
+            logits = np.array([clipped[k] for k in keys])
+            # Numerically stable softmax
+            logits_shifted = logits - np.max(logits)
+            exp_logits = np.exp(logits_shifted / self.softmax_temperature)
+            softmax_probs = exp_logits / np.sum(exp_logits)
+            # Scale by budget size to maintain total reward magnitude
+            scaled = softmax_probs * len(keys)
+            softmax_weights = {k: float(v) for k, v in zip(keys, scaled)}
 
-        # ── Programmatic Guardrails to strictly enforce DAG impossibilities
-        smoothed = apply_dag_guardrails(smoothed, metrics)
+            # Store pre-EMA softmax weights for logging
+            self._last_softmax_weights = dict(softmax_weights)
 
-        # ── Normalization (average ≈ 1.0) ────────────────────────────
-        w_sum = sum(smoothed.values()) + 1e-6
-        factor = len(WEIGHT_KEYS) / w_sum
-        normalized = {k: v * factor for k, v in smoothed.items()}
+            # ── EMA Smoothing ────────────────────────────────────────
+            alpha = self.ema_alpha
+            smoothed = {}
+            for k in WEIGHT_KEYS:
+                old = current_weights.get(k, 1.0)
+                smoothed[k] = alpha * softmax_weights[k] + (1.0 - alpha) * old
+
+            # ── Programmatic Guardrails (skipped in fair mode) ────────
+            if self.enforce_dag_guardrails:
+                smoothed = apply_dag_guardrails(smoothed, metrics)
+
+            # No further normalization needed — softmax already sums to budget
+            normalized = smoothed
+        else:
+            # Legacy path: EMA + divide-by-average normalization (HRL-safe)
+            self._last_softmax_weights = None
+
+            # ── EMA Smoothing ────────────────────────────────────────
+            alpha = self.ema_alpha
+            smoothed = {}
+            for k in WEIGHT_KEYS:
+                old = current_weights.get(k, 1.0)
+                smoothed[k] = alpha * clipped[k] + (1.0 - alpha) * old
+
+            # ── Programmatic Guardrails ──────────────────────────────
+            if self.enforce_dag_guardrails:
+                smoothed = apply_dag_guardrails(smoothed, metrics)
+
+            # ── Legacy Normalization (average ≈ 1.0) ─────────────────
+            w_sum = sum(smoothed.values()) + 1e-6
+            factor = len(WEIGHT_KEYS) / w_sum
+            normalized = {k: v * factor for k, v in smoothed.items()}
 
         # ── Store rollback state ─────────────────────────────────────
         if self.rollback_enabled:
@@ -132,12 +193,17 @@ class RewardInjector:
             self._intervention_update = update
             self._post_intervention_rewards.clear()
 
+        # Update last intervention weights for memory buffer
+        self._last_intervention_weights = normalized
+        self._last_raw_weights = raw_weights
+
         # ── Log the injection ────────────────────────────────────────
         log_entry = {
             "update": update,
             "reasoning": reasoning,
             "raw_weights": raw_weights,
             "clipped_weights": clipped,
+            "softmax_weights": self._last_softmax_weights,
             "smoothed_weights": smoothed,
             "final_weights": normalized,
             "previous_weights": current_weights,

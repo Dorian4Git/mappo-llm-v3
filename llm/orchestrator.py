@@ -216,9 +216,11 @@ class LLMOrchestratorV2:
         host: str = "http://localhost:11434/api/generate",
         log_dir: str = ".",
         bridge=None,
+        enforce_dag_guardrails: bool = True,
     ):
         self.model_name = model_name
         self.host = host
+        self.enforce_dag_guardrails = enforce_dag_guardrails
         os.makedirs(log_dir, exist_ok=True)
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         
@@ -316,7 +318,8 @@ Respond ONLY with valid JSON exactly matching this schema:
                 smoothed_weights[k] = alpha * parsed_weights[k] + (1.0 - alpha) * prev_weights.get(k, 1.0)
                 
             # Programmatic Guardrails to strictly enforce DAG impossibilities
-            smoothed_weights = apply_dag_guardrails(smoothed_weights, curr)
+            if self.enforce_dag_guardrails:
+                smoothed_weights = apply_dag_guardrails(smoothed_weights, curr)
                 
             # Normalization (ensure average is 1.0)
             eps = 1e-6

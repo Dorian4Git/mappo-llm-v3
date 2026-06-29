@@ -118,9 +118,13 @@ class CriticTrigger:
         # ── Apply pending weights from async LLM queries ──
         if getattr(self, "_pending_weights", None) is not None:
             new_weights = self._pending_weights
+            raw_weights = getattr(self, "_pending_raw_weights", None)
+            softmax_weights = getattr(self, "_pending_softmax_weights", None)
             self._pending_weights = None
+            self._pending_raw_weights = None
+            self._pending_softmax_weights = None
             print(f"      [CriticTrigger] Applying async weights from update {update}")
-            return {"adaptive_weights": new_weights}
+            return {"adaptive_weights": new_weights, "raw_weights": raw_weights, "softmax_weights": softmax_weights}
 
         # ── Record histories ─────────────────────────────────────────
         success_rate = metrics.get("success_rate", 0.0)
@@ -290,6 +294,10 @@ class CriticTrigger:
                   "returning default intervention")
             return None
 
+        if self.reward_injector:
+            self.reward_injector.update_memory_buffer(td_stats)
+            metrics["memory_buffer"] = self.reward_injector.get_memory_buffer()
+
         # Build the intervention prompt
         prompt = self.prompt_builder.build_intervention_prompt(
             metrics=metrics,
@@ -315,6 +323,8 @@ class CriticTrigger:
                     )
                     if new_weights:
                         self._pending_weights = new_weights
+                        self._pending_raw_weights = self.reward_injector._last_raw_weights
+                        self._pending_softmax_weights = getattr(self.reward_injector, '_last_softmax_weights', None)
             except Exception as e:
                 print(f"      [CriticTrigger] Async callback failed: {e}")
 
