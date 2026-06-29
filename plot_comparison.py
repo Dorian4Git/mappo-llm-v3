@@ -1,4 +1,5 @@
 import os
+import argparse
 import matplotlib.pyplot as plt
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
@@ -19,7 +20,16 @@ def load_events(log_dir, tag):
         return steps, values
     return [], []
 
-def plot_comparison(main_run1, label1, main_run2, label2, subtask_run1, subtask_run2, output_dir):
+def get_all_tags(log_dir):
+    event_files = [f for f in os.listdir(log_dir) if "tfevents" in f]
+    if not event_files:
+        return []
+    path = os.path.join(log_dir, event_files[0])
+    ea = EventAccumulator(path)
+    ea.Reload()
+    return ea.Tags()['scalars']
+
+def plot_comparison(main_run1, label1, main_run2, label2, output_dir):
     os.makedirs(output_dir, exist_ok=True)
     
     main_metrics = {
@@ -28,11 +38,15 @@ def plot_comparison(main_run1, label1, main_run2, label2, subtask_run1, subtask_
         "TD_Error/Abs_Mean": "Absolute Mean TD Error",
     }
     
-    subtask_metrics = {
-        "Subtasks/Pickaxe_Pct": "Pickaxe Subtask Completion Rate",
-        "Subtasks/Iron_Pct": "Iron Subtask Completion Rate",
-        "Subtasks/Sword_Pct": "Sword Subtask Completion Rate",
-    }
+    # Discover subtasks from both runs
+    tags1 = get_all_tags(main_run1)
+    tags2 = get_all_tags(main_run2)
+    all_tags = set(tags1) | set(tags2)
+    
+    subtask_metrics = {}
+    for tag in all_tags:
+        if "Subtasks" in tag:
+            subtask_metrics[tag] = tag.split("/")[-1].replace("_Pct", " Subtask Completion Rate")
     
     def plot_set(metrics, r1, r2):
         for tag, title in metrics.items():
@@ -55,7 +69,7 @@ def plot_comparison(main_run1, label1, main_run2, label2, subtask_run1, subtask_
             plt.xlabel("Global Step")
             plt.ylabel(title)
             
-            if "Rate" in title or "Pct" in title:
+            if "Rate" in title or "Pct" in title or "Success_Rate" in tag:
                 plt.ylim(0, 1.05)
                 
             plt.legend(loc='best')
@@ -68,21 +82,18 @@ def plot_comparison(main_run1, label1, main_run2, label2, subtask_run1, subtask_
             print(f"Saved {out_path}")
 
     plot_set(main_metrics, main_run1, main_run2)
-    plot_set(subtask_metrics, subtask_run1, subtask_run2)
+    plot_set(subtask_metrics, main_run1, main_run2)
 
 if __name__ == "__main__":
-    runs_dir = "C:/PROJECTS/_SCHOOL/MasterIS/TM/mappo-llm-v3/runs"
-    
-    # We use the same runs for main and subtask metrics since all metrics are logged in the same run folder
-    main_lora = os.path.join(runs_dir, "v3_HRL_Std_LoRA_E128_s42_20260622-140157")
-    main_base = os.path.join(runs_dir, "v3_HRL_Std_NoLoRA_E128_s42_20260622-082759")
-    
-    subtask_lora = main_lora
-    subtask_base = main_base
-    
-    out_dir = r"C:\Users\doria\OneDrive\Documents\school\master IS\Semestre 4\Travail de Master\rev_v3\meet_20260625\plots"
+    parser = argparse.ArgumentParser(description="Plot comparison between two Tensorboard runs.")
+    parser.add_argument("--run1", type=str, required=True, help="Path to first run directory (e.g. LoRA)")
+    parser.add_argument("--label1", type=str, required=True, help="Label for first run")
+    parser.add_argument("--run2", type=str, required=True, help="Path to second run directory (e.g. Base)")
+    parser.add_argument("--label2", type=str, required=True, help="Label for second run")
+    parser.add_argument("--output_dir", type=str, default="plots/comparison", help="Directory to save the plots")
+    args = parser.parse_args()
     
     print("Generating comparative plots...")
-    plot_comparison(main_lora, "QLoRA Fine-tuned", main_base, "Base (No LoRA)", subtask_lora, subtask_base, out_dir)
+    plot_comparison(args.run1, args.label1, args.run2, args.label2, args.output_dir)
     print("Done!")
 

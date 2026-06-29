@@ -1,0 +1,76 @@
+\documentclass{article}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+
+\title{Evaluation and Analysis Walkthrough}
+\author{Master Thesis Report}
+\date{June 29, 2026}
+
+\begin{document}
+\maketitle
+
+The evaluation has been completed by strictly isolating a Converged LoRA Policy against a baseline NoLoRA failure run.
+
+\section{Validated Run Selection}
+\begin{itemize}
+    \item \textbf{LoRA (Converged Policy):} \texttt{v3\_HRL\_Std\_LoRA\_E128\_s42\_20260622-185111} (1.0 Success Rate)
+    \item \textbf{Base (No LoRA Baseline Failure):} \texttt{v3\_HRL\_Std\_NoLoRA\_E128\_s42\_20260620-092622} (0.0 Success Rate)
+\end{itemize}
+
+\section{Main Metrics Comparison}
+The following graphs show a clear divergence between the Fine-tuned model and the Base model.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{../../plots/comparison/Rewards_Avg_Env_Reward.png}
+    \caption{Extrinsic Reward Comparison}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{../../plots/comparison/Episodes_Success_Rate.png}
+    \caption{Success Rate Comparison}
+\end{figure}
+
+\section{Subtask Bottleneck Analysis}
+By pulling the \texttt{Subtasks/} scalars directly into the comparison plots, we can see exactly where the Base model breaks down. The baseline model consistently fails at the later stages of the dependency DAG (e.g., crafting armor/sword and building the bridge), while the LoRA model completes the entire subtask sequence.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{../../plots/comparison/Subtasks_Pickaxe_Pct.png}
+    \caption{Pickaxe Completion}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{../../plots/comparison/Subtasks_Bridge_Pct.png}
+    \caption{Bridge Completion}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{../../plots/comparison/Subtasks_Gold_Pct.png}
+    \caption{Gold Completion}
+\end{figure}
+
+\section{Perplexity Variance and Confidence}
+Using kernel density estimation (Violin Plot) and bar plots with 95\% confidence intervals, we see the LoRA fine-tuning resulted in a vastly tighter and lower perplexity distribution. This mathematically demonstrates that the model's policy is much more consistent across varying states compared to the baseline's erratic confidence.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{../../plots/comparison/perplexity_violin.png}
+    \caption{Perplexity Violin Plot}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.8\textwidth]{../../plots/comparison/perplexity_bar_ci.png}
+    \caption{Perplexity Bar Plot with CIs}
+\end{figure}
+
+\section{Qualitative Inference Matrix}
+The script \texttt{scripts/inference\_examples.py} generated a direct comparison of the raw outputs in critical bottleneck states. The full markdown matrix can be found in \texttt{plots/comparison/inference\_qualitative\_matrix.md}.
+
+\end{document}

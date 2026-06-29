@@ -1,4 +1,5 @@
 import os
+import argparse
 import matplotlib.pyplot as plt
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
 
@@ -21,13 +22,18 @@ def plot_tensorboard_logs(log_dir, output_dir):
     tags = ea.Tags()['scalars']
     print(f"Found scalar tags: {tags}")
     
-    # We want to plot: Rewards/Avg_Env_Reward, Episodes/Success_Rate, and TD_Error/Abs_Mean
+    # Base metrics
     metrics = {
         "Rewards/Avg_Env_Reward": "Average Extrinsic Reward",
         "Episodes/Success_Rate": "Gold Mining Success Rate",
         "TD_Error/Abs_Mean": "Absolute Mean TD Error"
     }
     
+    # Dynamically find all subtasks
+    for tag in tags:
+        if "Subtasks" in tag:
+            metrics[tag] = tag.split("/")[-1].replace("_Pct", " Subtask Completion Rate")
+            
     for tag, title in metrics.items():
         if tag in tags:
             events = ea.Scalars(tag)
@@ -43,7 +49,7 @@ def plot_tensorboard_logs(log_dir, output_dir):
             plt.xlabel("Global Step")
             plt.ylabel(title)
             
-            if "Success_Rate" in tag:
+            if "Success_Rate" in tag or "Rate" in title:
                 plt.ylim(0, 1.05)
                 
             plt.tight_layout()
@@ -56,7 +62,9 @@ def plot_tensorboard_logs(log_dir, output_dir):
             print(f"Saved {out_path}")
 
 if __name__ == "__main__":
-    # Point to the last successful run
-    log_directory = "runs/v3_HRL_Std_E128_s42_20260617-192630"
-    output_directory = "plots"
-    plot_tensorboard_logs(log_directory, output_directory)
+    parser = argparse.ArgumentParser(description="Plot Tensorboard logs for a single run.")
+    parser.add_argument("--log_dir", type=str, required=True, help="Path to the run directory containing tfevents.")
+    parser.add_argument("--output_dir", type=str, default="plots", help="Directory to save the plots.")
+    args = parser.parse_args()
+    
+    plot_tensorboard_logs(args.log_dir, args.output_dir)
