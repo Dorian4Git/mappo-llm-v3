@@ -15,3 +15,10 @@ data/interventions
 *.pt
 *.gguf
 .env
+*.aux
+*.out
+*.log
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.gz
