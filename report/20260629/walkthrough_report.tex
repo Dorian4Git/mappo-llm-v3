@@ -86,6 +86,28 @@ Stability      & High (fixed option $\Rightarrow$ fixed MDP) & Low (weight shift
 
 The \texttt{-{}-fair-mode} flag disables the programmatic DAG guardrails that would otherwise zero out weights for unreachable subtasks.  Both systems therefore rely on equivalent structural knowledge---one encoded in natural language, the other in the planner's inventory-based conditionals.
 
+\subsubsection{Quick and Simple Breakdown}
+
+\textbf{1. Implicit DAG Knowledge in Planner Conditionals} \\
+In the HRL approach, the LLM knows about the DAG because it reads it in the text prompt (e.g., *"You need Wood to craft a Pickaxe"*). 
+In the LLM-Dynamic approach, the LLM doesn't read the DAG. Instead, the DAG is **hardcoded into the Python code of the planner**. The planner uses `if/else` statements checking the inventory to figure out what is currently possible. For example: 
+\begin{verbatim}
+if inventory["wood"] > 0 and inventory["stone"] > 0: 
+    valid_goals.append("craft_pickaxe") 
+\end{verbatim}
+Because the planner filters out impossible tasks before making a decision, the system still "knows" the DAG, just through code logic rather than natural language.
+
+\textbf{2. Continuous Weight Logits} \\
+In HRL, the LLM makes a strict, multiple-choice decision (e.g., *"Agent 1, your task is Wood"*). 
+In LLM-Dynamic, the LLM outputs **continuous weight logits**—which are simply raw, unnormalized numbers representing "urgency" or "importance" (e.g., Wood: 2.5, Stone: -1.2, Bridge: 4.0). In practice, these act as a **priority budget**. Instead of giving a direct command, the LLM is tweaking sliders on a mixing board, saying *"Focus a lot on the Bridge right now, and care a little bit less about Wood."*
+
+\textbf{3. Arg Max (The Final Decision)} \\
+`Arg max` (Argument of the Maximum) is just the mathematical term for **"pick the winner with the highest score."**
+Because the LLM only outputs priority weights, the system needs a way to make a final decision on what the agent should actually do. The planner does this by:
+1. Taking the base value of a task (e.g., Iron is worth 2.0).
+2. Multiplying it by the LLM's priority weight (e.g., Iron weight is 3.35) to get a final score ($2.0 \times 3.35 = 6.70$).
+3. Using `arg max` to look at all the final scores and say: *"Iron has the highest score of 6.70, so Iron is the winner. That is your goal."*
+
 \newpage
 \section{LLM-Dynamic Results}
 
