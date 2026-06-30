@@ -140,11 +140,17 @@ class PromptBuilder:
             "bridge": 0.95, "enemy": 0.95, "gold": 0.95,
         }
         subtask_lines = []
-        for name in ["wood", "stone", "pickaxe", "iron", "sword", "armor", "bridge", "enemy", "gold"]:
+        for name in ["wood", "stone", "iron", "bridge", "enemy", "gold"]:
             pct = subtask_pcts.get(name, 0.0)
             threshold = SATURATION_THRESHOLDS.get(name, 0.95)
             flag = " ✓ SATURATED" if pct >= threshold else ""
             subtask_lines.append(f"  * {name.capitalize()}: {pct * 100:.1f}%{flag}")
+        
+        # Group workbench items to match the expected weight w_workbench
+        wb_pcts = [subtask_pcts.get(n, 0.0) for n in ["pickaxe", "sword", "armor"]]
+        wb_pct = max(wb_pcts) if wb_pcts else 0.0
+        wb_flag = " ✓ SATURATED" if wb_pct >= 0.95 else ""
+        subtask_lines.append(f"  * Workbench (Pickaxe/Sword/Armor): {wb_pct * 100:.1f}%{wb_flag}")
         subtask_block = "\n".join(subtask_lines)
 
         # Format current weights

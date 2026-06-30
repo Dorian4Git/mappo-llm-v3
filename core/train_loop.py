@@ -601,7 +601,8 @@ def train_mappo_v3(
         writer.add_scalar("Training/Learning_Rate", lr_now,         global_step_counter)
         writer.add_scalar("Training/Lambda",        lambda_t,       global_step_counter)
         writer.add_scalar("Rewards/Avg_Env_Reward", avg_env_reward, global_step_counter)
-        writer.add_scalar("Episodes/Success_Rate",  success_rate,   global_step_counter)
+        if epoch_episode_count > 0:
+            writer.add_scalar("Episodes/Success_Rate",  success_rate,   global_step_counter)
 
         # V3: TD Error TensorBoard logging
         writer.add_scalar("TD_Error/Mean",          td_stats["mean_td_error"],     global_step_counter)
@@ -611,11 +612,12 @@ def train_mappo_v3(
         writer.add_scalar("TD_Error/Agent0_Mean",   td_stats["td_error_agent0_mean"], global_step_counter)
         writer.add_scalar("TD_Error/Agent1_Mean",   td_stats["td_error_agent1_mean"], global_step_counter)
 
-        for fi, item_name in enumerate(ITEM_NAMES):
-            pct = epoch_subtask_steps[fi] / max(epoch_episode_count, 1)
-            writer.add_scalar(
-                f"Subtasks/{item_name}_Pct", pct, global_step_counter
-            )
+        if epoch_episode_count > 0:
+            for fi, item_name in enumerate(ITEM_NAMES):
+                pct = epoch_subtask_steps[fi] / max(epoch_episode_count, 1)
+                writer.add_scalar(
+                    f"Subtasks/{item_name}_Pct", pct, global_step_counter
+                )
 
         for k, v in adaptive_weights.items():
             writer.add_scalar(f"LLM_Weights/{k}", v, global_step_counter)

@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from tensorboard.backend.event_processing import event_accumulator
 
 def get_scalars(log_dir, tag):
-    ea = event_accumulator.EventAccumulator(log_dir)
+    ea = event_accumulator.EventAccumulator(log_dir, size_guidance={'scalars': 0})
     ea.Reload()
     if tag not in ea.Tags().get('scalars', []):
         return [], []
@@ -26,11 +26,7 @@ def plot_metric(run_dir, out_dir, tag, ylabel, title, filename, smooth=1):
         print(f"Warning: No data found for {tag}")
         return
 
-    # Filter out exactly 0.0 values for success rates which are artifacts of missing episodes in the batch
-    if "Success_Rate" in tag:
-        filt = [(s, v) for s, v in zip(steps, vals) if v > 0.0 or s == 0]
-        if filt:
-            steps, vals = zip(*filt)
+    # Note: Removed artificial 0.0 filtering to accurately show crashes to zero
 
     plt.figure(figsize=(8, 5))
     
@@ -58,10 +54,7 @@ def plot_subtasks(run_dir, out_dir, smooth=10):
         full_tag = f"Subtasks/{tag}_Pct"
         steps, vals = get_scalars(run_dir, full_tag)
         if steps:
-            filt = [(s, v) for s, v in zip(steps, vals) if v > 0.0 or s == 0]
-            if filt:
-                steps, vals = zip(*filt)
-                
+            # Fix scaling bug: Gold is logged as 0-100, others are 0-1.
             # Fix scaling bug: Gold is logged as 0-100, others are 0-1.
             vals = np.array(vals)
             if np.max(vals) <= 1.05:
@@ -82,6 +75,33 @@ def plot_subtasks(run_dir, out_dir, smooth=10):
     plt.close()
     print("Saved Subtasks_Completion.png")
 
+def plot_llm_weights(run_dir, out_dir, smooth=10):
+    weight_keys = ['w_wood', 'w_stone', 'w_workbench', 'w_iron', 'w_bridge', 'w_enemy', 'w_gold']
+    
+    plt.figure(figsize=(10, 6))
+    
+    has_data = False
+    for key in weight_keys:
+        full_tag = f"LLM_Weights_Softmax/{key}"
+        steps, vals = get_scalars(run_dir, full_tag)
+        if steps:
+            has_data = True
+            if smooth > 1:
+                plt.plot(steps[smooth-1:], moving_average(vals, smooth), label=key, linewidth=2)
+            else:
+                plt.plot(steps, vals, label=key, linewidth=2)
+                
+    if has_data:
+        plt.xlabel("Environment Steps")
+        plt.ylabel("Weight Value")
+        plt.title("LLM Softmax Attention Budget Over Time")
+        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(os.path.join(out_dir, "LLM_Weights_Softmax.png"))
+        plt.close()
+        print("Saved LLM_Weights_Softmax.png")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Plot metrics from a TensorBoard run directory")
     parser.add_argument("run_dir", type=str, help="Path to the run directory (e.g., runs/v3_HRL_...)")
@@ -96,6 +116,7 @@ if __name__ == "__main__":
 
     plot_metric(run_dir, out_dir, 'Rewards/Avg_Env_Reward', "Average Extrinsic Reward", "Average Extrinsic Reward over Training", "Rewards_Avg_Env_Reward.png", smooth=20)
     plot_subtasks(run_dir, out_dir, smooth=50)
+    plot_llm_weights(run_dir, out_dir, smooth=10)
     
     # If using success rate logging
     plot_metric(run_dir, out_dir, 'Episodes/Success_Rate', "Success Rate", "Gold Mining Success Rate", "Episodes_Success_Rate.png", smooth=10)

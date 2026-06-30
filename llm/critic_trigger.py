@@ -311,7 +311,13 @@ class CriticTrigger:
                 print("      [CriticTrigger] LLM returned None — no intervention applied")
                 return
             try:
-                clean_text = raw_text.replace("```json", "").replace("```", "").strip()
+                import re
+                # Find JSON block (even if wrapped in markdown or other text)
+                json_match = re.search(r'\{.*\}', raw_text.replace('\n', ' '), re.DOTALL)
+                if json_match:
+                    clean_text = json_match.group(0)
+                else:
+                    clean_text = raw_text.replace("```json", "").replace("```", "").strip()
                 response = json.loads(clean_text)
                 
                 if self.reward_injector:

@@ -22,3 +22,6 @@ data/interventions
 *.fdb_latexmk
 *.synctex.gz
 *.gz
+report/20260629/walkthrough_report.out
+report/20260629/walkthrough_report.log
+report/20260629/walkthrough_report.aux

@@ -2,11 +2,14 @@
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{subcaption}
 \geometry{a4paper, margin=1in}
 
-\title{Evaluation and Analysis Walkthrough}
-\author{Master Thesis Report}
-\date{June 29, 2026}
+\title{Evaluation and Analysis Quick Report}
+\author{Dorian}
+\date{June 29--30, 2026}
 
 \begin{document}
 \maketitle
@@ -16,61 +19,191 @@ The evaluation has been completed by strictly isolating a Converged LoRA Policy 
 \section{Validated Run Selection}
 \begin{itemize}
     \item \textbf{LoRA (Converged Policy):} \texttt{v3\_HRL\_Std\_LoRA\_E128\_s42\_20260622-185111} (1.0 Success Rate)
-    \item \textbf{Base (No LoRA Baseline Failure):} \texttt{v3\_HRL\_Std\_NoLoRA\_E128\_s42\_20260620-092622} (0.0 Success Rate)
+    \item \textbf{Base (No LoRA):} \texttt{v3\_HRL\_Std\_NoLoRA\_E128\_s42\_20260620-092622} (0.0 Success Rate)
+    \item \textbf{LLM-Dynamic:} \texttt{v3\_LLMDynamic\_Fair\_NoDAG\_qwen2.5-7b\_E128\_s42\_20260630-075824} (0.0 Success Rate)
 \end{itemize}
 
-\section{Main Metrics Comparison}
+\section{Phase 2: Reward Shaping vs.\ Policy Shaping}
+
+This section compares two fundamentally different mechanisms through which a Large Language Model can influence a cooperative MARL training loop.  The comparison is designed as a controlled ablation to determine \emph{how} the LLM's output is most effectively channelled.
+
+\subsection{Mathematical Formulation}
+
+\subsubsection{Reward Shaping (LLM-Dynamic)}
+
+In the reward-shaping approach the LLM modifies the \textbf{reward signal} rather than the policy.
+The LLM outputs raw logits $c_i$ for each of $K{=}7$ subtask weights. These are normalised into a strict budget\footnote{Normalisation is done via a temperature-scaled softmax function ($w_i = K \cdot \exp(c_i / \tau) / \sum \exp(c_j / \tau)$) with $\tau=0.5$ to ensure the total weight budget always sums to $K$. This prevents the LLM from simply assigning infinite weight to everything and hacking the reward signal.} before being passed to the planner.
+
+A deterministic greedy planner then selects the goal with the highest weighted score:
+\[
+    g^* \;=\; \arg\max_{g \in \mathcal{G}_{\text{valid}}} \; R^{\text{base}}_g \;\cdot\; w_g
+\]
+and the shaped reward follows the standard potential-based form:
+\[
+    r^{\text{shaped}}_t \;=\; \gamma\,\varphi_{g^*}(s_{t+1}) \;-\; \varphi_{g^*}(s_t)
+\]
+The total reward is $r_t = r^{\text{env}}_t + \lambda_t \cdot r^{\text{shaped}}_t$, with $\lambda_t$ annealing from 1.0 to 0.
+
+The key difference: the LLM does \textbf{not} select goals directly.  It only adjusts a weight vector, and the planner translates that into goal selection.
+
+\subsubsection{Policy Shaping (HRL -- Options Framework)}
+
+In the HRL approach the LLM acts as a \textbf{meta-controller}.
+Given the current inventory state $s_t$, the LLM directly selects a discrete \emph{option} $o_i$ for each agent from a fixed set $\mathcal{O}$:
+\[
+    o_i \;=\; \pi_{\text{LLM}}(s_t), \qquad o_i \in \mathcal{O} = \{\texttt{COLLECT\_WOOD},\;\dots,\;\texttt{COLLECT\_GOLD},\;\texttt{IDLE}\}
+\]
+The low-level MAPPO policy $\pi_\theta$ receives the active option as a one-hot embedding appended to its observation vector. While the agent is working on the task, it receives a continuous \emph{dense shaping reward} based on its distance to the goal to guide it. Once it successfully completes the task, it receives a sparse success bonus of 1.0:
+\[
+    r^{\text{HRL}}_t \;=\;
+    \begin{cases}
+        1.0 & \text{if option } o_i \text{ succeeded at step } t,\\[4pt]
+        \alpha\,\bigl(\gamma\,\varphi(s_{t+1}) - \varphi(s_t)\bigr) & \text{while working on the option (distance shaping)}
+    \end{cases}
+\]
+where $\varphi(s) = D_{\max} - \lVert p_{\text{agent}} - p_{\text{goal}} \rVert_2$ is the potential function and $\alpha = 0.05$. This ensures the agent is constantly rewarded for moving closer to its assigned target, rather than only being rewarded at the very end.
+
+The total reward is $r_t = r^{\text{env}}_t + 0.5\,r^{\text{HRL}}_t$. The LLM \textbf{constrains the action space}: agents can only pursue goals assigned by the meta-controller.  This is inherently stable because the MDP's reward distribution is consistent for a fixed option.
+
+\subsection{Fairness of the Comparison}
+
+Both systems have access to equivalent task-dependency knowledge:
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Dimension} & \textbf{HRL (Policy Shaping)} & \textbf{LLM-Dynamic (Reward Shaping)} \\
+\midrule
+DAG knowledge & Explicit in prompt text & Implicit in planner conditionals \\
+LLM output    & Discrete option per agent & Continuous weight logits \\
+Goal selection & LLM decides directly & Planner decides via $\arg\max$ \\
+Stability      & High (fixed option $\Rightarrow$ fixed MDP) & Low (weight shifts $\Rightarrow$ non-stationary MDP) \\
+\bottomrule
+\end{tabular}
+\caption{Side-by-side comparison of the two LLM integration mechanisms.}
+\end{table}
+
+The \texttt{-{}-fair-mode} flag disables the programmatic DAG guardrails that would otherwise zero out weights for unreachable subtasks.  Both systems therefore rely on equivalent structural knowledge---one encoded in natural language, the other in the planner's inventory-based conditionals.
+
+\newpage
+\section{LLM-Dynamic Results}
+
+Run: \texttt{v3\_LLMDynamic\_Fair\_NoDAG\_qwen2.5-7b\_E128\_s42\_20260630-075824} (2\,000 updates, ${\sim}65$M environment steps).
+
+\begin{figure}[htbp]
+    \centering
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../plots/v3_LLMDynamic_Fair_NoDAG_qwen2.5-7b_E128_s42_20260630-075824/Rewards_Avg_Env_Reward.png}
+        \caption{Extrinsic Reward}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../plots/v3_LLMDynamic_Fair_NoDAG_qwen2.5-7b_E128_s42_20260630-075824/Episodes_Success_Rate.png}
+        \caption{Success Rate}
+    \end{subfigure}
+    
+    \vspace{0.5cm}
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../plots/v3_LLMDynamic_Fair_NoDAG_qwen2.5-7b_E128_s42_20260630-075824/Subtasks_Completion.png}
+        \caption{Subtask Completion Rates}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../plots/v3_LLMDynamic_Fair_NoDAG_qwen2.5-7b_E128_s42_20260630-075824/LLM_Weights_Softmax.png}
+        \caption{LLM Softmax Attention Budget}
+    \end{subfigure}
+    \caption{LLM-Dynamic metrics. The agent fails to progress past Iron/Workbench, resulting in a flat 0\% success rate. The attention budget shows extreme concentration on these bottleneck tasks.}
+    \label{fig:llm_dynamic_results}
+\end{figure}
+
+\subsection{Analysis: The Softmax Concentration Trap}
+
+The LLM-Dynamic run exhibits a characteristic failure mode:
+\begin{enumerate}
+    \item The LLM observes that Iron/Workbench are not yet saturated and increases their logits.
+    \item At $\tau{=}0.5$, the softmax concentrates ${\sim}96\%$ of the budget onto these two weights ($w_{\text{iron}} \approx w_{\text{wb}} \approx 3.35$ out of a total budget of 7.0).
+    \item With Bridge at $w \approx 0.06$, the planner score is $3.0 \times 0.06 = 0.18$, while Iron scores $2.0 \times 3.35 = 6.70$---agents \emph{never} target Bridge.
+    \item Because Bridge/Enemy/Gold are never attempted, the LLM never observes progress on them and never reallocates budget. \textbf{Deadlock.}
+\end{enumerate}
+
+By contrast, the HRL system avoids this entirely: the LLM selects \texttt{BUILD\_BRIDGE} \emph{directly} once prerequisites are met, bypassing the $\arg\max$ bottleneck altogether.
+
+This confirms the thesis hypothesis: \textbf{the mechanism of LLM influence---policy shaping versus reward shaping---is the critical differentiator}, not the availability of task-structure knowledge.
+
+\newpage
+\section{HRL vs Baseline Results}
+
+The evaluation clearly demonstrates the efficacy of the HRL approach by strictly isolating a Converged LoRA Policy against a baseline NoLoRA failure run.
+
+\subsection{Main Metrics Comparison}
 The following graphs show a clear divergence between the Fine-tuned model and the Base model.
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.8\textwidth]{../../plots/comparison/Rewards_Avg_Env_Reward.png}
-    \caption{Extrinsic Reward Comparison}
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../plots/comparison/Rewards_Avg_Env_Reward.png}
+        \caption{Extrinsic Reward Comparison}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../plots/comparison/Episodes_Success_Rate.png}
+        \caption{Success Rate Comparison}
+    \end{subfigure}
+    \caption{Overall Performance Metrics}
 \end{figure}
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.8\textwidth]{../../plots/comparison/Episodes_Success_Rate.png}
-    \caption{Success Rate Comparison}
-\end{figure}
-
-\section{Subtask Bottleneck Analysis}
+\subsection{Subtask Bottleneck Analysis}
 By pulling the \texttt{Subtasks/} scalars directly into the comparison plots, we can see exactly where the Base model breaks down. The baseline model consistently fails at the later stages of the dependency DAG (e.g., crafting armor/sword and building the bridge), while the LoRA model completes the entire subtask sequence.
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.8\textwidth]{../../plots/comparison/Subtasks_Pickaxe_Pct.png}
-    \caption{Pickaxe Completion}
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../plots/comparison/Subtasks_Pickaxe_Pct.png}
+        \caption{Pickaxe Completion}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../plots/comparison/Subtasks_Bridge_Pct.png}
+        \caption{Bridge Completion}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../plots/comparison/Subtasks_Gold_Pct.png}
+        \caption{Gold Completion}
+    \end{subfigure}
+    \caption{Progression through subtask bottlenecks}
 \end{figure}
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.8\textwidth]{../../plots/comparison/Subtasks_Bridge_Pct.png}
-    \caption{Bridge Completion}
-\end{figure}
-
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.8\textwidth]{../../plots/comparison/Subtasks_Gold_Pct.png}
-    \caption{Gold Completion}
-\end{figure}
-
-\section{Perplexity Variance and Confidence}
+\subsection{Perplexity Variance and Confidence}
 Using kernel density estimation (Violin Plot) and bar plots with 95\% confidence intervals, we see the LoRA fine-tuning resulted in a vastly tighter and lower perplexity distribution. This mathematically demonstrates that the model's policy is much more consistent across varying states compared to the baseline's erratic confidence.
 
 \begin{figure}[htbp]
     \centering
-    \includegraphics[width=0.8\textwidth]{../../plots/comparison/perplexity_violin.png}
-    \caption{Perplexity Violin Plot}
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../plots/comparison/perplexity_violin.png}
+        \caption{Perplexity Violin Plot}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{../../plots/comparison/perplexity_bar_ci.png}
+        \caption{Perplexity Bar Plot with CIs}
+    \end{subfigure}
+    \caption{Model Confidence Metrics}
 \end{figure}
 
-\begin{figure}[htbp]
-    \centering
-    \includegraphics[width=0.8\textwidth]{../../plots/comparison/perplexity_bar_ci.png}
-    \caption{Perplexity Bar Plot with CIs}
-\end{figure}
-
-\section{Qualitative Inference Matrix}
+\subsection{Qualitative Inference Matrix}
 The script \texttt{scripts/inference\_examples.py} generated a direct comparison of the raw outputs in critical bottleneck states. The full markdown matrix can be found in \texttt{plots/comparison/inference\_qualitative\_matrix.md}.
 
 \end{document}
