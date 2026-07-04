@@ -25,3 +25,9 @@ data/interventions
 report/20260629/walkthrough_report.out
 report/20260629/walkthrough_report.log
 report/20260629/walkthrough_report.aux
+thesis/main/main.bbl
+thesis/main/main.bcf
+thesis/main/main.blg
+thesis/main/main.lof
+thesis/main/main.lot
+.gitignore

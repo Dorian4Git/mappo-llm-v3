@@ -1,0 +1,206 @@
+% Author: Dorian Thomé
+% Description: Core Definitions and Packages for HEG Master Thesis
+
+% ==========================================
+% 1. Fonts & Language
+% ==========================================
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}  % Base font support
+\usepackage{helvet}   % Loads Helvetica (Arial-like) 
+\renewcommand{\familydefault}{\sfdefault} % Sets default text to Sans-Serif (Arial)
+
+% ==========================================
+% 2. Spacing & Geometry
+% ==========================================
+\usepackage{setspace} 
+\setstretch{1.2}      % 1.2 line spacing (Standard HEG requirement) 
+\usepackage{microtype} % Better typography
+
+\usepackage[a4paper, 
+    left=3cm,         % Binding margin (3cm required)
+    right=2cm,        % Standard margin (2cm)
+    top=2cm,          
+    bottom=2cm        
+]{geometry}
+
+% ==========================================
+% 3. Headers & Footers (Layout)
+% ==========================================
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{} % Clear all default headers/footers
+
+% Remove the header line
+\renewcommand{\headrulewidth}{0pt} 
+
+% ==========================================
+% Custom Heading Sizes (matching Word template)
+% ==========================================
+\usepackage{titlesec}
+
+% Level 1 Heading (16pt) - e.g., \section
+% The {16}{19} means 16pt font size with 19pt line spacing.
+\titleformat{\section}
+  {\fontsize{16}{19}\bfseries\sffamily}{\thesection}{1em}{}
+
+% Level 2 Heading (14pt) - e.g., \subsection
+\titleformat{\subsection}
+  {\fontsize{14}{17}\bfseries\sffamily}{\thesubsection}{1em}{}
+
+% Level 3 Heading (12pt) - e.g., \subsubsection
+\titleformat{\subsubsection}
+  {\fontsize{12}{14}\bfseries\sffamily}{\thesubsubsection}{1em}{}
+
+% Note: If you are using the 'report' document class, you might also want to format \chapter to 16pt:
+% \titleformat{\chapter}[hang]
+%   {\fontsize{16}{19}\bfseries\sffamily}{\thechapter}{1em}{}
+
+% Footer Configuration: 
+% Left: 
+%   Line 1: Report Title
+%   Line 2: Author Name
+% Right: 
+%   Line 1: (empty)
+%   Line 2: Page Number (Aligns with Author Name)
+\lfoot{\footnotesize \shorttitle \\ \authorname} 
+\rfoot{\footnotesize \\ \thepage}
+
+% Increase footer space slightly to accommodate two lines
+\setlength{\footskip}{30pt}
+
+% Custom Double Light-Grey Footer Rule
+\renewcommand{\footrule}{%
+    \begingroup % Starts isolation
+        \color{gray!50}% Set color to light grey
+        \hrule width \headwidth height 0.5pt \vspace{1.5pt}% First line
+        \hrule width \headwidth height 0.5pt \vspace{3pt}% Second line
+    \endgroup % Ends isolation, protecting your main text
+}
+
+% ==========================================
+% 4. Graphics, Tables & Math
+% ==========================================
+\usepackage{float}
+\usepackage[table, xcdraw]{xcolor}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{subcaption} 
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, fit, backgrounds}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+
+\usepackage{amsmath, amssymb, amsthm, amsfonts, amscd, amstext}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{siunitx}
+\usepackage{enumitem}
+\usepackage{csquotes}
+
+% ==========================================
+% 5. Code Listings Style
+% ==========================================
+\usepackage{listings}
+\lstdefinestyle{code}{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    backgroundcolor=\color{gray!10},
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray!70},
+    stringstyle=\color{orange!80!black}
+}
+
+% ==========================================
+% 6. References & Hyperlinks
+% ==========================================
+\usepackage[nottoc]{tocbibind}
+
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,      % Black for print consistency
+    citecolor=black,
+    filecolor=black,
+    urlcolor=black,
+    pdfpagemode=FullScreen
+}
+\usepackage{cleveref} % Must be loaded after hyperref
+
+% --- Custom HEG Title Page ---
+\newcommand{\makeHEGtitle}[5]{
+% #1: Author Name
+% #2: Supervisor Name(s)
+% #3: Date/Place
+% #4: HEG Logo Path
+% #5: HES-SO Logo Path
+
+\begin{titlepage}
+    % 1. Logos (Absolute Position)
+    \begin{tikzpicture}[remember picture, overlay]
+        % Top Left: HEG Logo
+        \node[anchor=north west, xshift=1cm, yshift=-1cm] at (current page.north west) {
+            \includegraphics[width=0.3\textwidth]{#4}
+        };
+        % Bottom Right: HES-SO Logo
+        \node[anchor=south east, xshift=-2.5cm, yshift=1.5cm] at (current page.south east) {
+            \includegraphics[width=0.25\textwidth]{#5}
+        };
+    \end{tikzpicture}
+
+    \begin{center}
+        % Adjust this space to push the title down from the top logo
+        \vspace*{3cm} 
+
+        % 2. Title Section
+        \begingroup 
+            \linespread{1.5} \selectfont
+            {\fontsize{18}{22}\selectfont \bfseries \fulltitle} \\[5cm] % Report Title Set to 18pt
+        \endgroup
+
+        % 3. Submission Statement & Author
+        \begingroup 
+            \linespread{1.2} \selectfont
+            {\large \bfseries Master’s thesis submitted for the degree of\\
+            Master of Science HES-SO in Information Science\\
+            by}\\[0.5cm]
+            
+            % Author Name (Bold, no caps)
+            {\Large \bfseries #1} 
+        \endgroup
+
+        \vspace{2cm}
+
+        % 4. Supervisor Section
+        \begingroup 
+            \linespread{1.2} \selectfont
+            {\large Under the direction of:}\\[0.5cm]
+            {\Large \bfseries #2} % Supervisor Name
+        \endgroup
+
+        % 5. Push remaining text to bottom, but leave space for logo
+        \vfill 
+
+        % 6. Bottom Metadata
+        \begingroup 
+            \linespread{1.2} \selectfont
+            % Date and Place
+            {\large \bfseries #3}\\[2cm] 
+            
+            % School Information
+            {\large \bfseries Information Sciences}\\
+            {\large \bfseries Haute École de Gestion de Genève (HEG-GE)}
+        \endgroup
+        
+        % Buffer to prevent text from hitting the bottom logo
+        \vspace*{3.5cm} 
+    \end{center}
+\end{titlepage}
+}
+
+% Helper for the horizontal line
+\newcommand{\hrue}[1]{\rule{\linewidth}{#1}}

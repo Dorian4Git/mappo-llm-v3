@@ -1,0 +1,106 @@
+\documentclass[11pt, a4paper]{article}
+
+% Load custom definitions and packages
+\input{../tm.mydef.tex}
+
+% Bibliography Configuration
+\usepackage[backend=biber, style=iso-authoryear]{biblatex}
+\addbibresource{../references.bib}
+
+% --- Metadata ---
+\newcommand{\authorname}{Dorian Thomé}
+\newcommand{\shortauthors}{D. Thomé}
+\newcommand{\fulltitle}{Integrating LLMs with Multi-Agent Reinforcement Learning}
+\newcommand{\shorttitle}{LLM-MARL Integration}
+\newcommand{\place}{Geneva}
+\newcommand{\keywords}[2]{\par \vspace{.01em}\noindent{\small\bfseries \keywordsname:} #1\par}
+\def\keywordsname{Keywords}
+
+\title{\fulltitle}
+\author{\authorname}
+\date{\today}
+
+\begin{document}
+
+% --- Generate Title Page ---
+% Arguments: 
+% 1. Author Name
+% 2. Supervisor Name(s) (Use \\ for line breaks)
+% 3. Place & Date
+% 4. HEG Logo Path
+% 5. HES-SO Logo Path
+\makeHEGtitle
+    {\authorname}
+    {Prof. Dr. Alexandros Kalousis}
+    {Geneva, \today}
+    {../images/heg_logo.png} 
+    {../images/hesso_logo.png}
+
+\pagenumbering{roman}
+\section*{Declaration} % Required in the Word template
+I hereby declare that this thesis is my own work and that I have not used any sources other than those cited in the bibliography. I have acknowledged all contributions and assistance received during the research and writing process. This thesis has not been submitted for any other degree or professional qualification.
+
+\newpage
+
+{\centering \section*{Acknowledgments} \par}
+I would like to express my deepest gratitude to my supervisor, Prof. Dr. Alexandros Kalousis, for his invaluable guidance and support throughout this research. I also thank M. Jacopo Castellini for his insightful feedback and guidance.
+\medskip
+
+I acknowledge the use of the following resources:
+\begin{itemize}
+    \item Gemini 3.1 Pro for code generation, debugging, and assisting in spelling and grammar checks.
+\end{itemize}
+
+\newpage
+\begin{abstract}
+This thesis explores the integration of Large Language Models (LLMs) with Multi-Agent Reinforcement Learning (MARL), specifically focusing on dynamic implementations and Hierarchical Reinforcement Learning (HRL).
+\end{abstract}
+
+\keywords{Large Language Models, Multi-Agent Reinforcement Learning, Hierarchical Reinforcement Learning, Dynamic Implementation}
+
+\newpage
+
+% --- Table of Contents ---
+\tableofcontents
+\newpage
+
+\listoftables 
+\listoffigures 
+\newpage
+
+\pagenumbering{arabic}
+\setcounter{page}{1} 
+
+% Chapters
+\input{../chapters/01_introduction}
+\input{../chapters/02_background_marl}
+\input{../chapters/03_background_llm}
+\input{../chapters/04_hrl_architecture}
+\input{../chapters/05_dynamic_implementation}
+\input{../chapters/06_experiments_results}
+\input{../chapters/07_conclusion}
+
+\newpage
+\printbibliography
+
+
+
+\newpage
+
+\section*{Use of artificial intelligence-assisted tools}
+
+In the context of this work, the author states that he used artificial intelligence-assisted tools for the following purposes:
+
+\begin{itemize}
+    \item Améliorations formelles (orthographe, syntaxe, reformulation, structure du rapport) aux pages XXX \\
+    Mention des outils d'IA utilisés : Gemini 3.1 Pro
+    \item Réflexions de fond (production d'analyses, de recommandations) aux pages XXX \\
+    Mention des outils d'IA utilisés : Gemini 3.1 Pro
+    \item Collecte et interprétation des données \\
+    Tous les calculs statistiques (dans la partie x de l'analyse\dots) ont été effectués à l'aide de\dots{} Mention des IA utilisées : Gemini 3.1 Pro
+\end{itemize}
+
+
+
+
+\end{document}
