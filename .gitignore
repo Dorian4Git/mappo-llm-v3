@@ -31,3 +31,8 @@ thesis/main/main.blg
 thesis/main/main.lof
 thesis/main/main.lot
 .gitignore
+*.bbl
+*.bcf
+*.blg
+*.lof
+*.lot
