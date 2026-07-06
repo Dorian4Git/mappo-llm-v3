@@ -1,0 +1,529 @@
+% ==========================================================================
+% Chapter 4 — LLM Dynamic Implementation: The "Mixing Board" Approach
+% ==========================================================================
+\section{LLM Dynamic Implementation}
+\label{ch:dynamic_implementation}
+
+This chapter details the first integration strategy: LLM-driven dynamic reward shaping,
+informally referred to as the \emph{Mixing Board} approach.
+The LLM does not act inside the environment; instead, it periodically
+adjusts a vector of subtask priority weights that govern
+(i)~which navigation goal the DAG planner selects and
+(ii)~the magnitude of the potential-based shaping signal each agent receives.
+
+The exposition follows the exact dataflow of the implementation:
+\textbf{DAG-conditional planning} (\cref{sec:dag_planner}) $\rightarrow$
+\textbf{LLM weight query} (\cref{sec:llm_weight_query}) $\rightarrow$
+\textbf{softmax budget normalisation} (\cref{sec:softmax_budget}) $\rightarrow$
+\textbf{potential-based reward shaping} (\cref{sec:pbrs}).
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{System Overview}
+\label{sec:dyn_overview}
+
+\Cref{fig:dyn_system_flow} illustrates the end-to-end pipeline.
+At every training update the critic trigger module
+(\cref{sec:critic_trigger}) monitors TD-error statistics and
+success-rate trends. When a learning plateau is detected, a structured
+prompt is constructed, sent to the LLM, and the returned weight vector is
+processed by the \texttt{RewardInjector} safety layer before being
+applied to the DAG planner and the shaping function.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    box/.style={draw, rounded corners, minimum width=2.8cm, minimum height=0.9cm,
+                font=\small\sffamily, align=center, fill=gray!8},
+    arr/.style={-{Stealth[length=2.5mm]}, thick},
+    node distance=1.6cm and 2.2cm
+]
+    % Row 1
+    \node[box] (env)    {Env Step\\$s_t \to s_{t+1}$};
+    \node[box, right=of env] (planner) {DAG Planner\\$\pi_{\text{goal}}(\boldsymbol{w})$};
+    \node[box, right=of planner] (shaping) {PBRS\\$F(s,s',g)$};
+
+    % Row 2
+    \node[box, below=1.8cm of env] (trigger)  {Critic Trigger\\(Plateau + Z-score)};
+    \node[box, right=of trigger] (llm)     {LLM Query\\(Logit output)};
+    \node[box, right=of llm]     (injector){RewardInjector\\(Softmax + EMA)};
+
+    % Arrows Row 1
+    \draw[arr] (env) -- node[above,font=\footnotesize]{inventory} (planner);
+    \draw[arr] (planner) -- node[above,font=\footnotesize]{$g_t^{(i)}$} (shaping);
+    \draw[arr] (shaping.north) -- ++(0,0.5) -| node[near start,above,font=\footnotesize]{$r_t^{\text{shaped}}$} (env.north);
+
+    % Arrows Row 2
+    \draw[arr] (trigger) -- node[above,font=\footnotesize]{prompt} (llm);
+    \draw[arr] (llm)     -- node[above,font=\footnotesize]{$\boldsymbol{c}^{\text{raw}}$} (injector);
+    \draw[arr] (injector.north) -- ++(0,0.5) -- node[above,font=\footnotesize]{$\boldsymbol{w}$} (planner.south);
+
+    % Vertical feed
+    \draw[arr,dashed] (env.south) -- node[left,font=\footnotesize]{TD stats} (trigger.north);
+\end{tikzpicture}
+\caption{Dataflow of the LLM Dynamic ``Mixing Board'' approach.
+         Solid arrows denote per-step operations; the dashed arrow
+         indicates per-update monitoring.}
+\label{fig:dyn_system_flow}
+\end{figure}
+
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{DAG-Conditional Planner}
+\label{sec:dag_planner}
+
+The crafting environment enforces a strict dependency graph over subtasks:
+\[
+\underbrace{(\text{Wood} + \text{Stone})}_{\text{collect}}
+\;\longrightarrow\;
+\text{Pickaxe}
+\;\longrightarrow\;
+\text{Iron}
+\;\longrightarrow\;
+\underbrace{(\text{Sword} + \text{Armor})}_{\text{craft}}
+\;\longrightarrow\;
+\text{Bridge}
+\;\longrightarrow\;
+\text{Enemy}
+\;\longrightarrow\;
+\text{Gold}
+\]
+
+\noindent
+\textbf{Goal selection.}
+For each parallel environment, the planner inspects the current
+inventory vector $\mathbf{x}\in\mathbb{Z}^{10}$ and builds a set of
+\emph{feasible} subtasks for each agent.
+Agent~0 (Lumberjack) may target \{Wood, Workbench, Bridge, Enemy\};
+Agent~1 (Miner) may target \{Stone, Workbench, Iron, Enemy, Gold\}.
+A subtask is feasible only if its DAG preconditions are met (e.g.\
+\texttt{Iron} requires $\mathtt{pickaxe}\ge 1$).
+
+For each feasible subtask $j$, a \emph{score} is computed:
+\begin{equation}
+\label{eq:greedy_score}
+    s_j = R_j^{\text{base}} \cdot w_j
+\end{equation}
+where $R_j^{\text{base}}$ is a hand-crafted base reward reflecting the
+task's importance in the DAG (e.g.\ $R_{\text{gold}}=15$,
+$R_{\text{enemy}}=10$, $R_{\text{bridge}}=3$), and $w_j$ is the
+LLM-provided weight for subtask $j$.
+The agent greedily selects the subtask with the highest score:
+\begin{equation}
+\label{eq:greedy_select}
+    g^{(i)} = \arg\max_{j \in \mathcal{F}^{(i)}(\mathbf{x})}\;
+              R_j^{\text{base}} \cdot w_j
+\end{equation}
+where $\mathcal{F}^{(i)}(\mathbf{x})$ denotes the feasible set for
+agent~$i$ given inventory~$\mathbf{x}$.
+
+The following code excerpt shows the core of this selection for Agent~0:
+\begin{lstlisting}[style=code, language=Python, caption={Greedy score computation for Agent~0 in \texttt{orchestrator.py}.}, label={lst:greedy_planner}]
+# Agent 0 (Lumberjack) valid tasks
+a0_scores = {}
+if w < 2:
+    a0_scores["Wood"] = R_WOOD * w_wood
+needs_wb_a0 = (p == 0) or (sw == 0) or (a == 0)
+if needs_wb_a0:
+    a0_scores["Workbench"] = R_WORKBENCH * w_workbench
+if b == 0:
+    a0_scores["Bridge"] = R_BRIDGE * w_bridge
+if e == 0:
+    a0_scores["Enemy"] = R_ENEMY * w_enemy
+
+a0_target = max(a0_scores.items(),
+                key=lambda x: x[1])[0] \
+            if a0_scores else "None"
+\end{lstlisting}
+
+\noindent
+\textbf{Cooperative coupling guardrail.}
+If either agent selects a cooperative task (Workbench or Bridge) that
+requires both agents to be co-located, the planner pulls the
+other agent to the same target:
+\begin{lstlisting}[style=code, language=Python, caption={Cooperative coupling in \texttt{orchestrator.py}.}, label={lst:coop_coupling}]
+if a0_target == "Workbench" and needs_wb_a1:
+    a1_target = "Workbench"
+elif a1_target == "Workbench" and needs_wb_a0:
+    a0_target = "Workbench"
+elif a0_target == "Bridge" and "Bridge" in a1_scores:
+    a1_target = "Bridge"
+\end{lstlisting}
+
+\noindent
+\textbf{DAG guardrails.}
+Before any weight vector is used, a hard programmatic filter
+(\texttt{apply\_dag\_guardrails}) zeroes out weights whose
+preconditions are provably unmet:
+\begin{lstlisting}[style=code, language=Python, caption={DAG guardrail enforcement in \texttt{orchestrator.py}.}, label={lst:dag_guardrail}]
+def apply_dag_guardrails(weights, metrics):
+    guarded = dict(weights)
+    # Iron requires Pickaxe
+    if metrics.get('pickaxe', 0.0) < 1.0:
+        guarded['w_iron'] = 0.0
+    # Enemy and Gold require Bridge+Sword+Armor
+    if (metrics.get('bridge', 0.0) < 1.0
+        or metrics.get('sword', 0.0) < 1.0
+        or metrics.get('armor', 0.0) < 1.0):
+        guarded['w_enemy'] = 0.0
+        guarded['w_gold'] = 0.0
+    return guarded
+\end{lstlisting}
+
+This is essential because the LLM occasionally hallucinated positive
+weights for unreachable subtasks (e.g.\ assigning $w_{\text{iron}}>0$
+when no pickaxe exists), injecting noise into the value network.
+The programmatic guardrail acts as a hard constraint layer that
+overrides the LLM output.
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Two-Stage Critic Trigger}
+\label{sec:critic_trigger}
+
+The LLM is not queried every update; instead, a \emph{two-stage gate}
+determines when an intervention is necessary.
+
+\subsubsection{Stage~1: Plateau Gate}
+
+A rolling window of the last $W$ success-rate values is maintained.
+The gate opens when the improvement over the previous window falls
+below a threshold~$\epsilon$:
+\begin{equation}
+\label{eq:plateau_gate}
+    \text{gate\_open}
+    \;\Longleftrightarrow\;
+    \left|\;
+        \underbrace{\frac{1}{W}\sum_{k=0}^{W-1}
+            \rho_{t-k}}_{\bar{\rho}_{\text{recent}}}
+        \;-\;
+        \underbrace{\frac{1}{W}\sum_{k=W}^{2W-1}
+            \rho_{t-k}}_{\bar{\rho}_{\text{older}}}
+    \;\right|
+    \;<\;
+    \epsilon
+\end{equation}
+where $\rho_t$ is the success rate at update~$t$, $W$ is the
+\texttt{plateau\_window} (default 10), and $\epsilon$ is the
+\texttt{plateau\_threshold} (default 0.02).
+Additionally, the gate opens if any individual subtask
+has plateaued (variance $< 0.02$ over 20~updates while
+remaining between 5\% and 95\% completion).
+
+\subsubsection{Stage~2: Z-Score Trigger}
+
+Once the gate is open, the system checks whether the critic's
+TD-error variance has spiked beyond $\sigma$ standard deviations from
+its running mean, indicating that the value network is ``confused'':
+\begin{equation}
+\label{eq:zscore_trigger}
+    z = \frac{
+        \text{Var}[\delta_t] - \overline{\text{Var}[\delta]}
+    }{
+        \text{Std}\bigl[\text{Var}[\delta]\bigr]
+    }
+    \;>\;
+    \frac{\sigma_{\text{base}}}{\max(\eta,\, 0.1)}
+\end{equation}
+where $\delta_t$ is the TD error at update~$t$, the bar denotes the
+running mean over a window of 100 updates, $\sigma_{\text{base}}=1.5$,
+and $\eta$ is a sensitivity factor that decays multiplicatively by
+$0.995$ after each trigger, raising the effective threshold over time.
+
+If the gate is open and the trigger fires, an LLM intervention is dispatched.
+A cooldown of 25~updates prevents repeated firing.
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{LLM Weight Query: Continuous Logit Output}
+\label{sec:llm_weight_query}
+
+When the trigger fires, the \texttt{PromptBuilder} constructs a
+structured prompt containing:
+
+\begin{enumerate}[nosep]
+    \item The trigger reason (plateau description, z-score value).
+    \item Current subtask completion percentages, with saturation flags ($\ge 95\%$).
+    \item Per-agent TD-error statistics (mean, variance, per-agent breakdown).
+    \item Current reward shaping weights.
+    \item An episodic memory buffer of the last 3 interventions and their
+          resulting TD-error deltas.
+\end{enumerate}
+
+The prompt explicitly instructs the LLM to output \emph{unnormalised
+log-probabilities (logits)}, not final weights:
+
+\begin{quote}
+\small\sffamily
+``Your output values represent unnormalized log-probabilities (logits).
+They will be processed via a temperature-scaled softmax function and
+scaled to maintain a constant total reward budget.
+Focus on the RELATIVE MAGNITUDE and PRIORITY RANKING of subtasks.''
+\end{quote}
+
+This design decouples the LLM's task from absolute magnitude calibration.
+The LLM is free to express priority differences via wide logit ranges
+(e.g.\ a bottleneck at 8.0 vs.\ saturated at 0.5), and the downstream
+normalisation ensures a bounded, stable reward budget.
+
+The LLM responds with a JSON object:
+\begin{lstlisting}[style=code, language=Python, caption={Schema of the LLM response.}, label={lst:llm_response}]
+{
+  "reasoning": "<1-2 sentences>",
+  "w_wood":      <float, logit>,
+  "w_stone":     <float, logit>,
+  "w_workbench": <float, logit>,
+  "w_iron":      <float, logit>,
+  "w_bridge":    <float, logit>,
+  "w_enemy":     <float, logit>,
+  "w_gold":      <float, logit>
+}
+\end{lstlisting}
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Softmax Attention Budget}
+\label{sec:softmax_budget}
+
+The raw logits $\boldsymbol{c}=(c_1,\dots,c_K)$ returned by the LLM are
+converted into a \emph{budget-preserving} weight vector via a
+temperature-scaled softmax:
+\begin{equation}
+\label{eq:softmax_budget}
+\boxed{
+    w_i
+    \;=\;
+    K \;\cdot\;
+    \frac{
+        \exp\!\bigl(c_i / \tau\bigr)
+    }{
+        \displaystyle\sum_{j=1}^{K}
+        \exp\!\bigl(c_j / \tau\bigr)
+    }
+}
+\end{equation}
+where $K=|\mathcal{W}|=7$ is the number of subtask weights and
+$\tau=0.5$ is the temperature hyperparameter.
+
+\noindent
+\textbf{Properties of this equation:}
+\begin{itemize}[nosep]
+    \item \emph{Constant budget}: $\sum_{i=1}^{K} w_i = K$ always.
+          The total reward magnitude is invariant to the LLM's output scale,
+          preventing the LLM from accidentally inflating or deflating
+          the overall reward.
+    \item \emph{Sharpening via temperature}: With $\tau=0.5 < 1$, the
+          softmax amplifies differences between logits, producing
+          more decisive priority assignments.
+          Conversely, $\tau\to\infty$ yields uniform weights.
+    \item \emph{Numerical stability}: The implementation shifts logits
+          before exponentiation:
+\end{itemize}
+
+\begin{lstlisting}[style=code, language=Python, caption={Softmax attention budget in \texttt{reward\_injector.py}.}, label={lst:softmax_code}]
+logits = np.array([clipped[k] for k in keys])
+logits_shifted = logits - np.max(logits)        # stability
+exp_logits = np.exp(logits_shifted / self.softmax_temperature)
+softmax_probs = exp_logits / np.sum(exp_logits)
+scaled = softmax_probs * len(keys)              # budget = K
+\end{lstlisting}
+
+\subsubsection{EMA Smoothing}
+\label{sec:ema_smoothing}
+
+To avoid abrupt weight jumps that would destabilise PPO's value function,
+the softmax output is blended with the previous weights via
+Exponential Moving Average:
+\begin{equation}
+\label{eq:ema}
+    \widetilde{w}_i^{(t)}
+    \;=\;
+    \alpha \cdot w_i^{\text{softmax}}
+    + (1-\alpha) \cdot \widetilde{w}_i^{(t-1)}
+\end{equation}
+with $\alpha=0.2$. This means that each LLM intervention takes
+roughly $\lceil 1/\alpha \rceil = 5$ updates to fully propagate.
+
+\subsubsection{Safety Bounds}
+\label{sec:safety}
+
+Before softmax normalisation, individual logits are clipped to
+$[0, w_{\max}]$ with $w_{\max}=3.0$, and the raw sum is bounded
+by $W_{\text{bound}}=15.0$:
+\begin{equation}
+    c_i' = \text{clip}(c_i, 0, w_{\max}),
+    \qquad
+    \text{if}\; \sum_i c_i' > W_{\text{bound}}
+    \;\Rightarrow\;
+    c_i'' = c_i' \cdot \frac{W_{\text{bound}}}{\sum_j c_j'}
+\end{equation}
+
+These bounds prevent adversarial or malformed LLM outputs from
+creating extreme weight vectors.
+
+\subsubsection{Auto-Rollback}
+\label{sec:rollback}
+
+After each intervention, the \texttt{RewardInjector} monitors the
+average environment reward for \texttt{rollback\_window}=25~updates.
+If the post-intervention average drops more than 20\% below the
+pre-intervention level, the weights are automatically rolled back:
+\begin{equation}
+    \text{rollback}
+    \;\Longleftrightarrow\;
+    \frac{
+        \bar{r}_{\text{pre}} - \bar{r}_{\text{post}}
+    }{
+        |\bar{r}_{\text{pre}}|
+    }
+    > 0.20
+\end{equation}
+
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Potential-Based Reward Shaping}
+\label{sec:pbrs}
+
+Once the planner has assigned goal zone $g^{(i)}_t$ to agent~$i$,
+a shaping reward is computed via the potential-based reward shaping
+(PBRS) framework~\cite{Ng_Harada_Russell_1999}. The key theoretical guarantee of PBRS
+is that it preserves the set of optimal policies: adding $F$ to
+the reward does not change which policy is optimal.
+
+\subsubsection{Potential Function}
+The potential of agent~$i$ in state~$s$ with respect to goal zone~$g$ is:
+\begin{equation}
+\label{eq:potential}
+    \Phi^{(i)}(s, g) = D_{\max} - \|\mathbf{p}^{(i)}(s) - \mathbf{z}_g\|_2
+\end{equation}
+where $\mathbf{p}^{(i)}(s)\in\mathbb{R}^2$ is agent~$i$'s position,
+$\mathbf{z}_g\in\mathbb{R}^2$ is the target zone's position, and
+$D_{\max}=85$ is an upper bound on the grid diagonal.
+The potential is high when the agent is close to the goal and low when far.
+
+\subsubsection{Shaping Reward}
+The per-step shaping reward follows the standard PBRS difference form:
+\begin{equation}
+\label{eq:shaping_reward}
+    F_t^{(i)}
+    \;=\;
+    \bigl(\gamma\,\Phi^{(i)}(s_{t+1}, g) - \Phi^{(i)}(s_t, g)\bigr)
+    \;\cdot\;
+    \lambda_{\text{scale}}
+    \;\cdot\;
+    \mathbb{1}[g \text{ active}]
+\end{equation}
+where $\gamma=0.99$ is the discount factor and
+$\lambda_{\text{scale}} = 0.05$ ($\texttt{R\_LLM\_SCALE}$).
+
+The vectorised implementation processes all environments and agents in parallel:
+
+\begin{lstlisting}[style=code, language=Python, caption={Vectorised PBRS in \texttt{orchestrator.py}.}, label={lst:pbrs_code}]
+dist_next = np.linalg.norm(pos_next - goal_targets, axis=2)
+dist_prev = np.linalg.norm(pos_prev - goal_targets, axis=2)
+
+MAX_DIST = 85.0
+phi_next = MAX_DIST - dist_next
+phi_prev = MAX_DIST - dist_prev
+F = (gamma * phi_next - phi_prev) * R_LLM_SCALE * goal_active
+\end{lstlisting}
+
+\subsubsection{Design Decision: No Per-Weight Scaling of $F$}
+\label{sec:no_f_scaling}
+
+An important design decision, documented in the codebase, is that the
+shaping signal $F$ is \textbf{not} multiplied by the per-subtask weight
+$w_j$. The LLM's influence is already applied at goal \emph{selection}
+time (\cref{eq:greedy_select}). Scaling the shaping gradient by
+transient EMA-smoothed weights would create a non-stationary reward
+function whose variance confuses PPO's value network, leading to
+training instability.
+
+\subsubsection{Shaping Decay ($\lambda$)}
+The shaped reward is blended with the environment reward using a
+time-varying coefficient $\lambda_t$:
+\begin{equation}
+\label{eq:total_reward}
+    r_t^{\text{total}}
+    = r_t^{\text{env}}
+    + \lambda_t \cdot F_t
+\end{equation}
+$\lambda_t$ begins at 1.0 and anneals linearly to 0.01 once the
+bridge-building success rate exceeds 40\%, over 500~updates:
+\begin{equation}
+    \lambda_t =
+    \begin{cases}
+        1.0 & \text{if bridge\_pct} < 0.4 \\[4pt]
+        1.0 + (0.01 - 1.0) \cdot \min\!\left(\dfrac{d}{500},\, 1\right)
+        & \text{otherwise}
+    \end{cases}
+\end{equation}
+where $d$ counts updates since the decay was activated.
+This schedule ensures dense guidance in early training (when the agents
+have not yet learned the task structure) and a graceful transition to
+the sparse environment reward once agents have reached the critical
+``bridge'' milestone.
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Async Communication Architecture}
+\label{sec:async_bridge}
+
+To avoid blocking the training loop during LLM inference, queries are
+dispatched through the \texttt{LLMBridge} module, which runs a
+background worker thread.
+
+\begin{enumerate}[nosep]
+    \item The critic trigger fires and constructs a prompt.
+    \item The prompt is enqueued to a thread-safe \texttt{queue.Queue}.
+    \item A daemon worker thread dequeues and calls the LLM backend
+          (Ollama HTTP API, HuggingFace local, or Gemini API).
+    \item On completion, the callback parses the JSON, passes it to
+          the \texttt{RewardInjector}, and stores the result as
+          ``pending weights.''
+    \item At the \emph{next} training update, the
+          \texttt{CriticTrigger.on\_update\_end} detects the pending
+          weights and applies them.
+\end{enumerate}
+
+This design guarantees that the PPO update is never blocked by network
+latency. The LLM bridge also maintains a thread-safe response cache,
+avoiding redundant queries for identical prompts.
+Retry logic uses exponential backoff ($2^k$ seconds for attempt~$k$,
+up to 3~retries).
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Summary}
+\label{sec:dyn_summary}
+
+The Mixing Board approach treats the LLM as a \emph{meta-level supervisor}
+that reads aggregate training statistics and outputs priority logits.
+A cascade of safety layers (DAG guardrails, clipping, softmax budget,
+EMA smoothing, auto-rollback) ensures that the LLM's influence is
+bounded and stable, while the PBRS framework guarantees policy-invariance
+of the shaping signal.
+
+\begin{table}[H]
+\centering
+\caption{Key hyperparameters of the Mixing Board approach.}
+\label{tab:dyn_hyperparams}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Component} & \textbf{Parameter} & \textbf{Value} \\
+\midrule
+Softmax budget   & Temperature $\tau$            & 0.5 \\
+                 & Budget size $K$               & 7   \\
+EMA smoothing    & $\alpha$                      & 0.2 \\
+Safety bounds    & $w_{\max}$ (per-weight clip)   & 3.0 \\
+                 & $W_{\text{bound}}$ (sum clip)  & 15.0 \\
+Critic trigger   & Plateau window $W$            & 10  \\
+                 & Plateau threshold $\epsilon$  & 0.02 \\
+                 & Z-score $\sigma_{\text{base}}$ & 1.5 \\
+                 & Cooldown                      & 25 updates \\
+                 & Sensitivity decay             & 0.995 \\
+Auto-rollback    & Window                        & 25 updates \\
+                 & Drop threshold                & 20\% \\
+PBRS             & Scale $\lambda_{\text{scale}}$ & 0.05 \\
+                 & $D_{\max}$                    & 85.0 \\
+Shaping decay    & $\lambda_{\text{init}}$       & 1.0 \\
+                 & $\lambda_{\text{final}}$      & 0.01 \\
+                 & Decay trigger                 & bridge $>$ 40\% \\
+                 & Decay duration                & 500 updates \\
+\bottomrule
+\end{tabular}
+\end{table}

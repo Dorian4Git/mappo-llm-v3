@@ -1,0 +1,643 @@
+% ==========================================================================
+% Chapter 5 — HRL Architecture: The "Meta-Controller" Approach
+% ==========================================================================
+\section{Hierarchical Reinforcement Learning Architecture}
+\label{ch:hrl_architecture}
+
+This chapter details the second integration strategy: a Hierarchical
+Reinforcement Learning (HRL) framework in which the LLM acts as a
+\emph{Meta-Controller}, selecting discrete high-level \emph{Options}
+that govern the behaviour of the low-level MAPPO policy.
+
+Unlike the Mixing Board approach (\cref{ch:dynamic_implementation}),
+which adjusts continuous weights over a fixed greedy planner, the
+Meta-Controller replaces the planner entirely.
+The LLM issues explicit macro-action assignments per agent, and the
+low-level policy receives the active option as part of its observation,
+creating a two-level decision hierarchy.
+
+The exposition follows the implementation order:
+\textbf{Option definitions} (\cref{sec:option_defs}) $\rightarrow$
+\textbf{discrete option selection} (\cref{sec:discrete_selection}) $\rightarrow$
+\textbf{one-hot observation augmentation} (\cref{sec:onehot_aug}) $\rightarrow$
+\textbf{bipartite reward structure} (\cref{sec:bipartite_reward}) $\rightarrow$
+\textbf{staleness and reflection} (\cref{sec:staleness}).
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{System Overview}
+\label{sec:hrl_overview}
+
+\Cref{fig:hrl_system_flow} shows the two-level architecture.
+The Meta-Controller (LLM) observes inventory transitions and
+assigns Options to each agent asynchronously; the low-level MAPPO
+policy conditions on the active option and receives a composite reward
+signal comprising both the environment's sparse reward and
+an option-specific dense intrinsic reward.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    box/.style={draw, rounded corners, minimum width=2.6cm, minimum height=0.9cm,
+                font=\small\sffamily, align=center, fill=gray!8},
+    llmbox/.style={draw, rounded corners, minimum width=2.6cm, minimum height=0.9cm,
+                font=\small\sffamily, align=center, fill=blue!8},
+    arr/.style={-{Stealth[length=2.5mm]}, thick},
+    node distance=1.6cm and 2cm
+]
+    % Top row: LLM level
+    \node[llmbox] (llm) {LLM\\Meta-Controller};
+    \node[box, right=3cm of llm] (ctrl) {OptionController\\$o_t^{(0)}, o_t^{(1)}$};
+
+    % Bottom row: MAPPO level
+    \node[box, below=2cm of llm] (env) {Env Step\\$s_t \to s_{t+1}$};
+    \node[box, right=3cm of env] (agent) {MAPPO Agent\\$\pi_\theta(a \mid s, o)$};
+
+    % LLM -> Controller
+    \draw[arr] (llm) -- node[above,font=\footnotesize]{JSON} (ctrl);
+
+    % Controller -> Agent (one-hot)
+    \draw[arr] (ctrl.south) -- ++(0,-0.6) -|
+        node[near start,right,font=\footnotesize]{one-hot $\mathbf{e}_{o}$} (agent.north);
+
+    % Agent -> Env
+    \draw[arr] (agent.south) -- ++(0,-0.4) -|
+        node[near start,below,font=\footnotesize]{$a_t$} (env.south);
+
+    % Env -> Agent (reward)
+    \draw[arr] (env.east) -- node[below,font=\footnotesize]{$r_t^{\text{env}} + r_t^{\text{intr}}$} (agent.west);
+
+    % Env -> LLM (trigger)
+    \draw[arr,dashed] (env.north) -- node[left,font=\footnotesize]{\scriptsize success / stale} (llm.south);
+
+    % Env -> Controller (reset on terminal)
+    \draw[arr,dashed] (env.north east) -- node[right,font=\footnotesize,pos=0.3]{\scriptsize terminal} (ctrl.south west);
+\end{tikzpicture}
+\caption{Two-level HRL architecture.
+         The LLM Meta-Controller is triggered by option success or
+         staleness (dashed). The OptionController passes one-hot
+         embeddings to the MAPPO agent at every step (solid).}
+\label{fig:hrl_system_flow}
+\end{figure}
+
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Option Definitions}
+\label{sec:option_defs}
+
+An \emph{Option} $o\in\mathcal{O}$ is a macro-action defined by the
+triple $\langle \mathcal{I}_o, \pi_o, \beta_o \rangle$: an initiation
+set, an intra-option policy, and a termination condition~\cite{Sutton_Precup_Singh_1999}.
+In our implementation, the intra-option policy is not explicitly
+separate; instead, the low-level MAPPO policy is conditioned on the
+active option via observation augmentation (\cref{sec:onehot_aug}).
+
+The option set is hard-coded from the DAG:
+\begin{equation}
+\label{eq:option_set}
+\mathcal{O} = \left\{
+\begin{array}{l}
+    \texttt{COLLECT\_WOOD},\;
+    \texttt{COLLECT\_STONE},\;
+    \texttt{CRAFT\_PICKAXE},\\
+    \texttt{MINE\_IRON},\;
+    \texttt{CRAFT\_SWORD},\;
+    \texttt{CRAFT\_ARMOR},\\
+    \texttt{BUILD\_BRIDGE},\;
+    \texttt{DEFEAT\_ENEMY},\;
+    \texttt{MINE\_GOLD},\;
+    \texttt{IDLE}
+\end{array}
+\right\}
+\end{equation}
+giving $|\mathcal{O}|=10$ discrete options.
+
+Each option has three associated properties defined in \texttt{options.py}:
+
+\begin{table}[H]
+\centering
+\caption{Option properties: target zone, responsible agent, and initiation condition.}
+\label{tab:option_props}
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Option} & \textbf{Zone} & \textbf{Agent} & \textbf{Initiation Condition} \\
+\midrule
+\texttt{COLLECT\_WOOD}  & Wood (0)      & 0     & Always \\
+\texttt{COLLECT\_STONE} & Stone (1)     & 1     & Always \\
+\texttt{CRAFT\_PICKAXE} & Workbench (2) & Both  & wood $\ge 1$, stone $\ge 1$, pickaxe $< 1$ \\
+\texttt{MINE\_IRON}     & Iron (3)      & 1     & pickaxe $\ge 1$ \\
+\texttt{CRAFT\_SWORD}   & Workbench (2) & Both  & iron $\ge 1$, sword $< 1$ \\
+\texttt{CRAFT\_ARMOR}   & Workbench (2) & Both  & iron $\ge 1$, armor $< 1$ \\
+\texttt{BUILD\_BRIDGE}  & Bridge (4)    & Both  & wood $\ge 1$, bridge $< 1$ \\
+\texttt{DEFEAT\_ENEMY}  & Enemy (5)     & Both  & bridge, sword, armor $\ge 1$ \\
+\texttt{MINE\_GOLD}     & Gold (6)      & 1     & enemy defeated, gold $< 1$ \\
+\texttt{IDLE}           & ---           & Both  & Always \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent
+\textbf{Termination.}
+An option terminates when the relevant inventory slot increases:
+\begin{lstlisting}[style=code, language=Python, caption={Termination check (excerpt from \texttt{options.py}).}, label={lst:option_term}]
+def is_terminated(option, inventory):
+    if option == Option.COLLECT_WOOD:
+        return inventory[:, I_WOOD] >= 1
+    elif option == Option.CRAFT_PICKAXE:
+        return inventory[:, I_PICKAXE] >= 1
+    # ... analogous for all other options
+    elif option == Option.IDLE:
+        return np.zeros(n, dtype=bool)  # never terminates
+\end{lstlisting}
+
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Discrete Option Selection by the LLM}
+\label{sec:discrete_selection}
+
+The Meta-Controller is an LLM (Qwen~2.5 7B via Ollama, or a LoRA-finetuned variant)
+that receives a structured prompt and returns a JSON object specifying
+one option per agent.
+
+\subsubsection{Trigger Conditions}
+
+Option selection is triggered under two conditions, evaluated per-environment:
+\begin{enumerate}[nosep]
+    \item \textbf{Success}: at least one agent's active option has completed
+          (the corresponding inventory slot changed).
+    \item \textbf{Staleness}: the active option has been running for more
+          than $T_{\text{stale}}=150$ steps without completion.
+\end{enumerate}
+
+Environments currently awaiting an LLM response (\texttt{llm\_pending})
+or on cooldown (50~steps after the last query) are excluded:
+\begin{lstlisting}[style=code, language=Python, caption={Trigger logic in \texttt{hrl\_train\_loop.py}.}, label={lst:hrl_trigger}]
+success_mask = a0_success | a1_success
+stale_mask = option_controller.get_stale_mask(threshold=150)
+ready_mask = (success_mask | stale_mask) \
+             & (~option_controller.llm_pending) \
+             & (option_controller.cooldown_counter == 0)
+trigger_envs = np.where(ready_mask)[0]
+\end{lstlisting}
+
+\subsubsection{Prompt Structure}
+
+For a normal trigger (success), the \texttt{PromptBuilder} constructs a
+Chain-of-Thought prompt:
+\begin{lstlisting}[style=code, language=Python, caption={HRL prompt schema (from \texttt{prompt\_builder.py}).}, label={lst:hrl_prompt}]
+"""
+You are the high-level Cognitive Orchestrator for two MARL agents.
+Strict Dependency DAG: (Wood+Stone) -> Pickaxe -> Iron
+    -> (Sword+Armor) -> Bridge -> Enemy -> Gold.
+
+### CURRENT STATE:
+Inventory: {inventory}
+Agent 0 Status: {a0_status}
+Agent 1 Status: {a1_status}
+
+### YOUR TASK:
+Assign exactly ONE discrete Option to each agent.
+Available Options: ["COLLECT_WOOD", "COLLECT_STONE", ...]
+
+Respond ONLY with valid JSON:
+{
+  "dag_check": "<1 sentence reasoning>",
+  "agent_0_option": "<Option>",
+  "agent_1_option": "<Option>"
+}
+"""
+\end{lstlisting}
+
+For a staleness trigger, a \emph{counterfactual reflection prompt} is
+used instead, forcing the LLM to diagnose \textbf{why} the previous
+assignment failed before issuing new options:
+\begin{lstlisting}[style=code, language=Python, caption={Reflection prompt for stale options (from \texttt{prompt\_builder.py}).}, label={lst:reflection_prompt}]
+"""
+### REFLECTION REQUIRED:
+Agent 0 was assigned "{a0_option}" and Agent 1
+was assigned "{a1_option}".
+After {stale_steps} steps, NEITHER has succeeded.
+
+### YOUR TASK:
+1. First, diagnose what prerequisite is MISSING.
+2. Then assign corrected options that respect the DAG.
+
+Respond ONLY with JSON:
+{
+  "reflection": "<diagnosis>",
+  "dag_check": "<verification>",
+  "agent_0_option": "<Option>",
+  "agent_1_option": "<Option>"
+}
+"""
+\end{lstlisting}
+
+\subsubsection{Batched Queries with Deduplication}
+
+Multiple environments may trigger simultaneously. To avoid redundant
+LLM calls, environments with identical inventory states are
+deduplicated: the system groups environments by unique inventory
+vector and sends one prompt per unique state. The response is then
+broadcast to all environments sharing that state:
+
+\begin{lstlisting}[style=code, language=Python, caption={Inventory deduplication in \texttt{hrl\_train\_loop.py}.}, label={lst:dedup}]
+inv_batch = inv_next[trigger_envs].astype(int)
+unique_invs, inverse_indices = np.unique(
+    inv_batch, axis=0, return_inverse=True
+)
+unique_to_envs = [
+    trigger_envs[inverse_indices == i]
+    for i in range(len(unique_invs))
+]
+\end{lstlisting}
+
+All unique prompts are dispatched as a batch to the \texttt{LLMBridge}
+via \texttt{query\_batch\_async}, and responses are applied asynchronously.
+
+\subsubsection{Environment Freezing During Pending Queries}
+
+While an environment is awaiting an LLM response, it is frozen to
+prevent state drift:
+\begin{lstlisting}[style=code, language=Python, caption={Environment freezing for pending queries.}, label={lst:env_freeze}]
+pending_mask = option_controller.llm_pending.copy()
+if pending_mask.any():
+    actions_np[pending_mask] = 4  # NO-OP
+    saved_pos = vec_env.pos[pending_mask].copy()
+    saved_inv = vec_env.inventory[pending_mask].copy()
+    # ... after env.step(), restore saved state:
+    vec_env.pos[pending_mask] = saved_pos
+    vec_env.inventory[pending_mask] = saved_inv
+    vec_env.step_counts[pending_mask] -= 1  # pause timer
+\end{lstlisting}
+
+This ensures that the LLM's decision is applied to the exact state
+it observed, not a state that has drifted during inference latency.
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{One-Hot Observation Augmentation}
+\label{sec:onehot_aug}
+
+The active option is communicated to the low-level MAPPO policy via
+a one-hot vector appended to the agent's observation.
+
+\subsubsection{Observation Construction}
+
+The vector input to the MAPPO network in HRL mode is:
+\begin{equation}
+\label{eq:hrl_obs}
+    \mathbf{v}_t^{(i)}
+    =
+    \left[
+        \underbrace{\mathbf{p}^{(i)}}_{\mathbb{R}^2}
+        \;\Big\|\;
+        \underbrace{\mathbf{0}}_{\mathbb{R}^3\text{ (pad)}}
+        \;\Big\|\;
+        \underbrace{\mathbf{x}}_{\mathbb{R}^{10}\text{ (inv)}}
+        \;\Big\|\;
+        \underbrace{\mathbf{e}_{o_t^{(i)}}}_{\mathbb{R}^{10}\text{ (one-hot)}}
+    \right]
+    \;\in\; \mathbb{R}^{25}
+\end{equation}
+where $\mathbf{p}^{(i)}$ is the agent's position,
+the zero-padding replaces the goal embedding from the Mixing Board
+approach (maintaining dimensional compatibility),
+$\mathbf{x}$ is the inventory vector, and
+$\mathbf{e}_{o}\in\{0,1\}^{|\mathcal{O}|}$ is the one-hot encoding
+of the active option.
+
+\begin{lstlisting}[style=code, language=Python, caption={Observation construction in \texttt{hrl\_train\_loop.py}.}, label={lst:hrl_obs}]
+goal_emb = np.zeros((n_envs, 2, 3), dtype=np.float32)
+inv_repeat = np.stack([
+    all_obs[:, 0, 4:4+NUM_ITEMS],
+    all_obs[:, 0, 4:4+NUM_ITEMS]
+], axis=1)
+opt_repeat = option_controller.get_option_embeddings()
+pos_repeat = vec_env.pos.copy()
+
+vec_input = np.concatenate(
+    [pos_repeat, goal_emb, inv_repeat, opt_repeat], axis=2
+)
+\end{lstlisting}
+
+\subsubsection{One-Hot Embedding Generation}
+
+The \texttt{OptionController} maintains per-environment, per-agent
+option indices and produces embeddings via vectorised indexing:
+
+\begin{lstlisting}[style=code, language=Python, caption={One-hot embedding in \texttt{option\_controller.py}.}, label={lst:onehot_gen}]
+def get_option_embeddings(self):
+    """Returns [n_envs, 2, NUM_OPTIONS] one-hot."""
+    embs = np.zeros((self.n_envs, 2, NUM_OPTIONS),
+                    dtype=np.float32)
+    env_idx = np.arange(self.n_envs)
+    embs[env_idx, 0, self._active_options_a0] = 1.0
+    embs[env_idx, 1, self._active_options_a1] = 1.0
+    return embs
+\end{lstlisting}
+
+This one-hot conditioning allows the same MAPPO network to learn
+\emph{option-conditional behaviour} without separate policy networks
+per option. The policy $\pi_\theta(a \mid s, o)$ implicitly specialises
+its behaviour depending on which option is active.
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Bipartite Reward Structure}
+\label{sec:bipartite_reward}
+
+The HRL approach uses a composite reward with two distinct components:
+a \textbf{sparse} environment reward and a \textbf{dense} intrinsic
+reward. This bipartite structure enables learning from both the
+environment's ground-truth signal and the Meta-Controller's guidance.
+
+\subsubsection{Environment Reward (Sparse)}
+The environment reward $r_t^{\text{env}}$ is the unchanged signal from
+\texttt{BatchCraftingEnvV2}: a step penalty of $-0.01$ plus milestone
+bonuses upon successful interactions:
+
+\begin{table}[H]
+\centering
+\caption{Environment reward structure from \texttt{crafting\_env.py}.}
+\label{tab:env_rewards}
+\begin{tabular}{@{}lc@{}}
+\toprule
+\textbf{Event} & \textbf{Reward (shared)} \\
+\midrule
+Step penalty      & $-0.01$ \\
+Collect Wood      & $+2.0$  \\
+Collect Stone     & $+2.0$  \\
+Craft Pickaxe     & $+3.0$  \\
+Mine Iron         & $+2.0$  \\
+Craft Sword/Armor & $+3.0$  \\
+Build Bridge      & $+3.0$  \\
+Defeat Enemy      & $+10.0$ \\
+Mine Gold (win)   & $+15.0$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{Intrinsic Reward (Dense)}
+\label{sec:intrinsic_reward}
+
+The intrinsic reward provides a dense shaping signal that guides agents
+toward the target zone of their currently active option. It consists of
+two components:
+
+\paragraph{Distance-based shaping.}
+For each agent, the potential-based shaping reward toward the active
+option's target zone is computed identically to the PBRS
+in~\cref{sec:pbrs}, but applied to the option's target rather than
+the planner's target:
+\begin{equation}
+\label{eq:hrl_shaping}
+    r_t^{\text{shape},(i)}
+    =
+    \begin{cases}
+        \bigl(\gamma\,\Phi^{(i)}(s_{t+1}, z_o) - \Phi^{(i)}(s_t, z_o)\bigr)
+            \cdot \lambda_{\text{intr}}
+        & \text{if } o^{(i)} \neq \texttt{IDLE} \\[4pt]
+        0
+        & \text{if } o^{(i)} = \texttt{IDLE}
+    \end{cases}
+\end{equation}
+where $z_o$ is the target zone of option~$o$
+(\cref{tab:option_props}), $\Phi$ is the same potential function from
+\cref{eq:potential}, and $\lambda_{\text{intr}} = 0.05$.
+
+The vectorised implementation:
+\begin{lstlisting}[style=code, language=Python, caption={Per-agent intrinsic shaping in \texttt{hrl\_train\_loop.py}.}, label={lst:hrl_intrinsic}]
+z0 = get_option_target_zone(a0_opt)
+idle_mask_0 = (z0 == -1)
+safe_z0 = np.where(idle_mask_0, 0, z0)
+
+dist0_prev = np.linalg.norm(
+    pos_prev[:, 0] - vec_env.zones[np.arange(n_envs), safe_z0],
+    axis=1)
+dist0_next = np.linalg.norm(
+    vec_env.pos[:, 0] - vec_env.zones[np.arange(n_envs), safe_z0],
+    axis=1)
+phi0_prev = MAX_DIST - dist0_prev
+phi0_next = MAX_DIST - dist0_next
+shaping0 = np.where(
+    idle_mask_0, 0.0,
+    (0.99 * phi0_next) - phi0_prev
+)
+intrinsic_r[:, 0] = np.where(
+    a0_success, 1.0, shaping0 * 0.05
+)
+\end{lstlisting}
+
+\paragraph{Option success bonus.}
+When an agent completes its active option (the relevant inventory slot
+increases), it receives a bonus of $+1.0$:
+\begin{equation}
+\label{eq:success_bonus}
+    r_t^{\text{intr},(i)}
+    =
+    \begin{cases}
+        1.0 & \text{if option } o^{(i)} \text{ terminated successfully} \\[2pt]
+        r_t^{\text{shape},(i)} & \text{otherwise}
+    \end{cases}
+\end{equation}
+
+Success is detected by comparing the inventory before and after the
+environment step:
+\begin{lstlisting}[style=code, language=Python, caption={Option success detection in \texttt{hrl\_train\_loop.py}.}, label={lst:success_check}]
+def check_option_success(opt_strs, inv_prev, inv_next):
+    for i in range(n_envs):
+        opt = opt_strs[i]
+        if opt == "COLLECT_WOOD":
+            success[i] = inv_next[i, 0] > inv_prev[i, 0]
+        elif opt == "CRAFT_PICKAXE":
+            success[i] = inv_next[i, 3] > inv_prev[i, 3]
+        # ... analogous for all options
+    return success
+\end{lstlisting}
+
+\subsubsection{Composite Reward}
+
+The total reward signal is a weighted sum of the environment and
+intrinsic components:
+\begin{equation}
+\label{eq:hrl_total_reward}
+\boxed{
+    r_t^{\text{total}}
+    = r_t^{\text{env}}
+    + \alpha_{\text{intr}} \cdot r_t^{\text{intr}}
+}
+\end{equation}
+with $\alpha_{\text{intr}} = 0.5$. This coefficient was chosen to
+balance the dense intrinsic signal against the sparse environment
+milestones; too large a value causes the policy to over-optimise
+for intrinsic shaping at the expense of actual task completion.
+
+\begin{lstlisting}[style=code, language=Python, caption={Composite reward in \texttt{hrl\_train\_loop.py}.}, label={lst:composite_reward}]
+total_r = env_rewards + 0.5 * intrinsic_r
+\end{lstlisting}
+
+Note the key difference from the Mixing Board approach: here, no
+$\lambda$ decay schedule is applied. The intrinsic coefficient
+remains fixed because the LLM continuously updates the \emph{direction}
+(which option to pursue) rather than the \emph{magnitude} of shaping.
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Staleness Detection and Counterfactual Reflection}
+\label{sec:staleness}
+
+\subsubsection{Staleness Detection}
+
+The \texttt{OptionController} tracks the \emph{age} (number of steps)
+of each active option per environment. If an option exceeds
+$T_{\text{stale}}=150$ steps without termination, the environment
+is marked as stale and the LLM is re-queried:
+
+\begin{lstlisting}[style=code, language=Python, caption={Staleness detection in \texttt{option\_controller.py}.}, label={lst:stale_detect}]
+def get_stale_mask(self, threshold=150):
+    IDLE_IDX = OPTION_NAMES.index("IDLE")
+    age_exceeded = self.option_age >= threshold
+    not_idle = (self._active_options_a0 != IDLE_IDX) \
+             | (self._active_options_a1 != IDLE_IDX)
+    return age_exceeded & not_idle
+\end{lstlisting}
+
+Crucially, \texttt{IDLE} options are excluded from staleness triggers,
+because intentional waiting (e.g.\ Agent~0 waiting while Agent~1
+collects stone) is a valid strategy.
+
+\subsubsection{Counterfactual Reflection}
+
+When a staleness trigger fires, the LLM receives a reflection prompt
+instead of the standard assignment prompt. This forces the LLM to
+reason about \emph{why} the previous option failed—typically a missing
+DAG precondition—before proposing a corrected assignment.
+
+This design addresses the observed failure mode where the LLM
+repeatedly assigned options whose preconditions were not met (e.g.\
+\texttt{MINE\_IRON} without a pickaxe). The reflection mechanism
+leverages the LLM's zero-shot reasoning to debug its own prior
+hallucination.
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Episode Lifecycle and Option Reset}
+\label{sec:episode_lifecycle}
+
+When an environment reaches a terminal state (gold mined, game over,
+or truncation at 800 steps), the \texttt{OptionController} resets
+that environment to its initial options:
+
+\begin{lstlisting}[style=code, language=Python, caption={Episode reset in \texttt{option\_controller.py}.}, label={lst:option_reset}]
+def reset_options(self, env_indices):
+    self._active_options_a0[env_indices] = 0  # COLLECT_WOOD
+    self._active_options_a1[env_indices] = 1  # COLLECT_STONE
+    self.llm_pending[env_indices] = False
+    self.cooldown_counter[env_indices] = 0
+    self.option_age[env_indices] = 0
+\end{lstlisting}
+
+The initial options (\texttt{COLLECT\_WOOD} for Agent~0,
+\texttt{COLLECT\_STONE} for Agent~1) correspond to the first layer
+of the DAG, ensuring agents begin collecting resources immediately.
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{PPO Integration: Target KL Guard}
+\label{sec:target_kl}
+
+The HRL training loop adds a \emph{target KL divergence} early-stopping
+mechanism to PPO. During each PPO epoch, the approximate KL divergence
+between the old and new policies is monitored:
+\begin{equation}
+\label{eq:approx_kl}
+    D_{\text{KL}}^{\text{approx}}
+    = \mathbb{E}\bigl[-\log \pi_{\theta_{\text{new}}}(a|s)
+      + \log \pi_{\theta_{\text{old}}}(a|s)\bigr]
+\end{equation}
+If $D_{\text{KL}}^{\text{approx}} > 0.015$, the remaining PPO
+epochs are aborted for that update:
+
+\begin{lstlisting}[style=code, language=Python, caption={Target KL guard in \texttt{hrl\_train\_loop.py}.}, label={lst:target_kl}]
+with torch.no_grad():
+    approx_kl = (-logratio).mean().item()
+target_kl = 0.015
+if approx_kl > target_kl:
+    target_kl_reached = True
+    break
+\end{lstlisting}
+
+This guard prevents destructive policy updates when the intrinsic
+reward signal changes abruptly after an LLM option reassignment.
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Comparison with the Mixing Board Approach}
+\label{sec:hrl_vs_dyn}
+
+\begin{table}[H]
+\centering
+\caption{Structural comparison of the two LLM integration strategies.}
+\label{tab:approach_comparison}
+\small
+\begin{tabular}{@{}p{3.5cm}p{5cm}p{5cm}@{}}
+\toprule
+\textbf{Aspect} & \textbf{Mixing Board (Ch.~4)} & \textbf{Meta-Controller (Ch.~5)} \\
+\midrule
+LLM output space &
+    Continuous logits $\in \mathbb{R}^7$ &
+    Discrete options $\in \mathcal{O}^2$ \\
+LLM controls &
+    Subtask priority weights &
+    Explicit per-agent macro-actions \\
+Trigger mechanism &
+    Plateau + Z-score on TD error &
+    Option success or staleness \\
+Query granularity &
+    Global (once per trigger) &
+    Per-environment (batched) \\
+Observation augmentation &
+    Goal embedding $\in \mathbb{R}^3$ &
+    One-hot option $\in \{0,1\}^{10}$ \\
+Reward structure &
+    PBRS with $\lambda$ decay &
+    Bipartite: sparse env + dense intrinsic (fixed $\alpha$) \\
+LLM query frequency &
+    Low (plateau-triggered) &
+    High (per-option completion) \\
+Safety mechanism &
+    Softmax budget, EMA, rollback &
+    DAG in prompt, reflection, env freezing \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Summary}
+\label{sec:hrl_summary}
+
+The Meta-Controller approach creates a clean separation of concerns:
+the LLM reasons about \emph{what to do} (strategic option selection),
+while the MAPPO policy learns \emph{how to do it} (low-level
+navigation and interaction). The one-hot conditioning allows a single
+network to exhibit option-dependent behaviour, and the bipartite
+reward structure ensures that the policy receives both a consistent
+dense gradient from intrinsic shaping and a grounding signal from
+the true environment rewards.
+
+\begin{table}[H]
+\centering
+\caption{Key hyperparameters of the Meta-Controller approach.}
+\label{tab:hrl_hyperparams}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Component} & \textbf{Parameter} & \textbf{Value} \\
+\midrule
+Options          & $|\mathcal{O}|$                & 10 \\
+Staleness        & $T_{\text{stale}}$             & 150 steps \\
+Cooldown         & Post-query cooldown            & 50 steps \\
+Intrinsic reward & Distance scale $\lambda_{\text{intr}}$ & 0.05 \\
+                 & Success bonus                  & $+1.0$ \\
+Composite reward & $\alpha_{\text{intr}}$         & 0.5 \\
+                 & $D_{\max}$                     & 85.0 \\
+Target KL        & KL threshold                   & 0.015 \\
+Network          & One-hot dimension              & 10 \\
+                 & Total \texttt{vec\_dim}        & 25 \\
+\bottomrule
+\end{tabular}
+\end{table}
