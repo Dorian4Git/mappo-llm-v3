@@ -6,10 +6,34 @@
 
 This chapter details the first integration strategy: LLM-driven dynamic reward shaping,
 informally referred to as the \emph{Mixing Board} approach.
+Intuitively, this approach separates \emph{strategy} from \emph{execution}:
+the LLM acts as a manager pointing at a whiteboard---setting priority
+weights over subtasks---while the PPO agents~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022} act as workers navigating
+the physical environment to fulfil those priorities.
+
 The LLM does not act inside the environment; instead, it periodically
 adjusts a vector of subtask priority weights that govern
 (i)~which navigation goal the DAG planner selects and
 (ii)~the magnitude of the potential-based shaping signal each agent receives.
+This paradigm is part of a growing body of work using LLMs as
+meta-level reward designers for RL.
+EUREKA~\parencite{ma2024eurekahumanlevelrewarddesign} demonstrated that an
+LLM can write and iteratively refine reward functions that match or
+exceed human-designed ones.
+PRM4RL~\parencite{Zhang_Gao_Jiang_Chen_Pan_Zhang_Deng_2025} extended this
+idea by having the LLM decompose tasks and generate dense,
+potential-based shaping rewards via a Progress Reward Model.
+More recently, MEDS~\parencite{liu2026pastpastmemoryenhanceddynamic}
+introduced memory-enhanced dynamic shaping that tracks failure loops
+and penalises redundant agent behaviours, while
+GLARE~\parencite{yan2026glare} proposed a neuro-symbolic framework where
+an LLM translates trajectory events into temporal logic formulas to
+assign dense progress rewards.
+The present work shares the same motivation but operates at a different
+granularity: rather than writing or rewriting the reward function, the
+LLM adjusts a \emph{vector of priority weights} that steer goal
+selection and reward magnitude within a fixed, potential-based shaping
+framework.
 
 The exposition follows the exact dataflow of the implementation:
 \textbf{DAG-conditional planning} (\cref{sec:dag_planner}) $\rightarrow$
@@ -72,21 +96,12 @@ applied to the DAG planner and the shaping function.
 \label{sec:dag_planner}
 
 The crafting environment enforces a strict dependency graph over subtasks:
-\[
-\underbrace{(\text{Wood} + \text{Stone})}_{\text{collect}}
-\;\longrightarrow\;
-\text{Pickaxe}
-\;\longrightarrow\;
-\text{Iron}
-\;\longrightarrow\;
-\underbrace{(\text{Sword} + \text{Armor})}_{\text{craft}}
-\;\longrightarrow\;
-\text{Bridge}
-\;\longrightarrow\;
-\text{Enemy}
-\;\longrightarrow\;
-\text{Gold}
-\]
+\begin{equation*}
+\begin{aligned}
+\underbrace{(\text{Wood} + \text{Stone})}_{\text{collect}} &\longrightarrow \text{Pickaxe} \longrightarrow \text{Iron} \longrightarrow \underbrace{(\text{Sword} + \text{Armor})}_{\text{craft}} \\
+&\longrightarrow \text{Bridge} \longrightarrow \text{Enemy} \longrightarrow \text{Gold}
+\end{aligned}
+\end{equation*}
 
 \noindent
 \textbf{Goal selection.}
@@ -103,20 +118,43 @@ For each feasible subtask $j$, a \emph{score} is computed:
 \label{eq:greedy_score}
     s_j = R_j^{\text{base}} \cdot w_j
 \end{equation}
-where $R_j^{\text{base}}$ is a hand-crafted base reward reflecting the
-task's importance in the DAG (e.g.\ $R_{\text{gold}}=15$,
-$R_{\text{enemy}}=10$, $R_{\text{bridge}}=3$), and $w_j$ is the
-LLM-provided weight for subtask $j$.
+where $R_j^{\text{base}}$ is a hand-crafted base reward that encodes the
+\emph{structural depth and difficulty} of each subtask in the DAG
+(e.g.\ $R_{\text{gold}}=15$, $R_{\text{enemy}}=10$,
+$R_{\text{bridge}}=3$, $R_{\text{wood}}=1$).
+These values act as a static, intrinsic heuristic: a subtask deep in the
+dependency chain receives a higher base reward because it is harder to
+reach.
+The LLM's weights $w_j$ then act as \emph{dynamic multipliers} on this
+baseline.
+If all $R_j^{\text{base}}$ were uniformly $1.0$, the LLM would have to
+output extreme weight values to convince the agent to pursue a deep-tree
+task (such as Gold) over a trivially available one (such as Wood).
 The agent greedily selects the subtask with the highest score:
 \begin{equation}
 \label{eq:greedy_select}
     g^{(i)} = \arg\max_{j \in \mathcal{F}^{(i)}(\mathbf{x})}\;
               R_j^{\text{base}} \cdot w_j
 \end{equation}
-where $\mathcal{F}^{(i)}(\mathbf{x})$ denotes the feasible set for
-agent~$i$ given inventory~$\mathbf{x}$.
 
-The following code excerpt shows the core of this selection for Agent~0:
+Let $\mathbf{x} \in \mathbb{Z}^{10}$ denote the agent's current
+inventory vector.
+The feasible set $\mathcal{F}^{(i)}(\mathbf{x})$ is defined as the
+subset of all subtasks whose topological prerequisites in the DAG are
+currently satisfied by~$\mathbf{x}$.
+For instance, if $\mathbf{x}_{\text{pickaxe}} = 0$, then
+$\text{Iron} \notin \mathcal{F}^{(i)}(\mathbf{x})$.
+This mathematically masks invalid actions, a standard technique in cooperative MARL to shrink the exploration space~\parencite{Albrecht_Christianos_Schäfer_2024}, preventing the planner from
+assigning impossible goals.
+
+\Cref{eq:greedy_select} defines the theoretical target selection.
+In practice, evaluating this over $128$ parallel environments requires
+vectorisation.
+\Cref{lst:greedy_planner} implements this logic by constructing the
+feasible set $\mathcal{F}^{(i)}$ (Lines~3--11), applying the base
+rewards $R_j^{\text{base}}$ multiplied by the LLM weights
+(Lines~4, 7, 9, 11), and executing the $\arg\max$ operation
+(Lines~13--15):
 \begin{lstlisting}[style=code, language=Python, caption={Greedy score computation for Agent~0 in \texttt{orchestrator.py}.}, label={lst:greedy_planner}]
 # Agent 0 (Lumberjack) valid tasks
 a0_scores = {}
@@ -181,6 +219,9 @@ overrides the LLM output.
 
 The LLM is not queried every update; instead, a \emph{two-stage gate}
 determines when an intervention is necessary.
+In MAPPO, an \emph{update} refers to one complete iteration of the
+algorithm: the rollout of trajectories across all parallel environments
+followed by the neural-network gradient-descent step (PPO epochs).
 
 \subsubsection{Stage~1: Plateau Gate}
 
@@ -202,17 +243,33 @@ below a threshold~$\epsilon$:
     \epsilon
 \end{equation}
 where $\rho_t$ is the success rate at update~$t$, $W$ is the
-\texttt{plateau\_window} (default 10), and $\epsilon$ is the
-\texttt{plateau\_threshold} (default 0.02).
+\texttt{plateau\_window} (default~10), and $\epsilon$ is the
+\texttt{plateau\_threshold} (default~0.02).
+$W$ acts as a low-pass filter on the inherently noisy RL training signal:
+it ensures the system only triggers an LLM intervention when the
+\emph{smoothed} trend is genuinely plateauing, rather than reacting to a
+single bad batch of trajectories.
 Additionally, the gate opens if any individual subtask
 has plateaued (variance $< 0.02$ over 20~updates while
 remaining between 5\% and 95\% completion).
 
 \subsubsection{Stage~2: Z-Score Trigger}
 
+\textbf{TD-Error (Temporal Difference Error)}~\parencite{Sutton_Barto_2020} measures the ``surprise''
+of the Critic network---the difference between the reward the Critic
+predicted and the reward it actually observed.
+A high \emph{mean} TD-error merely indicates a large reward scale.
+A spike in \textbf{TD-error variance}, however, indicates that the value
+network is fundamentally confused: it is seeing wildly different returns
+for the same states.
+This occurs when agents get stuck at a bottleneck, thrash between
+uncoordinated goals, or experience non-stationarity~\parencite{Foerster_Nardelli_Farquhar_Afouras_Torr_Kohli_Whiteson_2018}.
+Variance is the mathematical signature of a ``confused'' agent, making
+it the ideal trigger for LLM intervention.
+
 Once the gate is open, the system checks whether the critic's
 TD-error variance has spiked beyond $\sigma$ standard deviations from
-its running mean, indicating that the value network is ``confused'':
+its running mean:
 \begin{equation}
 \label{eq:zscore_trigger}
     z = \frac{
@@ -258,10 +315,20 @@ scaled to maintain a constant total reward budget.
 Focus on the RELATIVE MAGNITUDE and PRIORITY RANKING of subtasks.''
 \end{quote}
 
-This design decouples the LLM's task from absolute magnitude calibration.
+This design leverages the synergy between reasoning and acting~\parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023}. It decouples the LLM's task from absolute magnitude calibration, fitting the emerging paradigm of LLMs as meta-supervisors in multi-agent systems~\parencite{Sun_Huang_Pompili_2024}.
 The LLM is free to express priority differences via wide logit ranges
 (e.g.\ a bottleneck at 8.0 vs.\ saturated at 0.5), and the downstream
 normalisation ensures a bounded, stable reward budget.
+
+Although the planner ultimately applies an $\arg\max$ to select one goal
+(\cref{eq:greedy_select}), the continuous logit values are essential
+because of the EMA smoothing (\cref{sec:ema_smoothing}).
+If the LLM outputs a high score for Iron and a slightly lower one for
+Wood, the EMA creates a smooth, continuous transition over several
+updates as Iron gradually overtakes Wood in the $\arg\max$ race.
+If we instead used binary $0/1$ weights, the $\arg\max$ would
+instantly snap to a new goal, violently disrupting the Critic's value
+predictions and risking catastrophic forgetting.
 
 The LLM responds with a JSON object:
 \begin{lstlisting}[style=code, language=Python, caption={Schema of the LLM response.}, label={lst:llm_response}]
@@ -283,7 +350,7 @@ The LLM responds with a JSON object:
 
 The raw logits $\boldsymbol{c}=(c_1,\dots,c_K)$ returned by the LLM are
 converted into a \emph{budget-preserving} weight vector via a
-temperature-scaled softmax:
+temperature-scaled softmax, analogous to Boltzmann action selection~\parencite{Sutton_Barto_2020}:
 \begin{equation}
 \label{eq:softmax_budget}
 \boxed{
@@ -308,10 +375,17 @@ $\tau=0.5$ is the temperature hyperparameter.
           The total reward magnitude is invariant to the LLM's output scale,
           preventing the LLM from accidentally inflating or deflating
           the overall reward.
-    \item \emph{Sharpening via temperature}: With $\tau=0.5 < 1$, the
-          softmax amplifies differences between logits, producing
-          more decisive priority assignments.
-          Conversely, $\tau\to\infty$ yields uniform weights.
+    \item \emph{Sharpening via temperature}: Logits are unconstrained
+          real numbers (they can be negative, e.g.\ $-2.5$).
+          Exponentiation ($e^x$) forces them into strictly positive
+          values so they can be treated as a probability budget.
+          The temperature $\tau$ controls the ``decisiveness'' of the
+          distribution:
+          $\tau\to\infty$ yields uniform weights (the LLM is ignored);
+          $\tau\to 0$ concentrates the entire budget on the top choice
+          (harsh, discontinuous transitions);
+          $\tau=0.5$ amplifies the LLM's priority differences while
+          maintaining a continuous landscape suitable for EMA blending.
     \item \emph{Numerical stability}: The implementation shifts logits
           before exponentiation:
 \end{itemize}
@@ -382,8 +456,8 @@ pre-intervention level, the weights are automatically rolled back:
 
 Once the planner has assigned goal zone $g^{(i)}_t$ to agent~$i$,
 a shaping reward is computed via the potential-based reward shaping
-(PBRS) framework~\cite{Ng_Harada_Russell_1999}. The key theoretical guarantee of PBRS
-is that it preserves the set of optimal policies: adding $F$ to
+(PBRS) framework. The key theoretical guarantee of PBRS
+is that it preserves the set of optimal policies~\parencite{Ng_Harada_Russell_1999}: adding $F$ to
 the reward does not change which policy is optimal.
 
 \subsubsection{Potential Function}
@@ -407,10 +481,35 @@ The per-step shaping reward follows the standard PBRS difference form:
     \;\cdot\;
     \lambda_{\text{scale}}
     \;\cdot\;
-    \mathbb{1}[g \text{ active}]
+    \mathds{1}[g \text{ active}]
 \end{equation}
-where $\gamma=0.99$ is the discount factor and
-$\lambda_{\text{scale}} = 0.05$ ($\texttt{R\_LLM\_SCALE}$).
+where $\gamma=0.99$ is the discount factor that prevent the agent from farming the 
+shaping reward by returning back and forth to a goal and $\lambda_{\text{scale}} = 0.05$ ($\texttt{R\_LLM\_SCALE}$) is the scaling factor.
+
+\paragraph{How $\gamma = 0.99$ fixes it:} Let's look at the exact same forward-backward dance with $\gamma = 0.99$:
+\begin{align*}
+    \text{Step forward:} \quad & \text{Reward} = (0.99 \times 110) - 100 = \textbf{+8.9}\\
+    \text{Step backward:} \quad & \text{Reward} = (0.99 \times 100) - 110 = \textbf{-11.0}\\
+    \text{Net Reward:} \quad & 8.9 - 11.0 = \textbf{-2.1}
+\end{align*}
+By applying the $\gamma$ multiplier to the next potential, the agent mathematically loses points if it loops back and forth. It forces the agent to actually progress toward the goal instead of exploiting the shaping reward.
+
+\paragraph{Where is the LLM in this equation?}
+You might notice that the LLM's priority weights $w_j$ do not appear in \cref{eq:shaping_reward}. This is intentional. The LLM's impact is entirely encapsulated within the variable $g$ (the active goal zone). As established in \cref{eq:greedy_select}, the LLM outputs the weights that dictate \emph{which} goal $g$ the planner selects. Therefore, the LLM does not change \emph{how much} shaping reward the agent receives, but rather \emph{which direction} the breadcrumb trail leads. If the LLM decides the agent must pivot from collecting Wood to mining Iron, the target $g$ changes, and the shaping reward $F_t^{(i)}$ instantly pivots to reward movement towards Iron instead of Wood.
+
+\paragraph{The Scale Factor ($\lambda_{\text{scale}} = 0.05$):}
+This factor acts as a volume knob to ensure the dense shaping reward does not drown out the actual game. For instance, successfully mining Gold yields a true, sparse environment reward of $+15.0$. If an agent runs a long distance across the map, its potential $\Phi$ might change by $+20$ points. If we did not scale this, the agent would receive $+20$ just for running, making it more lucrative to run back and forth than to actually fight an enemy and mine Gold. Multiplying by $0.05$ shrinks that $+20$ movement reward down to $+1.0$. This ensures the shaping reward remains a gentle nudge, while the true environment milestones remain the ultimate prize.
+
+\medskip
+
+The shaping reward $F_t^{(i)}$ is computed at every environment transition
+$t \to t{+}1$, hence the subscript~$t$.
+Additionally, the indicator $\mathds{1}[g \text{ active}]$ acts as a mask:
+it zeroes out the shaping reward if the agent currently has no valid goal
+assigned (for instance, if it has completed its portion of the DAG and
+is idling while waiting for the other agent). This prevents the agent from
+being incorrectly rewarded or penalised for movement when it should
+remain stationary.
 
 The vectorised implementation processes all environments and agents in parallel:
 
@@ -429,11 +528,17 @@ F = (gamma * phi_next - phi_prev) * R_LLM_SCALE * goal_active
 
 An important design decision, documented in the codebase, is that the
 shaping signal $F$ is \textbf{not} multiplied by the per-subtask weight
-$w_j$. The LLM's influence is already applied at goal \emph{selection}
-time (\cref{eq:greedy_select}). Scaling the shaping gradient by
-transient EMA-smoothed weights would create a non-stationary reward
-function whose variance confuses PPO's value network, leading to
-training instability.
+$w_j$.
+The LLM's influence is already applied at goal \emph{selection}
+time (\cref{eq:greedy_select}).
+The reason is \emph{stationarity}: if $F$ were dynamically scaled by
+the shifting LLM weights $w_j$, the underlying reward landscape would
+become non-stationary.
+The PPO Critic would constantly chase a moving target, causing variance
+spikes and training collapse.
+Instead, $w_j$ dictates \emph{where} the agent goes (via the planner),
+while $F$ dictates \emph{how} it gets there using a stable,
+policy-invariant gradient.
 
 \subsubsection{Shaping Decay ($\lambda$)}
 The shaped reward is blended with the environment reward using a
@@ -464,9 +569,17 @@ the sparse environment reward once agents have reached the critical
 \subsection{Async Communication Architecture}
 \label{sec:async_bridge}
 
+In standard Markov Decision Processes, observation and action delays severely destabilise training~\parencite{Katsikopoulos_Engelbrecht_2003}.
 To avoid blocking the training loop during LLM inference, queries are
 dispatched through the \texttt{LLMBridge} module, which runs a
-background worker thread.
+background daemon worker thread.
+Querying the LLM takes seconds (network latency plus inference time).
+If this were done on the main thread, the GPU would sit at 0\%
+utilisation, completely halting PPO training until the LLM responded.
+By dispatching the query to a daemon thread, the RL loop keeps
+gathering trajectories using the \emph{old} weights; the \emph{new}
+weights are applied seamlessly on the next update once the background
+thread finishes. This asynchronous daemon approach mirrors recent LLM-agent frameworks like GITM~\parencite{Zhu_etal_2023}, which explicitly freeze or decouple the environment clock to accommodate LLM inference latency.
 
 \begin{enumerate}[nosep]
     \item The critic trigger fires and constructs a prompt.

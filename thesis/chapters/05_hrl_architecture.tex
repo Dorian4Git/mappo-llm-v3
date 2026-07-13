@@ -86,7 +86,7 @@ an option-specific dense intrinsic reward.
 
 An \emph{Option} $o\in\mathcal{O}$ is a macro-action defined by the
 triple $\langle \mathcal{I}_o, \pi_o, \beta_o \rangle$: an initiation
-set, an intra-option policy, and a termination condition~\cite{Sutton_Precup_Singh_1999}.
+set, an intra-option policy, and a termination condition~\parencite{Sutton_Precup_Singh_1999}.
 In our implementation, the intra-option policy is not explicitly
 separate; instead, the low-level MAPPO policy is conditioned on the
 active option via observation augmentation (\cref{sec:onehot_aug}).
@@ -169,6 +169,14 @@ Option selection is triggered under two conditions, evaluated per-environment:
           than $T_{\text{stale}}=150$ steps without completion.
 \end{enumerate}
 
+\noindent
+In MARL, a \emph{step} $t \to t{+}1$ occurs when all agents execute one
+low-level action and the environment returns the next state.
+A staleness of $T_{\text{stale}}=150$ steps therefore means the agent
+has executed 150~low-level navigation or interaction commands (e.g.\
+moving in the grid, attacking) without achieving its assigned
+macro-option.
+
 Environments currently awaiting an LLM response (\texttt{llm\_pending})
 or on cooldown (50~steps after the last query) are excluded:
 \begin{lstlisting}[style=code, language=Python, caption={Trigger logic in \texttt{hrl\_train\_loop.py}.}, label={lst:hrl_trigger}]
@@ -182,9 +190,17 @@ trigger_envs = np.where(ready_mask)[0]
 
 \subsubsection{Prompt Structure}
 
+Just as the MAPPO agent receives a vector $\mathbf{v}_t$ representing its
+physical state (\cref{eq:hrl_obs}), the Meta-Controller receives a
+text-based JSON schema representing the \emph{semantic} state.
+\Cref{lst:hrl_prompt} shows how the Python inventory state is serialised
+into this semantic observation, while \cref{lst:reflection_prompt} shows
+the inverse: a diagnostic prompt that forces the LLM to reason about
+failures before issuing corrected actions.
+
 For a normal trigger (success), the \texttt{PromptBuilder} constructs a
 Chain-of-Thought prompt:
-\begin{lstlisting}[style=code, language=Python, caption={HRL prompt schema (from \texttt{prompt\_builder.py}).}, label={lst:hrl_prompt}]
+\begin{lstlisting}[style=llmprompt, caption={HRL prompt schema (from \texttt{prompt\_builder.py}).}, label={lst:hrl_prompt}]
 """
 You are the high-level Cognitive Orchestrator for two MARL agents.
 Strict Dependency DAG: (Wood+Stone) -> Pickaxe -> Iron
@@ -211,7 +227,7 @@ Respond ONLY with valid JSON:
 For a staleness trigger, a \emph{counterfactual reflection prompt} is
 used instead, forcing the LLM to diagnose \textbf{why} the previous
 assignment failed before issuing new options:
-\begin{lstlisting}[style=code, language=Python, caption={Reflection prompt for stale options (from \texttt{prompt\_builder.py}).}, label={lst:reflection_prompt}]
+\begin{lstlisting}[style=llmprompt, caption={Reflection prompt for stale options (from \texttt{prompt\_builder.py}).}, label={lst:reflection_prompt}]
 """
 ### REFLECTION REQUIRED:
 Agent 0 was assigned "{a0_option}" and Agent 1
@@ -234,11 +250,18 @@ Respond ONLY with JSON:
 
 \subsubsection{Batched Queries with Deduplication}
 
-Multiple environments may trigger simultaneously. To avoid redundant
-LLM calls, environments with identical inventory states are
-deduplicated: the system groups environments by unique inventory
-vector and sends one prompt per unique state. The response is then
-broadcast to all environments sharing that state:
+Conceptually, to train agents efficiently, MARL algorithms run
+$N$~parallel copies of the environment simultaneously---$N=128$
+identical game instances in our case.
+Multiple of these parallel environments may trigger an LLM query at
+the same time.
+If parallel roll-out environments~\parencite{Albrecht_Christianos_Schäfer_2024} (e.g.\ Environment~\#12 and Environment~\#85) both have the exact same
+inventory state (e.g.\ both agents have 1~Wood and 0~Pickaxes),
+querying the LLM twice with identical prompts wastes compute.
+The deduplication mechanism groups these parallel environments by their
+unique inventory vector, sends one prompt per unique state, and
+broadcasts the single response back to all environments sharing that
+state:
 
 \begin{lstlisting}[style=code, language=Python, caption={Inventory deduplication in \texttt{hrl\_train\_loop.py}.}, label={lst:dedup}]
 inv_batch = inv_next[trigger_envs].astype(int)
@@ -256,8 +279,20 @@ via \texttt{query\_batch\_async}, and responses are applied asynchronously.
 
 \subsubsection{Environment Freezing During Pending Queries}
 
-While an environment is awaiting an LLM response, it is frozen to
-prevent state drift:
+\textbf{State drift} (also known as \emph{action-observation latency} or
+\emph{latency-induced non-stationarity})
+occurs because querying an LLM takes time---typically seconds.
+If the RL environment is not paused during this latency, the agent
+continues executing random or stale-policy actions; by the time the LLM
+responds, the environment state may have diverged significantly from the
+state the LLM observed~\parencite{Katsikopoulos_Engelbrecht_2003}.
+This problem is well-documented in LLM-agent systems: for instance,
+Ghost in the Minecraft~\parencite{Zhu_etal_2023}
+relies on pausing the simulation while the LLM reasons about its
+next action.
+
+In our implementation, while an environment is awaiting an LLM response,
+it is frozen to prevent this drift:
 \begin{lstlisting}[style=code, language=Python, caption={Environment freezing for pending queries.}, label={lst:env_freeze}]
 pending_mask = option_controller.llm_pending.copy()
 if pending_mask.any():
@@ -299,11 +334,18 @@ The vector input to the MAPPO network in HRL mode is:
     \;\in\; \mathbb{R}^{25}
 \end{equation}
 where $\mathbf{p}^{(i)}$ is the agent's position,
-the zero-padding replaces the goal embedding from the Mixing Board
-approach (maintaining dimensional compatibility),
 $\mathbf{x}$ is the inventory vector, and
 $\mathbf{e}_{o}\in\{0,1\}^{|\mathcal{O}|}$ is the one-hot encoding
 of the active option.
+The $\mathbf{0} \in \mathbb{R}^3$ padding exists to maintain a unified
+neural-network architecture with a fixed input dimension of
+$\mathbb{R}^{25}$ across the entire thesis.
+In \cref{ch:dynamic_implementation}, indices~2 through~4 were occupied
+by a 3-dimensional continuous Goal Embedding.
+Because the HRL approach replaces continuous goals with a
+10-dimensional one-hot vector appended at the end of the state, those
+3~dimensions are zero-padded to prevent architecture mismatch when
+loading or comparing models between the two approaches.
 
 \begin{lstlisting}[style=code, language=Python, caption={Observation construction in \texttt{hrl\_train\_loop.py}.}, label={lst:hrl_obs}]
 goal_emb = np.zeros((n_envs, 2, 3), dtype=np.float32)
@@ -378,26 +420,33 @@ Mine Gold (win)   & $+15.0$ \\
 \subsubsection{Intrinsic Reward (Dense)}
 \label{sec:intrinsic_reward}
 
+Conceptually, the extrinsic (environment) reward is the ground truth---a
+sparse signal analogous to receiving a diploma at the end of a four-year
+degree.
+It is the ultimate goal, but it occurs so rarely that it is difficult to
+learn day-to-day behaviours from it alone.
+The intrinsic (shaping) reward is a synthetic ``breadcrumb trail''
+generated internally by the architecture to keep the agent motivated---a
+dense signal analogous to the feeling of progress when finishing a
+single textbook chapter.
+
 The intrinsic reward provides a dense shaping signal that guides agents
-toward the target zone of their currently active option. It consists of
+toward the target zone of their currently active option. This bipartite formulation---where a meta-controller sets discrete goals and a low-level controller optimizes an intrinsic reward to achieve them---is a foundational structure in Deep Hierarchical Reinforcement Learning~\parencite{Kulkarni_Narasimhan_Saeedi_Tenenbaum_2016}. It consists of
 two components:
 
 \paragraph{Distance-based shaping.}
 For each agent, the potential-based shaping reward toward the active
-option's target zone is computed identically to the PBRS
+option's target zone is computed identically to the PBRS framework~\parencite{Ng_Harada_Russell_1999}
 in~\cref{sec:pbrs}, but applied to the option's target rather than
 the planner's target:
 \begin{equation}
 \label{eq:hrl_shaping}
     r_t^{\text{shape},(i)}
-    =
-    \begin{cases}
-        \bigl(\gamma\,\Phi^{(i)}(s_{t+1}, z_o) - \Phi^{(i)}(s_t, z_o)\bigr)
-            \cdot \lambda_{\text{intr}}
-        & \text{if } o^{(i)} \neq \texttt{IDLE} \\[4pt]
-        0
-        & \text{if } o^{(i)} = \texttt{IDLE}
-    \end{cases}
+    \;=\;
+    \mathds{1}_{\{o^{(i)} \neq \texttt{IDLE}\}}
+    \;\cdot\;
+    \lambda_{\text{intr}}
+    \bigl(\gamma\,\Phi^{(i)}(s_{t+1}, z_o) - \Phi^{(i)}(s_t, z_o)\bigr)
 \end{equation}
 where $z_o$ is the target zone of option~$o$
 (\cref{tab:option_props}), $\Phi$ is the same potential function from
@@ -514,7 +563,7 @@ This design addresses the observed failure mode where the LLM
 repeatedly assigned options whose preconditions were not met (e.g.\
 \texttt{MINE\_IRON} without a pickaxe). The reflection mechanism
 leverages the LLM's zero-shot reasoning to debug its own prior
-hallucination.
+hallucination. This synergizes reasoning and acting, a paradigm demonstrated by ReAct~\parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023}, and extends it into the realm of self-reflection and counterfactual critique~\parencite{Shinn_Cassano_Berman_Gopinath_Narasimhan_Yao_2023}.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Episode Lifecycle and Option Reset}
@@ -542,7 +591,7 @@ of the DAG, ensuring agents begin collecting resources immediately.
 \label{sec:target_kl}
 
 The HRL training loop adds a \emph{target KL divergence} early-stopping
-mechanism to PPO. During each PPO epoch, the approximate KL divergence
+mechanism, a standard stability guardrail in Proximal Policy Optimization~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}. During each PPO epoch, the approximate KL divergence
 between the old and new policies is monitored:
 \begin{equation}
 \label{eq:approx_kl}

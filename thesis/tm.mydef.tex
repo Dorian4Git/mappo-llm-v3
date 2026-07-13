@@ -10,6 +10,8 @@
 \usepackage{lmodern}  % Base font support
 \usepackage{helvet}   % Loads Helvetica (Arial-like) 
 \renewcommand{\familydefault}{\sfdefault} % Sets default text to Sans-Serif (Arial)
+\usepackage{dsfont}
+\usepackage{bbm}
 
 % ==========================================
 % 2. Spacing & Geometry
@@ -120,6 +122,15 @@
     keywordstyle=\color{blue},
     commentstyle=\color{gray!70},
     stringstyle=\color{orange!80!black}
+}
+\lstdefinestyle{llmprompt}{
+    basicstyle=\ttfamily\small\color{black},
+    backgroundcolor=\color{blue!5},
+    frame=single,
+    rulecolor=\color{blue!40},
+    breaklines=true,
+    breakatwhitespace=true,
+    numbers=none
 }
 
 % ==========================================

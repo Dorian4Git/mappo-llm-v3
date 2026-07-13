@@ -75,7 +75,7 @@
 }
 
  @book{Silver_2015a,
-  title        = {RL Course by David Silver - Lecture 1: Introduction to Reinforcement Learning},
+  title        = {{RL} Course by David Silver - Lecture 1: Introduction to Reinforcement Learning},
   url          = {https://www.youtube.com/watch?v=2pWv7GOvuf0},
   abstractnote = {#Reinforcement Learning Course by David Silver# Lecture 1:  Introduction to Reinforcement Learning},
   author       = {Silver, David},
@@ -84,7 +84,7 @@
   note         = {Youtube channel: Google DeepMind, accessed: 2026-03-15}
 }
  @book{Silver_2015b,
-  title        = {RL Course by David Silver - Lecture 2: Markov Decision Process},
+  title        = {{RL} Course by David Silver - Lecture 2: Markov Decision Process},
   url          = {https://www.youtube.com/watch?v=lfHX2hHRMVQ},
   abstractnote = {#Reinforcement Learning Course by David Silver# Lecture 2:  Markov Decision Process},
   author       = {Silver, David},
@@ -93,7 +93,7 @@
   note         = {Youtube channel: Google DeepMind, accessed: 2026-03-15}
 }
  @article{Hausknecht_Stone_2017,
-  title        = {Deep Recurrent Q-Learning for Partially Observable MDPs},
+  title        = {Deep Recurrent Q-Learning for Partially Observable {MDPs}},
   url          = {http://arxiv.org/abs/1507.06527},
   doi          = {10.48550/arXiv.1507.06527},
   abstractnote = {Deep Reinforcement Learning has yielded proficient controllers for complex tasks. However, these controllers have limited memory and rely on being able to perceive the complete game screen at each decision point. To address these shortcomings, this article investigates the effects of adding recurrency to a Deep Q-Network (DQN) by replacing the first post-convolutional fully-connected layer with a recurrent LSTM. The resulting textit{Deep Recurrent Q-Network} (DRQN), although capable of seeing only a single frame at each timestep, successfully integrates information through time and replicates DQN’s performance on standard Atari games and partially observed equivalents featuring flickering game screens. Additionally, when trained with partial observations and evaluated with incrementally more complete observations, DRQN’s performance scales as a function of observability. Conversely, when trained with full observations and evaluated with partial observations, DRQN’s performance degrades less than DQN’s. Thus, given the same length of history, recurrency is a viable alternative to stacking a history of frames in the DQN’s input layer and while recurrency confers no systematic advantage when learning to play the game, the recurrent net can better adapt at evaluation time if the quality of observations changes.},
@@ -184,7 +184,7 @@
   language   = {en}
 }
  @article{Rashid_Samvelyan_Witt_Farquhar_Foerster_Whiteson_2018,
-  title        = {QMIX: Monotonic Value Function Factorisation for Deep Multi-Agent Reinforcement Learning},
+  title        = {{QMIX}: Monotonic Value Function Factorisation for Deep Multi-Agent Reinforcement Learning},
   url          = {http://arxiv.org/abs/1803.11485},
   doi          = {10.48550/arXiv.1803.11485},
   abstractnote = {In many real-world settings, a team of agents must coordinate their behaviour while acting in a decentralised way. At the same time, it is often possible to train the agents in a centralised fashion in a simulated or laboratory setting, where global state information is available and communication constraints are lifted. Learning joint action-values conditioned on extra state information is an attractive way to exploit centralised learning, but the best strategy for then extracting decentralised policies is unclear. Our solution is QMIX, a novel value-based method that can train decentralised policies in a centralised end-to-end fashion. QMIX employs a network that estimates joint action-values as a complex non-linear combination of per-agent values that condition only on local observations. We structurally enforce that the joint-action value is monotonic in the per-agent values, which allows tractable maximisation of the joint action-value in off-policy learning, and guarantees consistency between the centralised and decentralised policies. We evaluate QMIX on a challenging set of StarCraft II micromanagement tasks, and show that QMIX significantly outperforms existing value-based multi-agent reinforcement learning methods.},
@@ -196,7 +196,7 @@
   month        = june
 }
  @article{Son_Kim_Kang_Hostallero_Yi,
-  title        = {QTRAN: Learning to Factorize with Transformation for  Cooperative Multi-Agent Reinforcement learning},
+  title        = {{QTRAN}: Learning to Factorize with Transformation for  Cooperative Multi-Agent Reinforcement learning},
   abstractnote = {We explore value-based solutions for multi-agent reinforcement learning (MARL) tasks in the centralized training with decentralized execution (CTDE) regime popularized recently. However, VDN and QMIX are representative examples that use the idea of factorization of the joint actionvalue function into individual ones for decentralized execution. VDN and QMIX address only a fraction of factorizable MARL tasks due to their structural constraint in factorization such as additivity and monotonicity. In this paper, we propose a new factorization method for MARL, QTRAN, which is free from such structural constraints and takes on a new approach to transforming the original joint action-value function into an easily factorizable one, with the same optimal actions. QTRAN guarantees more general factorization than VDN or QMIX, thus covering a much wider class of MARL tasks than does previous methods. Our experiments for the tasks of multi-domain Gaussian-squeeze and modiﬁed predator-prey demonstrate QTRAN’s superior performance with especially larger margins in games whose payoffs penalize non-cooperative behavior more aggressively.},
   author       = {Son, Kyunghwan and Kim, Daewoo and Kang, Wan Ju and Hostallero, David and Yi, Yung},
   language     = {en}
@@ -238,7 +238,7 @@
 }
  @inbook{Szepesvári_2011,
   edition      = {1},
-  title        = {Reinforcement Learning Algorithms for MDPs},
+  title        = {Reinforcement Learning Algorithms for {MDPs}},
   isbn         = {978-0-470-40063-0},
   url          = {https://onlinelibrary.wiley.com/doi/10.1002/9780470400531.eorms0714},
   doi          = {10.1002/9780470400531.eorms0714},
@@ -275,31 +275,27 @@
   month        = nov
 }
  @article{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022,
-  title        = {The Surprising Effectiveness of PPO in Cooperative, Multi-Agent Games},
+  title        = {The Surprising Effectiveness of {PPO} in Cooperative, Multi-Agent Games},
   url          = {http://arxiv.org/abs/2103.01955},
   doi          = {10.48550/arXiv.2103.01955},
   abstractnote = {Proximal Policy Optimization (PPO) is a ubiquitous on-policy reinforcement learning algorithm but is significantly less utilized than off-policy learning algorithms in multi-agent settings. This is often due to the belief that PPO is significantly less sample efficient than off-policy methods in multi-agent systems. In this work, we carefully study the performance of PPO in cooperative multi-agent settings. We show that PPO-based multi-agent algorithms achieve surprisingly strong performance in four popular multi-agent testbeds: the particle-world environments, the StarCraft multi-agent challenge, Google Research Football, and the Hanabi challenge, with minimal hyperparameter tuning and without any domain-specific algorithmic modifications or architectures. Importantly, compared to competitive off-policy methods, PPO often achieves competitive or superior results in both final returns and sample efficiency. Finally, through ablation studies, we analyze implementation and hyperparameter factors that are critical to PPO’s empirical performance, and give concrete practical suggestions regarding these factors. Our results show that when using these practices, simple PPO-based methods can be a strong baseline in cooperative multi-agent reinforcement learning. Source code is released at url{https://github.com/marlbenchmark/on-policy}.},
-  note         = {arXiv:2103.01955 [cs]},
-  number       = {arXiv:2103.01955},
-  publisher    = {arXiv},
+  journal      = {arXiv preprint arXiv:2103.01955},
   author       = {Yu, Chao and Velu, Akash and Vinitsky, Eugene and Gao, Jiaxuan and Wang, Yu and Bayen, Alexandre and Wu, Yi},
   year         = {2022},
   month        = nov
 }
  @article{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023,
-  title        = {ReAct: Synergizing Reasoning and Acting in Language Models},
+  title        = {{ReAct}: Synergizing Reasoning and Acting in Language Models},
   url          = {http://arxiv.org/abs/2210.03629},
   doi          = {10.48550/arXiv.2210.03629},
   abstractnote = {While large language models (LLMs) have demonstrated impressive capabilities across tasks in language understanding and interactive decision making, their abilities for reasoning (e.g. chain-of-thought prompting) and acting (e.g. action plan generation) have primarily been studied as separate topics. In this paper, we explore the use of LLMs to generate both reasoning traces and task-specific actions in an interleaved manner, allowing for greater synergy between the two: reasoning traces help the model induce, track, and update action plans as well as handle exceptions, while actions allow it to interface with external sources, such as knowledge bases or environments, to gather additional information. We apply our approach, named ReAct, to a diverse set of language and decision making tasks and demonstrate its effectiveness over state-of-the-art baselines, as well as improved human interpretability and trustworthiness over methods without reasoning or acting components. Concretely, on question answering (HotpotQA) and fact verification (Fever), ReAct overcomes issues of hallucination and error propagation prevalent in chain-of-thought reasoning by interacting with a simple Wikipedia API, and generates human-like task-solving trajectories that are more interpretable than baselines without reasoning traces. On two interactive decision making benchmarks (ALFWorld and WebShop), ReAct outperforms imitation and reinforcement learning methods by an absolute success rate of 34% and 10% respectively, while being prompted with only one or two in-context examples. Project site with code: https://react-lm.github.io},
-  note         = {arXiv:2210.03629 [cs]},
-  number       = {arXiv:2210.03629},
-  publisher    = {arXiv},
+  journal      = {arXiv preprint arXiv:2210.03629},
   author       = {Yao, Shunyu and Zhao, Jeffrey and Yu, Dian and Du, Nan and Shafran, Izhak and Narasimhan, Karthik and Cao, Yuan},
   year         = {2023},
   month        = mar
 }
  @article{Sun_Huang_Pompili_2024,
-  title        = {LLM-based Multi-Agent Reinforcement Learning: Current and Future Directions},
+  title        = {{LLM}-based Multi-Agent Reinforcement Learning: Current and Future Directions},
   url          = {http://arxiv.org/abs/2405.11106},
   doi          = {10.48550/arXiv.2405.11106},
   abstractnote = {In recent years, Large Language Models (LLMs) have shown great abilities in various tasks, including question answering, arithmetic problem solving, and poem writing, among others. Although research on LLM-as-an-agent has shown that LLM can be applied to Reinforcement Learning (RL) and achieve decent results, the extension of LLM-based RL to Multi-Agent System (MAS) is not trivial, as many aspects, such as coordination and communication between agents, are not considered in the RL frameworks of a single agent. To inspire more research on LLM-based MARL, in this letter, we survey the existing LLM-based single-agent and multi-agent RL frameworks and provide potential research directions for future research. In particular, we focus on the cooperative tasks of multiple agents with a common goal and communication among them. We also consider human-in/on-the-loop scenarios enabled by the language component in the framework.},
@@ -311,7 +307,7 @@
   month        = may
 }
  @article{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023,
-  title        = {QLoRA: Efficient Finetuning of Quantized LLMs},
+  title        = {QLoRA: Efficient Finetuning of Quantized {LLMs}},
   url          = {http://arxiv.org/abs/2305.14314},
   doi          = {10.48550/arXiv.2305.14314},
   abstractnote = {We present QLoRA, an efficient finetuning approach that reduces memory usage enough to finetune a 65B parameter model on a single 48GB GPU while preserving full 16-bit finetuning task performance. QLoRA backpropagates gradients through a frozen, 4-bit quantized pretrained language model into Low Rank Adapters~(LoRA). Our best model family, which we name Guanaco, outperforms all previous openly released models on the Vicuna benchmark, reaching 99.3% of the performance level of ChatGPT while only requiring 24 hours of finetuning on a single GPU. QLoRA introduces a number of innovations to save memory without sacrificing performance: (a) 4-bit NormalFloat (NF4), a new data type that is information theoretically optimal for normally distributed weights (b) double quantization to reduce the average memory footprint by quantizing the quantization constants, and (c) paged optimziers to manage memory spikes. We use QLoRA to finetune more than 1,000 models, providing a detailed analysis of instruction following and chatbot performance across 8 instruction datasets, multiple model types (LLaMA, T5), and model scales that would be infeasible to run with regular finetuning (e.g. 33B and 65B parameter models). Our results show that QLoRA finetuning on a small high-quality dataset leads to state-of-the-art results, even when using smaller models than the previous SoTA. We provide a detailed analysis of chatbot performance based on both human and GPT-4 evaluations showing that GPT-4 evaluations are a cheap and reasonable alternative to human evaluation. Furthermore, we find that current chatbot benchmarks are not trustworthy to accurately evaluate the performance levels of chatbots. A lemon-picked analysis demonstrates where Guanaco fails compared to ChatGPT. We release all of our models and code, including CUDA kernels for 4-bit training.},
@@ -324,7 +320,7 @@
 }
 
  @article{Sutton_Precup_Singh_1999,
-  title        = {Between MDPs and semi-MDPs: A framework for temporal abstraction in reinforcement learning},
+  title        = {Between {MDPs} and semi-{MDPs}: A framework for temporal abstraction in reinforcement learning},
   volume       = {112},
   issn         = {0004-3702},
   doi          = {10.1016/S0004-3702(99)00052-1},
@@ -338,15 +334,110 @@
 }
 
  @inproceedings{Ng_Harada_Russell_1999,
-  address    = {San Francisco, CA, USA},
-  series     = {ICML ’99},
-  title      = {Policy Invariance Under Reward Transformations: Theory and Application to Reward Shaping},
-  isbn       = {978-1-55860-612-8},
-  booktitle  = {Proceedings of the Sixteenth International Conference on Machine Learning},
-  publisher  = {Morgan Kaufmann Publishers Inc.},
-  author     = {Ng, Andrew Y. and Harada, Daishi and Russell, Stuart J.},
-  year       = {1999},
-  month      = june,
-  pages      = {278–287},
-  collection = {ICML ’99}
+  author    = {Ng, Andrew Y. and Harada, Daishi and Russell, Stuart J.},
+  title     = {Policy Invariance Under Reward Transformations: Theory and Application to Reward Shaping},
+  booktitle = {Proceedings of the Sixteenth International Conference on Machine Learning},
+  series    = {ICML'99},
+  year      = {1999},
+  isbn      = {978-1-55860-612-8},
+  pages     = {278--287},
+  publisher = {Morgan Kaufmann Publishers Inc.},
+  address   = {San Francisco, CA, USA}
+}
+@article{ma2024eurekahumanlevelrewarddesign,
+  title   = {Eureka: Human-Level Reward Design via Coding Large Language Models},
+  author  = {Yecheng Jason Ma and William Liang and Guanzhi Wang and De-An Huang and Osbert Bastani and Dinesh Jayaraman and Yuke Zhu and Linxi Fan and Anima Anandkumar},
+  year    = {2024},
+  journal = {arXiv preprint arXiv:2310.12931},
+  url     = {https://arxiv.org/abs/2310.12931}
+}
+
+ @article{Zhang_Gao_Jiang_Chen_Pan_Zhang_Deng_2025,
+  title    = {Progress Reward Model for Reinforcement Learning via Large Language Models},
+  author   = {Zhang, Xiuhui and Gao, Ning and Jiang, Xingyu and Chen, Yihui and Pan, Yuheng and Zhang, Mohan and Deng, Yue},
+  year     = {2025},
+  language = {en}
+}
+,
+  url          = {https://github.com/deng-ai-lab/PRM4RL},
+  abstractnote = {[NeurIPS 2025] The official implementation of “Progress Reward Model for Reinforcement Learning via Large Language Models”},
+  publisher    = {deng-ai-lab},
+  year         = {2026},
+  month        = mar
+}
+@article{liu2026memoryenhanceddynamic,
+  title   = {The Past Is Not Past: Memory-Enhanced Dynamic Reward Shaping},
+  author  = {Yang Liu and Enxi Wang and Yufei Gao and Weixin Zhang and Bo Wang and Zhiyuan Zeng and Yikai Zhang and Yining Zheng and Xipeng Qiu},
+  year    = {2026},
+  journal = {arXiv preprint arXiv:2604.11297},
+  url     = {https://arxiv.org/abs/2604.11297}
+}
+@inproceedings{yan2026glare,
+  title     = {{{GLARE}}: Scalable Neuro-Symbolic Reward Shaping for {LLM} Agents via Group-Level Automata},
+  author    = {Jingyuan Yan and Qingchen Liu and Qichao Ma and Jiahu Qin},
+  booktitle = {Forty-third International Conference on Machine Learning},
+  year      = {2026},
+  url       = {https://openreview.net/forum?id=3a8fm24EQd}
+}
+
+ @article{Katsikopoulos_Engelbrecht_2003,
+  title        = {Markov decision processes with delays and asynchronous cost collection},
+  volume       = {48},
+  issn         = {1558-2523},
+  doi          = {10.1109/TAC.2003.809799},
+  abstractnote = {Markov decision processes (MDPs) may involve three types of delays. First, state information, rather than being available instantaneously, may arrive with a delay (observation delay). Second, an action may take effect at a later decision stage rather than immediately (action delay). Third, the cost induced by an action may be collected after a number of stages (cost delay). We de rive two results, one for constant and one for random delays, for reducing an MDP with delays to an MDP without delays, which differs only in the size of the state space. The results are based on the intuition that costs may be collected asynchronously, i.e., at a stage other than the one in which they are induced, as long as they are discounted properly.},
+  number       = {4},
+  journal      = {IEEE Transactions on Automatic Control},
+  author       = {Katsikopoulos, K.V. and Engelbrecht, S.E.},
+  year         = {2003},
+  month        = apr,
+  pages        = {568–574}
+}
+@inproceedings{Zhu_etal_2023,
+  title        = {Ghost in the Minecraft: Generally Capable Agents for Open-World Environments via Large Language Models with Text-based Knowledge and Memory},
+  url          = {http://arxiv.org/abs/2305.17144},
+  doi          = {10.48550/arXiv.2305.17144},
+  abstractnote = {The captivating realm of Minecraft has attracted substantial research interest in recent years, serving as a rich platform for developing intelligent agents capable of functioning in open-world environments. However, the current research landscape predominantly focuses on specific objectives, such as the popular “ObtainDiamond” task, and has not yet shown effective generalization to a broader spectrum of tasks. Furthermore, the current leading success rate for the “ObtainDiamond” task stands at around 20%, highlighting the limitations of Reinforcement Learning (RL) based controllers used in existing methods. To tackle these challenges, we introduce Ghost in the Minecraft (GITM), a novel framework integrates Large Language Models (LLMs) with text-based knowledge and memory, aiming to create Generally Capable Agents (GCAs) in Minecraft. These agents, equipped with the logic and common sense capabilities of LLMs, can skillfully navigate complex, sparse-reward environments with text-based interactions. We develop a set of structured actions and leverage LLMs to generate action plans for the agents to execute. The resulting LLM-based agent markedly surpasses previous methods, achieving a remarkable improvement of +47.5% in success rate on the “ObtainDiamond” task, demonstrating superior robustness compared to traditional RL-based controllers. Notably, our agent is the first to procure all items in the Minecraft Overworld technology tree, demonstrating its extensive capabilities. GITM does not need any GPU for training, but a single CPU node with 32 CPU cores is enough. This research shows the potential of LLMs in developing capable agents for handling long-horizon, complex tasks and adapting to uncertainties in open-world environments. See the project website at https://github.com/OpenGVLab/GITM.},
+  note         = {arXiv:2305.17144 [cs.AI]},
+  number       = {arXiv:2305.17144},
+  publisher    = {arXiv},
+  author       = {Zhu, Xizhou and Chen, Yuntao and Tian, Hao and Tao, Chenxin and Su, Weijie and Yang, Chenyu and Huang, Gao and Li, Bin and Lu, Lewei and Wang, Xiaogang and Qiao, Yu and Zhang, Zhaoxiang and Dai, Jifeng},
+  year         = {2023},
+  month        = june
+}
+ @article{Schulman_Wolski_Dhariwal_Radford_Klimov_2017,
+  title        = {Proximal Policy Optimization Algorithms},
+  url          = {http://arxiv.org/abs/1707.06347},
+  doi          = {10.48550/arXiv.1707.06347},
+  abstractnote = {We propose a new family of policy gradient methods for reinforcement learning, which alternate between sampling data through interaction with the environment, and optimizing a “surrogate” objective function using stochastic gradient ascent. Whereas standard policy gradient methods perform one gradient update per data sample, we propose a novel objective function that enables multiple epochs of minibatch updates. The new methods, which we call proximal policy optimization (PPO), have some of the benefits of trust region policy optimization (TRPO), but they are much simpler to implement, more general, and have better sample complexity (empirically). Our experiments test PPO on a collection of benchmark tasks, including simulated robotic locomotion and Atari game playing, and we show that PPO outperforms other online policy gradient methods, and overall strikes a favorable balance between sample complexity, simplicity, and wall-time.},
+  note         = {arXiv:1707.06347 [cs.LG]},
+  number       = {arXiv:1707.06347},
+  publisher    = {arXiv},
+  author       = {Schulman, John and Wolski, Filip and Dhariwal, Prafulla and Radford, Alec and Klimov, Oleg},
+  year         = {2017},
+  month        = aug
+}
+ @article{Kulkarni_Narasimhan_Saeedi_Tenenbaum_2016,
+  title        = {Hierarchical Deep Reinforcement Learning: Integrating Temporal Abstraction and Intrinsic Motivation},
+  url          = {http://arxiv.org/abs/1604.06057},
+  doi          = {10.48550/arXiv.1604.06057},
+  abstractnote = {Learning goal-directed behavior in environments with sparse feedback is a major challenge for reinforcement learning algorithms. The primary difficulty arises due to insufficient exploration, resulting in an agent being unable to learn robust value functions. Intrinsically motivated agents can explore new behavior for its own sake rather than to directly solve problems. Such intrinsic behaviors could eventually help the agent solve tasks posed by the environment. We present hierarchical-DQN (h-DQN), a framework to integrate hierarchical value functions, operating at different temporal scales, with intrinsically motivated deep reinforcement learning. A top-level value function learns a policy over intrinsic goals, and a lower-level function learns a policy over atomic actions to satisfy the given goals. h-DQN allows for flexible goal specifications, such as functions over entities and relations. This provides an efficient space for exploration in complicated environments. We demonstrate the strength of our approach on two problems with very sparse, delayed feedback: (1) a complex discrete stochastic decision process, and (2) the classic ATARI game `Montezuma’s Revenge’.},
+  note         = {arXiv:1604.06057 [cs.LG]},
+  number       = {arXiv:1604.06057},
+  publisher    = {arXiv},
+  author       = {Kulkarni, Tejas D. and Narasimhan, Karthik R. and Saeedi, Ardavan and Tenenbaum, Joshua B.},
+  year         = {2016},
+  month        = may
+}
+ @article{Shinn_Cassano_Berman_Gopinath_Narasimhan_Yao_2023,
+  title        = {Reflexion: Language Agents with Verbal Reinforcement Learning},
+  url          = {http://arxiv.org/abs/2303.11366},
+  doi          = {10.48550/arXiv.2303.11366},
+  abstractnote = {Large language models (LLMs) have been increasingly used to interact with external environments (e.g., games, compilers, APIs) as goal-driven agents. However, it remains challenging for these language agents to quickly and efficiently learn from trial-and-error as traditional reinforcement learning methods require extensive training samples and expensive model fine-tuning. We propose Reflexion, a novel framework to reinforce language agents not by updating weights, but instead through linguistic feedback. Concretely, Reflexion agents verbally reflect on task feedback signals, then maintain their own reflective text in an episodic memory buffer to induce better decision-making in subsequent trials. Reflexion is flexible enough to incorporate various types (scalar values or free-form language) and sources (external or internally simulated) of feedback signals, and obtains significant improvements over a baseline agent across diverse tasks (sequential decision-making, coding, language reasoning). For example, Reflexion achieves a 91% pass@1 accuracy on the HumanEval coding benchmark, surpassing the previous state-of-the-art GPT-4 that achieves 80%. We also conduct ablation and analysis studies using different feedback signals, feedback incorporation methods, and agent types, and provide insights into how they affect performance.},
+  note         = {arXiv:2303.11366 [cs.AI]},
+  number       = {arXiv:2303.11366},
+  publisher    = {arXiv},
+  author       = {Shinn, Noah and Cassano, Federico and Berman, Edward and Gopinath, Ashwin and Narasimhan, Karthik and Yao, Shunyu},
+  year         = {2023},
+  month        = oct
 }
