@@ -1,12 +1,14 @@
 llm:
-  backend: ollama          # ollama | huggingface
-  model_name: "mappo-expert"
+  backend: gemini          # ollama | huggingface | gemini
+  # to go back to ollama, change the backend to 'ollama' and model_name to 'qwen2.5:7b'
+  model_name: "gemini-3.1-flash-lite"
   host: "http://localhost:11434/api/generate"
   timeout: 30
   max_retries: 3
   temperature: 0.0
   top_p: 1.0
   seed: 42
+  rate_limit_rpm: 14
 
 critic_trigger:
   # Rolling window for TD error statistics

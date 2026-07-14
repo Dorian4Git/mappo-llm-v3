@@ -9,3 +9,34 @@ This chapter introduces Large Language Models (LLMs) and their capabilities, spe
 (e.g., ReAct, Prompting strategies)
 
 \subsection{State of the Art in LLM Integration with RL}
+
+\subsection{LLM Fine-Tuning: QLoRA and Cross-Entropy}
+To clarify an important technical detail regarding the language model side: the LLM does not use Binary Cross-Entropy. Because an LLM must predict the next token out of a massive vocabulary (often 32,000 to 128,000 possible tokens), it uses Categorical Cross-Entropy (specifically, Causal Language Modeling Loss).
+
+\subsubsection{The Loss Function (Causal Language Modeling)}
+\textbf{What is trained:} The LLM is trained to maximize the likelihood of the next token in a sequence, given all preceding tokens.
+
+If we have a context sequence $X$ and a target sequence of tokens $y$, the loss function is the negative log-likelihood over the sequence of $N$ tokens:
+\begin{equation}
+L_{\text{LLM}} = -\frac{1}{N} \sum_{i=1}^{N} \log P(y_i \mid y_{<i}, X)
+\end{equation}
+The probability $P(y_i)$ is calculated by applying a Softmax function over the final output logits across the entire vocabulary dimension.
+
+\subsubsection{Low-Rank Adaptation (LoRA) Formulation}
+In modern LLM fine-tuning, we do not train the entire billion-parameter model (Full Fine-Tuning), as this requires massive GPU clusters. Instead, we use Parameter-Efficient Fine-Tuning (PEFT), specifically QLoRA (Quantized Low-Rank Adaptation).
+
+\textbf{The Math of LoRA:} We freeze the pre-trained weight matrix $W_0 \in \mathbb{R}^{d \times k}$ and inject two tiny trainable matrices, $A \in \mathbb{R}^{r \times k}$ and $B \in \mathbb{R}^{d \times r}$, where the rank $r$ is very small (e.g., 8, 16, or 32). The forward pass becomes:
+\begin{equation}
+h = W_0 x + \Delta W x = W_0 x + \frac{\alpha}{r} B A x
+\end{equation}
+Here, $\alpha$ is a scaling constant.
+
+\subsubsection{How the Gradients Flow in QLoRA}
+This is where the computational efficiency happens:
+\begin{itemize}
+    \item \textbf{Forward Pass:} The input passes through the frozen 4-bit weights $W_0$ and the trainable 16-bit matrices $A$ and $B$.
+    \item \textbf{Loss Calculation:} The output logits are compared against the target tokens using the Categorical Cross-Entropy loss $L_{\text{LLM}}$.
+    \item \textbf{Gradient Flow (Backpropagation):} The gradients flow backward from the loss function, down through the network layers. However, when the gradient reaches the weight matrices, the gradients for $W_0$ are discarded (zeroed out). The optimizer only calculates and applies the gradients to the small matrices $A$ and $B$.
+\end{itemize}
+
+By freezing the base model and only routing gradients to the $A$ and $B$ adapters, memory consumption is reduced by up to 75\%, allowing you to fine-tune massive reasoning models on consumer hardware to act as your MARL meta-controller.

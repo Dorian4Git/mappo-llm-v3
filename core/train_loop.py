@@ -68,6 +68,7 @@ def train_mappo_v3(
     config_path: str = "config/train_config.yaml",
     callbacks: list = None,
     trajectory_logger=None,
+    orchestrator=None,
 ):
     """
     Main MAPPO training loop with V3 extensions.
@@ -109,8 +110,11 @@ def train_mappo_v3(
             shutil.rmtree(d)
 
     vec_env = BatchCraftingEnvV2(n_envs=n_envs, seed=seed)
-    # Using LLMOrchestratorV2 primarily for goal lookup in the train loop
-    orchestrator = LLMOrchestratorV2(enforce_dag_guardrails=not fair_mode)
+    
+    # Use provided orchestrator or instantiate a default Ollama one
+    if orchestrator is None:
+        # Using LLMOrchestratorV2 primarily for goal lookup in the train loop
+        orchestrator = LLMOrchestratorV2(enforce_dag_guardrails=not fair_mode)
 
     agent = RoleConditionedMAPPOAgentV2(
         cnn_channels=9, goal_dim=goal_dim, flag_dim=NUM_ITEMS + 4, deep=deep,
@@ -715,9 +719,14 @@ def train_mappo_v3(
                 delta_metrics[k] = v - prev_llm_metrics.get(k, 0.0)
                 
             print("[LLM] Querying Adaptive Weights...")
-            adaptive_weights = orchestrator.query_adaptive_weights(
+            new_weights = orchestrator.query_adaptive_weights(
                 curr_metrics, delta_metrics, prev_weights=adaptive_weights
             )
+            
+            if new_weights is not None:
+                adaptive_weights = new_weights
+            else:
+                print("      [LLM] Query failed or rate limited, keeping previous weights.")
             
             w_str = ", ".join(f"{k.replace('w_','')}={v:.2f}" for k, v in adaptive_weights.items())
             print(f"      Weights: {w_str}")

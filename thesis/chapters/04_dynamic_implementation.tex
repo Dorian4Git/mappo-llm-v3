@@ -540,6 +540,27 @@ Instead, $w_j$ dictates \emph{where} the agent goes (via the planner),
 while $F$ dictates \emph{how} it gets there using a stable,
 policy-invariant gradient.
 
+\subsubsection{Mathematical Impact on the MAPPO Objective}
+\label{sec:dyn_math_impact}
+
+In the dynamic implementation, the LLM does not augment the Actor network's state observations. The policy remains strictly $\pi_\theta(a_t \vert{} s_t)$.
+
+Instead, the LLM alters the active goal $g$ for the Potential-Based Reward Shaping (PBRS) mechanism. This purely alters the environment reward signal $r_t$:
+\begin{equation}
+    r_t^{\text{total}} = r_t^{\text{env}} + \lambda_t \underbrace{\left( \gamma \Phi(s_{t+1}, g) - \Phi(s_t, g) \right)}_{F_t}
+\end{equation}
+where $F_t$ is the PBRS shaping signal. 
+
+The integration with MAPPO occurs exclusively through the Advantage calculation. The newly augmented $r_t^{\text{total}}$ is fed directly into the Advantage function:
+\begin{equation}
+    A_t = r_t^{\text{total}} + \gamma V_\phi(s_{t+1}) - V_\phi(s_t)
+\end{equation}
+Consequently, the Critic network $V_\phi(s_t)$ adjusts its value estimations to predict this newly dense, goal-oriented reward landscape. The Actor network $\pi_\theta(a_t \vert{} s_t)$ remains agnostic to the existence of the LLM or the explicit concept of a ``goal''; it simply follows the updated Advantage gradient $A_t$. 
+
+In conclusion, the LLM acts strictly as an environment architect. The MAPPO policy feels a magnetic pull toward specific regions of the state space solely because the mathematically augmented Advantage $A_t$ biases its gradient in that direction.
+
+
+
 \subsubsection{Shaping Decay ($\lambda$)}
 The shaped reward is blended with the environment reward using a
 time-varying coefficient $\lambda_t$:

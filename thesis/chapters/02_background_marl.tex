@@ -9,4 +9,34 @@ Separating this from the LLM background helps keep the text focused and modular.
 \subsection{Multi-Agent Systems}
 
 \subsection{State of the Art in MARL}
-(e.g., MAPPO, MADDPG...)
+
+\subsection{MAPPO Agents: Training and Gradient Flow}
+In Multi-Agent Proximal Policy Optimization (MAPPO), the system relies on the Centralized Training with Decentralized Execution (CTDE) paradigm. This means there are two distinct neural networks (or sets of networks) being trained: the Actor and the Critic.
+
+\subsubsection{The Actor Network (Policy)}
+\textbf{What is trained:} The Actor network, parameterized by $\theta$, learns the policy $\pi_\theta(a_t\vert{}s_t)$. This defines the probability of an agent taking a specific action $a_t$ given its local observation $s_t$.
+
+\textbf{The Objective Function:} The Actor is trained to maximize a clipped surrogate objective function. We calculate the probability ratio $r_t(\theta)$ between the new policy and the old policy:
+\begin{equation}
+r_t(\theta) = \frac{\pi_\theta(a_t\vert{}s_t)}{\pi_{\theta_{\text{old}}}(a_t\vert{}s_t)}
+\end{equation}
+The Actor's loss function mathematically prevents the policy from updating too aggressively in a single step (which would cause training collapse):
+\begin{equation}
+L^{\text{CLIP}}(\theta) = \hat{\mathbb{E}}_t \left[ \min\left( r_t(\theta) \hat{A}_t, \text{clip}(r_t(\theta), 1 - \epsilon, 1 + \epsilon) \hat{A}_t \right) \right]
+\end{equation}
+Here, $\hat{A}_t$ is the Advantage estimate, and $\epsilon$ is the clipping hyperparameter (usually 0.2).
+
+\subsubsection{The Centralized Critic Network (Value)}
+\textbf{What is trained:} The Critic network, parameterized by $\phi$, learns the value function $V_\phi(S_t)$. Crucially, $S_t$ is not just the local observation; it is the global joint state (or the concatenation of all agents' observations). This allows the Critic to accurately assess the true value of a state across the entire multi-agent system.
+
+\textbf{The Objective Function:} The Critic minimizes the Mean Squared Error (MSE) between its predicted value and the actual calculated returns $\hat{R}_t$ (usually derived via Generalized Advantage Estimation, GAE):
+\begin{equation}
+L^{\text{VF}}(\phi) = \hat{\mathbb{E}}_t \left[ \left( V_\phi(S_t) - \hat{R}_t \right)^2 \right]
+\end{equation}
+
+\subsubsection{How the Gradients Flow in MAPPO}
+During a training update:
+\begin{itemize}
+    \item \textbf{Critic Gradient Flow:} The error $L^{\text{VF}}(\phi)$ is computed. Gradients flow backward strictly through the Centralized Critic network, updating the weights $\phi$ to make its future predictions more accurate.
+    \item \textbf{Actor Gradient Flow:} The Advantage $\hat{A}_t$ is computed using the Critic's evaluations. If $\hat{A}_t$ is positive (the action was better than expected), the Actor's loss $L^{\text{CLIP}}(\theta)$ pushes the gradient to increase the probability of that action. The gradient flows backward entirely through the local Actor network, updating weights $\theta$.
+\end{itemize}

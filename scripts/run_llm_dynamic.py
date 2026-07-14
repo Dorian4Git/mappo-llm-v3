@@ -42,10 +42,29 @@ if __name__ == "__main__":
                         help="Temperature for softmax attention budget (lower = sharper, default 0.5)")
     args = parser.parse_args()
 
+    import yaml
+    import os
+
+    # Load the config file
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config", "llm_config.yaml")
+    with open(config_path, "r") as f:
+        config = yaml.safe_load(f)
+
+    llm_cfg = config.get("llm", {})
+
+    # Override argparse defaults if config is present
+    backend = args.llm_backend if args.llm_backend != "ollama" else llm_cfg.get("backend", "ollama")
+    model_name = args.llm_model if args.llm_model != "qwen2.5:7b" else llm_cfg.get("model_name", "qwen2.5:7b")
+    rate_limit_rpm = llm_cfg.get("rate_limit_rpm")
+
     # Set up the LLM pipeline
-    bridge = LLMBridge(backend=args.llm_backend, model_name=args.llm_model)
+    bridge = LLMBridge(
+        backend=backend, 
+        model_name=model_name,
+        rate_limit_rpm=rate_limit_rpm
+    )
     orchestrator = LLMOrchestratorV2(
-        model_name=args.llm_model, 
+        model_name=model_name, 
         bridge=bridge,
         enforce_dag_guardrails=not args.fair_mode
     )
@@ -84,8 +103,9 @@ if __name__ == "__main__":
         seed=args.seed,
         callbacks=callbacks,
         trajectory_logger=traj_logger,
-        llm_model_name=args.llm_model,
+        llm_model_name=model_name,
         fair_mode=args.fair_mode,
+        orchestrator=orchestrator,
     )
 
     # Cleanup

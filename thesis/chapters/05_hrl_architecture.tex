@@ -529,6 +529,42 @@ remains fixed because the LLM continuously updates the \emph{direction}
 (which option to pursue) rather than the \emph{magnitude} of shaping.
 
 % ──────────────────────────────────────────────────────────────────────────
+\subsection{Mathematical Impact on the MAPPO Objective}
+\label{sec:hrl_math_impact}
+
+In the Meta-Controller approach, the LLM's influence strikes the MAPPO equations in two places simultaneously: the observation space (Policy) and the reward space (Critic).
+
+\subsubsection{Policy Conditioning (Structural Policy Shaping)}
+The LLM outputs a discrete option $o \in \mathcal{O}$. We convert this into a one-hot vector $\mathbf{e}_o$ and concatenate it directly to the agent's observation state:
+\begin{equation}
+    s_t' = [s_t \parallel \mathbf{e}_{o_t}]
+\end{equation}
+Mathematically, the MAPPO Actor is no longer $\pi_\theta(a_t \vert{} s_t)$. It becomes a conditional probability distribution:
+\begin{equation}
+    \pi_\theta(a_t \vert{} s_t, o_t)
+\end{equation}
+This is structural policy shaping. The neural network explicitly learns different behavior sub-policies depending on which LLM switch is flipped.
+
+\subsubsection{Intrinsic Reward (The Necessity of Shaping)}
+Why is there still reward shaping in the HRL approach? If we only gave the agent the one-hot vector $\mathbf{e}_o$ and the sparse environment reward $r_t^{\text{env}}$, the conditional policy $\pi_\theta(a_t \vert{} s_t, o_t)$ would wander randomly for millions of steps before accidentally completing an option. The neural network inherently has no idea what $\mathbf{e}_o$ means.
+
+To teach the neural network how to execute the specific option $o_t$, we introduce an option-specific intrinsic reward $r_t^{\text{intr}}$, yielding a bipartite reward:
+\begin{equation}
+    r_t^{\text{total}} = r_t^{\text{env}} + \alpha_{\text{intr}} r_t^{\text{intr}}
+\end{equation}
+Where $r_t^{\text{intr}}$ gives a dense +1 bonus and distance shaping toward the specific target zone of the active option $o_t$.
+
+\textbf{How this impacts MAPPO:}
+The Advantage becomes conditional on the option:
+\begin{equation}
+    A_t = (r_t^{\text{env}} + \alpha_{\text{intr}} r_t^{\text{intr}}) + \gamma V_\phi(s_{t+1}, o_{t+1}) - V_\phi(s_t, o_t)
+\end{equation}
+The Actor gradient update explicitly links the state $s_t$, the LLM's command $o_t$, and the intrinsic success of that command:
+\begin{equation}
+    L(\theta) = \mathbb{E} \left[ \frac{\pi_\theta(a_t \vert{} s_t, o_t)}{\pi_{\theta_{\text{old}}}(a_t \vert{} s_t, o_t)} A_t \right]
+\end{equation}
+
+% ──────────────────────────────────────────────────────────────────────────
 \subsection{Staleness Detection and Counterfactual Reflection}
 \label{sec:staleness}
 

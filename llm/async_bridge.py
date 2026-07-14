@@ -44,6 +44,7 @@ class LLMBridge:
         temperature: float = 0.0,
         top_p: float = 1.0,
         seed: int = 42,
+        rate_limit_rpm: Optional[int] = None,
     ):
         self.backend = backend
         self.model_name = model_name
@@ -53,6 +54,7 @@ class LLMBridge:
         self.temperature = temperature
         self.top_p = top_p
         self.seed = seed
+        self.rate_limit_rpm = rate_limit_rpm
 
         # Async query infrastructure
         self._request_queue: queue.Queue = queue.Queue()
@@ -62,6 +64,7 @@ class LLMBridge:
         self._running = False
         self._cache = {}
         self._cache_lock = threading.Lock()
+        self._last_request_time = 0.0
 
         # HuggingFace model (loaded on demand for hot-swap)
         self._hf_model = None
@@ -174,6 +177,18 @@ class LLMBridge:
         Returns:
             Raw text response from the LLM.
         """
+        if self.rate_limit_rpm and self.rate_limit_rpm > 0:
+            min_interval = 60.0 / self.rate_limit_rpm
+            
+            with self._lock:
+                now = time.monotonic()
+                elapsed = now - self._last_request_time
+                if elapsed < min_interval:
+                    sleep_time = min_interval - elapsed
+                    time.sleep(sleep_time)
+                
+                self._last_request_time = time.monotonic()
+
         if self.backend == "ollama":
             return self._query_ollama(prompt, require_json=require_json)
         elif self.backend == "huggingface_peft" or self.backend == "huggingface":
