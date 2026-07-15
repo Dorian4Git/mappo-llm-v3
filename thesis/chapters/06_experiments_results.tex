@@ -1,12 +1,138 @@
 \section{Experiments and Results}
 \label{ch:experiments}
 
-This chapter presents the experimental setup, the environments used for evaluation, and the results obtained.
+This chapter presents the experimental setup, the environments used for evaluation, and the results obtained. We specifically focus on validating the hypothesis that a Meta-Controller LLM can effectively resolve exploration bottlenecks in a sparse Multi-Agent Reinforcement Learning (MARL) environment through dynamic reward shaping, and subsequently, how Hierarchical Reinforcement Learning (HRL) further improves these capabilities.
 
 \subsection{Experimental Setup}
+\label{sec:exp_setup}
 
-\subsection{Evaluation Metrics}
+To rigorously evaluate the proposed architectures, we compare distinct configurations within our multi-agent resource-gathering environment, structured into two parts. 
 
-\subsection{Results}
-\subsubsection{Baseline Comparison}
-\subsubsection{Ablation Studies}
+For the \textbf{Dynamic Reward Shaping} experiments, we evaluate:
+\begin{enumerate}
+    \item \textbf{Sparse Baseline:} A standard MAPPO implementation relying purely on sparse environmental rewards (+1 for completing milestones).
+    \item \textbf{LLM Dynamic (Gemini 3.1 Flash Lite):} The proposed ``Mixing Board'' architecture, utilizing Google's Gemini 3.1 Flash Lite model via API as the Meta-Controller to dynamically shift potential-based reward weights. 
+    \item \textbf{LLM Dynamic (Local Qwen 2.5 7B):} An equivalent dynamic architecture utilizing a localized, smaller parameter model (Qwen 2.5 7B) to observe the efficacy of smaller, self-hosted LLMs. 
+\end{enumerate}
+
+For the \textbf{Hierarchical Reinforcement Learning (HRL)} experiments, we introduce:
+\begin{enumerate}
+    \item \textbf{HRL with QLoRA (Local Qwen 2.5 7B):} The HRL meta-controller architecture utilizing a QLoRA fine-tuned Qwen model, providing fast, localized option assignment.
+    \item \textbf{HRL without LoRA (Local Qwen 2.5 7B):} The same HRL architecture, but utilizing the base Qwen 2.5 7B model without specialized QLoRA fine-tuning.
+\end{enumerate}
+
+All runs were executed with identical MAPPO hyperparameters (clipping $\epsilon=0.2$, GAE $\lambda=0.95$, $\gamma=0.99$, across 128 parallel environments).
+
+% ==========================================
+% PART 1: DYNAMIC REWARD SHAPING
+% ==========================================
+\subsection{Part 1: Dynamic Reward Shaping}
+\label{sec:exp_dynamic}
+
+The most crucial metric validating the LLM Dynamic architecture is the progression through the environment's strict dependency Directed Acyclic Graph (DAG). 
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{../../plots/baseline_vs_llmdynamic_results/subtasks_comparison.png}
+    \caption{Subtask Completion Rates: Comparison between the Sparse Baseline and the LLM Dynamic models over 2000 training updates.}
+    \label{fig:subtasks_comparison_dynamic}
+\end{figure}
+
+As shown in \cref{fig:subtasks_comparison_dynamic}, all three configurations conquer the early-game tasks (Wood, Stone) almost immediately. The Pickaxe subtask follows shortly after, with the Baseline reaching it at step~1.1M and Gemini at step~720K.
+
+However, the Baseline completely collapses at the \emph{Iron} bottleneck. Without any dynamic reward shaping to guide exploration, the Baseline agents never discover how to consistently mine Iron (0\% final rate), resulting in a total failure to learn all downstream tasks (Sword, Armor, Bridge). 
+
+In contrast, both LLM-guided runs break through the Iron bottleneck, but at remarkably different speeds. \textbf{Qwen} unlocks Iron at step~10M, subsequently discovering Sword and Armor at essentially the same step (10.1M). This rapid cascade demonstrates the snowball effect: once a critical bottleneck is broken, downstream tasks are unlocked quickly. \textbf{Gemini} unlocks Iron much later, at step~40.7M (approximately 4$\times$ slower than Qwen). However, once unlocked, the same cascade occurs: Sword and Armor appear at step~41.3M.
+
+Neither run achieved Enemy defeats (0\% for all three configurations), indicating that the combat subtask represents a qualitatively different challenge beyond reward shaping---likely requiring specialised action coordination that the current shaping signal alone cannot provide.
+
+\subsubsection{LLM Interventions in Action}
+\label{sec:exp_interventions}
+
+To understand exactly \emph{how} the LLMs broke the bottleneck, we analyse the evolution of the reward weights. The weights shown in \cref{fig:llm_weights_evolution} are the \emph{post-softmax} weights actually applied to the potential-based shaping.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.8\textwidth}
+        \includegraphics[width=\textwidth]{../../plots/baseline_vs_llmdynamic_results/llm_weights_evolution_gemini.png}
+        \caption{Gemini 3.1 Flash Lite Meta-Controller (198 interventions)}
+    \end{subfigure}
+    \vskip\baselineskip
+    \begin{subfigure}{0.8\textwidth}
+        \includegraphics[width=\textwidth]{../../plots/baseline_vs_llmdynamic_results/llm_weights_evolution_qwen.png}
+        \caption{Local Qwen 2.5 7B Meta-Controller (20 interventions)}
+    \end{subfigure}
+    \caption{Evolution of the Dynamic Reward Weights (post-softmax, as applied to the PBRS signal).}
+    \label{fig:llm_weights_evolution}
+\end{figure}
+
+\Cref{fig:llm_weights_evolution} reveals strikingly different weight allocation strategies. \textbf{Gemini's strategy} is characterised by \emph{broad amplification} of the early-chain tasks. $w_{\text{wood}}$ and $w_{\text{stone}}$ rapidly climb and stay high, while $w_{\text{iron}}$ remains near zero after the softmax (mean~0.01). This pattern reveals a counter-intuitive insight: despite the raw LLM outputs assigning $w_{\text{iron}} = 1.0$, the \emph{softmax normalisation} compresses this into a negligible effective weight because the LLM simultaneously assigns high values to wood, stone, and bridge.
+
+\textbf{Qwen's strategy} exhibits a \emph{focused suppression-and-amplification} profile. After an initial exploration phase, $w_{\text{wood}}$ and $w_{\text{stone}}$ are aggressively dropped, while $w_{\text{iron}}$ rises sharply to a peak of 3.87 during the mid-training bottleneck. By zeroing out already-mastered tasks and concentrating shaping energy on the bottleneck, Qwen breaks through Iron 30M steps earlier than Gemini.
+
+\subsubsection{Reward Analysis}
+\label{sec:exp_rewards}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.7\textwidth]{../../plots/baseline_vs_llmdynamic_results/reward_comparison.png}
+    \caption{Average Environment Reward (True Milestones Reached).}
+    \label{fig:env_rewards_dynamic}
+\end{figure}
+
+\Cref{fig:env_rewards_dynamic} presents the true average environment reward. Both LLM Dynamic runs achieve significantly higher returns than the Baseline, reaching an identical peak reward ($\approx$0.076). This suggests that once the bottleneck is broken, the final quality of the learned policy is comparable; the difference lies purely in the \emph{sample efficiency} driven by Qwen's highly focused interventions.
+
+% ==========================================
+% PART 2: HIERARCHICAL REINFORCEMENT LEARNING
+% ==========================================
+\subsection{Part 2: Hierarchical Reinforcement Learning}
+\label{sec:exp_hrl}
+
+While the dynamic shaping architecture successfully guided agents past initial bottlenecks (like Iron), it ultimately stalled at the combat phase (Enemy, Gold). Modifying the continuous reward landscape was insufficient to teach the agents the discrete, long-horizon macro-actions required for coordinated combat. 
+
+This limitation motivated the shift to a full \textbf{Hierarchical Reinforcement Learning (HRL)} architecture, where the LLM does not merely shape the rewards, but explicitly dictates discrete \emph{Options} (e.g., ``Craft Sword'', ``Defeat Enemy'') to the lower-level MAPPO policy.
+
+\subsubsection{Subtask Progression: Solving the DAG}
+
+The introduction of HRL proved to be a paradigm shift for the environment's solvability.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{../../plots/hrl_results/subtasks_comparison.png}
+    \caption{Subtask Completion Rates: HRL configurations against the Sparse Baseline.}
+    \label{fig:subtasks_comparison_hrl}
+\end{figure}
+
+As \cref{fig:subtasks_comparison_hrl} unequivocally demonstrates, both HRL configurations successfully solved the entire environment, a feat the Dynamic Shaping architecture could not achieve.
+
+Not only do they break the Iron bottleneck rapidly, but they successfully navigate the complex combat phase to mine Gold. However, there is a distinct difference in sample efficiency between the two approaches:
+
+\begin{itemize}
+    \item \textbf{HRL without LoRA:} This base model run breaks the Iron bottleneck extremely quickly at 2.45M steps. However, it struggles slightly during the more complex combat phase, taking until 9.6M steps to consistently defeat the Enemy and 10M steps to mine Gold.
+    \item \textbf{HRL with QLoRA:} The fine-tuned model demonstrates superior reasoning in the late game. While it unlocks Iron slightly later (at 3.47M steps), it absolutely blazes through the combat phase, achieving a 100\% success rate for defeating the Enemy at just 6.8M steps and mining Gold at 7.3M steps---nearly 3M steps faster than the base model.
+\end{itemize}
+
+This proves that while the base Qwen 2.5 7B model is capable of generating valid Hierarchical Options, the QLoRA fine-tuning provides a significant boost in late-game option coherence and temporal consistency.
+
+\subsubsection{Reward Trajectories and Option Stability}
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}{0.48\textwidth}
+        \includegraphics[width=\textwidth]{../../plots/hrl_results/reward_comparison.png}
+        \caption{Average Environment Reward (HRL)}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.48\textwidth}
+        \includegraphics[width=\textwidth]{../../plots/hrl_results/hrl_metrics.png}
+        \caption{Intrinsic Rewards and Option Staleness}
+    \end{subfigure}
+    \caption{HRL Performance Metrics.}
+    \label{fig:hrl_metrics}
+\end{figure}
+
+The true advantage of the HRL architecture is visible in the environment rewards (\cref{fig:hrl_metrics}, left). While the Dynamic architectures plateaued at an average reward of $0.076$, both HRL runs achieve significantly higher rewards (peaking around $0.22$), reflecting consistent mastery of the entire dependency chain including the high-value Gold node. The QLoRA run reaches this plateau noticeably earlier.
+
+The right panel of \cref{fig:hrl_metrics} highlights the internal mechanics of the HRL system. The \emph{Intrinsic Reward} remains highly stable. More importantly, the \emph{Option Staleness Resets} metric illustrates why QLoRA is critical. A staleness reset occurs when the LLM takes too long to respond, forcing the agents to drop their current Option. The fine-tuned QLoRA model exhibits different staleness patterns, maintaining better temporal consistency between the high-level intent and the low-level execution during the complex combat phases. 
+
+Ultimately, explicitly partitioning the problem space into discrete Options allows the MAPPO policy to focus purely on motor execution, while the LLM handles all long-horizon planning. This division of labor is what definitively breaks the complex exploration bottlenecks that defeated pure continuous reward shaping.

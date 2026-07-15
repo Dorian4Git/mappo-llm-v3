@@ -53,6 +53,10 @@
 \titleformat{\section}
   {\fontsize{16}{19}\bfseries\sffamily}{\thesection}{1em}{}
 
+% Unnumbered Level 1 Heading (16pt) - Centered for Declaration, TOC, etc.
+\titleformat{name=\section,numberless}
+  {\fontsize{16}{19}\bfseries\sffamily\centering}{}{0em}{}
+
 % Level 2 Heading (14pt) - e.g., \subsection
 \titleformat{\subsection}
   {\fontsize{14}{17}\bfseries\sffamily}{\thesubsection}{1em}{}
@@ -82,8 +86,8 @@
 \renewcommand{\footrule}{%
     \begingroup % Starts isolation
         \color{gray!50}% Set color to light grey
-        \hrule width \headwidth height 0.5pt \vspace{1.5pt}% First line
-        \hrule width \headwidth height 0.5pt \vspace{3pt}% Second line
+        \hrule width \headwidth height 0.5pt \vspace{0.5pt}% First line
+        \hrule width \headwidth height 0.5pt \vspace{1.5pt}% Second line
     \endgroup % Ends isolation, protecting your main text
 }
 
@@ -96,6 +100,12 @@
 \usepackage{graphicx}
 \usepackage{caption}
 \usepackage{subcaption} 
+
+% Force all figure and table captions to the top
+\floatstyle{plaintop}
+\restylefloat{figure}
+\restylefloat{table}
+
 \usepackage{tikz}
 \usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, fit, backgrounds}
 \usepackage{pgfplots}
@@ -107,6 +117,11 @@
 \usepackage{siunitx}
 \usepackage{enumitem}
 \usepackage{csquotes}
+
+% Rename Table of Contents
+\addto\captionsenglish{%
+  \renewcommand{\contentsname}{Table of contents}%
+}
 
 % ==========================================
 % 5. Code Listings Style
