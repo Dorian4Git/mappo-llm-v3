@@ -1,4 +1,11 @@
-import pygame
+import re
+import os
+
+with open("visualize.py", "r") as f:
+    content = f.read()
+
+# Add load_images and ASSETS
+imports = """import pygame
 import torch
 import numpy as np
 import time
@@ -22,12 +29,12 @@ COLOR_OBSTACLE = (100, 100, 100)
 COLOR_TEXT = (255, 255, 255)
 
 # Drawing settings
-SCALE_X = 24
-SCALE_Y = 12  # Squash Y-axis for oblique perspective
-WALL_HEIGHT = 40
+SCALE_X = 12
+SCALE_Y = 6  # Squash Y-axis for oblique perspective
+WALL_HEIGHT = 20
 GRID_PIXELS_X = int(GRID_LIMIT * SCALE_X)
 GRID_PIXELS_Y = int(GRID_LIMIT * SCALE_Y)
-PANEL_WIDTH = 700
+PANEL_WIDTH = 350
 WINDOW_WIDTH = GRID_PIXELS_X + PANEL_WIDTH
 WINDOW_HEIGHT = GRID_PIXELS_Y + 80
 
@@ -36,10 +43,11 @@ def load_assets():
     global ASSETS
     asset_dir = os.path.join(os.path.dirname(__file__), "assets")
     
-    def load(name, scale=None):
+    def load(name, scale=None, ck=(255, 0, 255)):
         path = os.path.join(asset_dir, name)
         try:
-            img = pygame.image.load(path).convert_alpha()
+            img = pygame.image.load(path).convert()
+            if ck: img.set_colorkey(ck)
             if scale: img = pygame.transform.scale(img, scale)
             return img
         except Exception as e:
@@ -51,8 +59,8 @@ def load_assets():
     sw, sh = int(SCALE_X * 3), int(SCALE_Y * 5)
     
     # Backgrounds
-    ASSETS['grass'] = load("grass_tile.png", scale=(128, 128))
-    ASSETS['water'] = load("water_tile.png", scale=(128, 128))
+    ASSETS['grass'] = load("grass_tile.png", scale=(64, 64), ck=None)
+    ASSETS['water'] = load("water_tile.png", scale=(64, 64), ck=None)
     
     # Bridge
     ASSETS['bridge'] = load("bridge_tile.png", scale=(int(SCALE_X*6), int(SCALE_Y*6)))
@@ -291,195 +299,35 @@ def draw_env(screen, env, font, current_options=None, visual_effects=None, prev_
             c = (255, 50, 50)
         screen.blit(font.render(f"{status} {name}", True, c), (GRID_PIXELS_X + 20, y_offset))
         y_offset += 20
+"""
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--checkpoint", type=str, default="checkpoints/best_agent.pt")
-    parser.add_argument("--llm-backend", type=str, default="huggingface_peft")
-    parser.add_argument("--llm-model", type=str, default=os.path.abspath(os.path.join(os.path.dirname(__file__), "data", "models", "qlora_adapter")))
-    parser.add_argument("--disable-lora", action="store_true", help="Run the base Qwen model without the LoRA adapter")
-    args = parser.parse_args()
+# Extract the rest of main() and everything below
+match = re.search(r"def main\(\):.*", content, re.DOTALL)
+main_content = match.group(0)
 
-    print("Initializing Pygame...")
-    pygame.init()
-    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption("MAPPO-LLM-V3 HRL Visualization")
-    font = pygame.font.SysFont(None, 20)
-    clock = pygame.time.Clock()
-    load_assets()
+# Replace draw_env call in main_content to pass prev_pos
+main_content = main_content.replace(
+    "draw_env(screen, env, font, current_options=current_options, visual_effects=visual_effects)",
+    "draw_env(screen, env, font, current_options=current_options, visual_effects=visual_effects, prev_pos=prev_pos)"
+)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Also need to store prev_pos in main loop
+main_content = main_content.replace(
+    "all_fov, all_gmap = env._get_obs_batch_fov()",
+    "prev_pos = env.pos[0].copy()\n        all_fov, all_gmap = env._get_obs_batch_fov()"
+)
 
-    model_path = args.checkpoint
-    if not os.path.exists(model_path):
-        print(f"Error: {model_path} not found.")
-        sys.exit(1)
+# Need to handle the first frame where prev_pos might not exist yet
+main_content = main_content.replace(
+    "obs_raw, _ = env.reset()\n    \n    rnn_state",
+    "obs_raw, _ = env.reset()\n    prev_pos = env.pos[0].copy()\n    rnn_state"
+)
 
-    print(f"Loading model from {model_path}...")
-    state_dict = torch.load(model_path, map_location=device, weights_only=False)
-    agent_state = state_dict['model_state_dict']
-    
-    is_deep = "critic_mlp.4.weight" in agent_state
+# Also call load_assets after pygame.init()
+main_content = main_content.replace(
+    "pygame.time.Clock()",
+    "pygame.time.Clock()\n    load_assets()"
+)
 
-    # V3 uses 3 + 2 + NUM_ITEMS + NUM_OPTIONS for flag_dim
-    agent = RoleConditionedMAPPOAgentV2(cnn_channels=9, goal_dim=3, flag_dim=2 + NUM_ITEMS + NUM_OPTIONS, deep=is_deep)
-    agent.load_state_dict(agent_state)
-    agent.eval()
-    agent.to(device)
-
-    env = BatchCraftingEnvV2(n_envs=1, seed=42)
-    
-    print("Loading LLM Orchestrator...")
-    bridge = LLMBridge(backend=args.llm_backend, model_name=args.llm_model)
-    if args.llm_backend.startswith("huggingface"):
-        bridge.swap_model(args.llm_model, backend=args.llm_backend)
-        if args.disable_lora:
-            bridge.disable_lora()
-        
-    prompt_builder = PromptBuilder()
-    option_controller = OptionController(n_envs=1)
-    
-    # Trigger initial prompt
-    print("Fetching initial option...")
-    initial_prompt = prompt_builder.build_hrl_prompt(
-        {"wood":0, "stone":0, "iron":0, "pickaxe":0, "sword":0, "armor":0, "gold":0, "bridge":0, "enemy":0},
-        "Starting", "Starting"
-    )
-    res = bridge.query_sync(initial_prompt)
-    option_controller.update_options_from_llm(res)
-    
-    print("Starting visualization loop...")
-    running = True
-    obs_raw, _ = env.reset()
-    prev_pos = env.pos[0].copy()
-    rnn_state = torch.zeros(2, 256, device=device)
-    step_role_ids = torch.tensor([0, 1], dtype=torch.long, device=device)
-    
-    visual_effects = []
-    rev_map_inv = {0: "Wood", 1: "Stone", 2: "Iron", 3: "Pickaxe", 4: "Sword", 5: "Armor", 6: "Gold", 7: "Bridge", 8: "Enemy"}
-
-    while running:
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_r:
-                    obs_raw, _ = env.reset()
-                    rnn_state = torch.zeros(2, 256, device=device)
-                    visual_effects.clear()
-                    print("Environment reset manually.")
-
-        # Update effects
-        alive_effects = []
-        for fx in visual_effects:
-            fx['y'] -= 2
-            fx['timer'] -= 1
-            if fx['timer'] > 0:
-                alive_effects.append(fx)
-        visual_effects = alive_effects
-
-        prev_pos = env.pos[0].copy()
-        all_fov, all_gmap = env._get_obs_batch_fov()
-        fov_t = torch.from_numpy(all_fov.reshape(2, 9, 7, 7)).to(device)
-        
-        inv = obs_raw[:, 0, 4:4+NUM_ITEMS]
-        prev_inv = inv[0].copy()
-        
-        # Check success to trigger LLM
-        a0_opt = option_controller.get_active_option(0)
-        a1_opt = option_controller.get_active_option(1)
-        
-        a0_success = check_option_success([a0_opt], np.expand_dims(prev_inv, 0), np.expand_dims(prev_inv, 0)) # Fake previous step success to trigger correctly
-        # Wait, check_option_success takes inv_prev, inv_next. We check after step!
-        
-        goal_emb = np.zeros((1, 2, 3), dtype=np.float32)
-        inv_repeat = np.stack([inv, inv], axis=1)
-        opt_repeat = option_controller.get_option_embeddings()
-        pos_repeat = env.pos.copy()
-        
-        vec_input = np.concatenate([pos_repeat, goal_emb, inv_repeat, opt_repeat], axis=2)
-        vec_t = torch.from_numpy(vec_input.reshape(2, 2 + 3 + NUM_ITEMS + NUM_OPTIONS)).to(device)
-        gmap_t = torch.zeros(2, 9, 61, 61, device=device)
-
-        with torch.no_grad():
-            action, logprob, _, value, rnn_state_out = agent.get_action_and_value(
-                fov_t, gmap_t, vec_t, step_role_ids, rnn_state
-            )
-            rnn_state = rnn_state_out
-            
-        actions_np = action.cpu().numpy().reshape(1, 2)
-        obs_raw, rewards, done, trunc, _ = env.step(actions_np)
-        
-        new_inv = obs_raw[0, 0, 4:4+NUM_ITEMS]
-        
-        # Now check success!
-        a0_success = check_option_success([a0_opt], np.expand_dims(prev_inv, 0), np.expand_dims(new_inv, 0))
-        a1_success = check_option_success([a1_opt], np.expand_dims(prev_inv, 0), np.expand_dims(new_inv, 0))
-        
-        if option_controller.cooldown_counter[0] > 0:
-            option_controller.cooldown_counter[0] -= 1
-            
-        if (a0_success.any() or a1_success.any() or "IDLE" in [a0_opt, a1_opt]) and not option_controller.llm_pending[0] and option_controller.cooldown_counter[0] == 0:
-            print(f"Option terminated. Triggering LLM Orchestrator...")
-            option_controller.set_pending([0], True)
-            option_controller.cooldown_counter[0] = 50
-            inv_arr = new_inv.astype(int)
-            inv_dict = {
-                "wood": int(inv_arr[0]),
-                "stone": int(inv_arr[1]),
-                "iron": int(inv_arr[2]),
-                "pickaxe": int(inv_arr[3]),
-                "sword": int(inv_arr[4]),
-                "armor": int(inv_arr[5]),
-                "gold": int(inv_arr[6]),
-                "bridge": int(inv_arr[7]),
-                "enemy": int(inv_arr[8]),
-            }
-            a0_stat = "Idle/Finished" if a0_success[0] else f"Working on {a0_opt}"
-            a1_stat = "Idle/Finished" if a1_success[0] else f"Working on {a1_opt}"
-            prompt = prompt_builder.build_hrl_prompt(inv_dict, a0_stat, a1_stat)
-            def _cb(res):
-                option_controller.update_options_from_llm(res, env_indices=[0])
-                option_controller.set_pending([0], False)
-            bridge.query_async(prompt, callback=_cb)
-        
-        diff = new_inv - prev_inv
-        for i in range(9):
-            if diff[i] > 0:
-                name = rev_map_inv[i].lower()
-                if name in ["pickaxe", "sword", "armor"]:
-                    zx, zy = ZONES["workbench"]
-                elif name == "bridge":
-                    zx, zy = ZONES["bridge"]
-                elif name == "enemy":
-                    zx, zy = ZONES["enemy"]
-                else:
-                    zx, zy = ZONES.get(name, env.pos[0][0])
-                
-                x_px, y_px = int(zx * SCALE_X), int(zy * SCALE_Y)
-                visual_effects.append({
-                    'text': f"+1 {rev_map_inv[i]}",
-                    'x': x_px - 15,
-                    'y': y_px - 20,
-                    'timer': 20
-                })
-
-        current_options = [option_controller.get_active_option(0), option_controller.get_active_option(1)]
-
-        draw_env(screen, env, font, current_options=current_options, visual_effects=visual_effects, prev_pos=prev_pos)
-        pygame.display.flip()
-
-        if done[0] or trunc[0]:
-            print(f"Episode finished at step {env.step_counts[0]}. Gold: {obs_raw[0, 0, 4+6] > 0}")
-            pygame.time.delay(1000)
-            obs_raw, _ = env.reset()
-            rnn_state = torch.zeros(2, 256, device=device)
-            visual_effects.clear()
-
-        clock.tick(15)
-
-    pygame.quit()
-    bridge.close()
-
-if __name__ == "__main__":
-    main()
+with open("visualize_new.py", "w") as f:
+    f.write(imports + "\n" + main_content)

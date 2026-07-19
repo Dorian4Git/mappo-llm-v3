@@ -69,6 +69,11 @@ def train_mappo_v3(
     callbacks: list = None,
     trajectory_logger=None,
     orchestrator=None,
+    # Ablation experiments
+    skip_ema: bool = False,
+    zone_aliases: dict = None,
+    env_shift_update: int = None,
+    run_prefix_override: str = None,
 ):
     """
     Main MAPPO training loop with V3 extensions.
@@ -147,7 +152,9 @@ def train_mappo_v3(
     )
 
     prefix = "v3_Baseline"
-    if llm_dynamic:
+    if run_prefix_override:
+        prefix = run_prefix_override
+    elif llm_dynamic:
         safe_model = llm_model_name.replace(":", "-").replace("/", "-")
         if fair_mode:
             prefix = f"v3_LLMDynamic_Fair_NoDAG_{safe_model}"
@@ -155,6 +162,10 @@ def train_mappo_v3(
             prefix = f"v3_LLMDynamic_{'Deep' if deep else 'Std'}_{safe_model}"
     elif no_shaping:
         prefix = "v3_Baseline_Sparse"
+
+    # Track pending env shift state
+    _env_shift_activated = False
+    _env_shift_aliases = zone_aliases or {}
 
     run_name = f"{prefix}_E{n_envs}_s{seed}_{time.strftime('%Y%m%d-%H%M%S')}"
     os.makedirs("runs", exist_ok=True)
@@ -217,6 +228,32 @@ def train_mappo_v3(
     # ═══════════════════════════════════════════════════════════════════
     for update in range(1, num_updates + 1):
         update_start = time.perf_counter()
+
+        # ── Environment Shift Check ──────────────────────────────────
+        if (env_shift_update is not None
+                and update == env_shift_update
+                and not _env_shift_activated
+                and _env_shift_aliases):
+            _env_shift_activated = True
+            print(f"\n{'='*60}")
+            print(f"[ENV SHIFT] Activating zone aliases at epoch {update}:")
+            for canonical, alias in _env_shift_aliases.items():
+                print(f"  {canonical.capitalize()} -> {alias}")
+            print(f"{'='*60}\n")
+
+            # Activate aliases in orchestrator and prompt builder
+            if orchestrator is not None and hasattr(orchestrator, 'set_zone_aliases'):
+                orchestrator.set_zone_aliases(_env_shift_aliases)
+            for cb in callbacks:
+                # CriticTrigger holds a prompt_builder reference
+                if hasattr(cb, '__self__') and hasattr(cb.__self__, 'prompt_builder'):
+                    pb = cb.__self__.prompt_builder
+                    if hasattr(pb, 'set_zone_aliases'):
+                        pb.set_zone_aliases(_env_shift_aliases)
+
+            writer.add_text("EnvShift/event",
+                           f"Zone aliases activated: {_env_shift_aliases}",
+                           global_step_counter)
 
         epoch_episode_count    = 0
         epoch_success_count    = 0

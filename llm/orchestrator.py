@@ -217,10 +217,14 @@ class LLMOrchestratorV2:
         log_dir: str = ".",
         bridge=None,
         enforce_dag_guardrails: bool = True,
+        skip_ema: bool = False,
+        zone_aliases: dict = None,
     ):
         self.model_name = model_name
         self.host = host
         self.enforce_dag_guardrails = enforce_dag_guardrails
+        self.skip_ema = skip_ema
+        self.zone_aliases = zone_aliases or {}
         os.makedirs(log_dir, exist_ok=True)
         timestamp = time.strftime("%Y%m%d-%H%M%S")
         
@@ -233,6 +237,14 @@ class LLMOrchestratorV2:
     def batch_lookup_goals_v2_randomized(self, inventory: np.ndarray, subtask_weights: dict = None) -> tuple[np.ndarray, np.ndarray]:
         return batch_lookup_goals_v2(inventory, self.host, self.model_name, None, subtask_weights)
 
+    def _alias(self, name: str) -> str:
+        """Return the display alias for a zone name (for environment shift experiments)."""
+        return self.zone_aliases.get(name.lower(), name)
+
+    def set_zone_aliases(self, aliases: dict):
+        """Update zone aliases mid-training (for environment shift experiments)."""
+        self.zone_aliases = aliases or {}
+
     def query_adaptive_weights(self, curr: dict, delta: dict, prev_weights: dict = None) -> dict:
         if prev_weights is None:
             prev_weights = {
@@ -240,8 +252,12 @@ class LLMOrchestratorV2:
                 'w_iron': 1.0, 'w_bridge': 1.0, 'w_enemy': 1.0, 'w_gold': 1.0,
             }
 
+        # Apply zone aliases for environment shift experiments
+        wb_name = self._alias("Workbench")
+
         prompt = f"""You are an expert diagnostic AI tuning the reward function for a MARL environment.
 Strict Dependency DAG: (Wood+Stone) -> Pickaxe -> Iron -> (Sword+Armor) -> Bridge -> Defeat Enemy -> Gold.
+Crafting Station: "{wb_name}" — agents craft Pickaxe, Sword, and Armor here.
 
 ### METRICS (Current Epochs vs Previous):
 * Wood Collected: {curr.get('wood', 0):.1f}% (Delta: {delta.get('wood', 0):+.1f}%)
@@ -262,7 +278,7 @@ Respond ONLY with valid JSON exactly matching this schema:
   "reasoning": "<1 sentence explaining the bottleneck>",
   "w_wood": <float>,
   "w_stone": <float>,
-  "w_workbench": <float>,
+  "w_{wb_name.lower()}": <float>,
   "w_iron": <float>,
   "w_bridge": <float>,
   "w_enemy": <float>,
@@ -306,16 +322,30 @@ Respond ONLY with valid JSON exactly matching this schema:
             self.log_file.flush()
 
             # Parse weights, applying clipping
+            # Build reverse alias map: e.g. "w_furnace" -> "w_workbench"
             keys = ['w_wood', 'w_stone', 'w_workbench', 'w_iron', 'w_bridge', 'w_enemy', 'w_gold']
+            alias_reverse = {}
+            for canonical, alias in self.zone_aliases.items():
+                alias_key = f"w_{alias.lower()}"
+                canonical_key = f"w_{canonical.lower()}"
+                if canonical_key in keys:
+                    alias_reverse[alias_key] = canonical_key
+
             parsed_weights = {}
             for k in keys:
-                parsed_weights[k] = float(np.clip(raw.get(k, prev_weights.get(k, 1.0)), 0.0, 1.0))
+                # Try canonical key first, then check if LLM used the aliased key
+                alias_k = next((ak for ak, ck in alias_reverse.items() if ck == k), None)
+                val = raw.get(k, raw.get(alias_k, prev_weights.get(k, 1.0)) if alias_k else prev_weights.get(k, 1.0))
+                parsed_weights[k] = float(np.clip(val, 0.0, 1.0))
             
-            # EMA Smoothing (alpha = 0.2)
-            alpha = 0.2
-            smoothed_weights = {}
-            for k in keys:
-                smoothed_weights[k] = alpha * parsed_weights[k] + (1.0 - alpha) * prev_weights.get(k, 1.0)
+            # EMA Smoothing (alpha = 0.2) — skipped in ablation mode
+            if self.skip_ema:
+                smoothed_weights = dict(parsed_weights)
+            else:
+                alpha = 0.2
+                smoothed_weights = {}
+                for k in keys:
+                    smoothed_weights[k] = alpha * parsed_weights[k] + (1.0 - alpha) * prev_weights.get(k, 1.0)
                 
             # Programmatic Guardrails to strictly enforce DAG impossibilities
             if self.enforce_dag_guardrails:

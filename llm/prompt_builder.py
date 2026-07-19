@@ -19,7 +19,30 @@ class PromptBuilder:
     Constructs LLM prompts from training metrics and state context.
     """
 
-    # DAG description shared across all templates
+    def __init__(self, zone_aliases: dict = None):
+        self.zone_aliases = zone_aliases or {}
+
+    def _alias(self, name: str) -> str:
+        """Return the display alias for a zone name (for environment shift experiments)."""
+        return self.zone_aliases.get(name.lower(), name)
+
+    def set_zone_aliases(self, aliases: dict):
+        """Update zone aliases mid-training (for environment shift experiments)."""
+        self.zone_aliases = aliases or {}
+
+    @property
+    def dag_description(self) -> str:
+        """DAG description with zone aliases applied."""
+        wb = self._alias("workbench")
+        return (
+            f"Strict Dependency DAG: (Wood+Stone) -> Pickaxe -> Iron -> "
+            f"(Sword+Armor) -> Bridge -> Defeat Enemy -> Gold.\n"
+            f"Agent 0 (Lumberjack) collects Wood and builds Bridge.\n"
+            f"Agent 1 (Miner) collects Stone, mines Iron, crafts Sword/Armor, defeats Enemy, mines Gold.\n"
+            f"Both agents must be at {wb} to craft, and both at Bridge location to build."
+        )
+
+    # Keep static version for backward compatibility with code that references it directly
     DAG_DESCRIPTION = (
         "Strict Dependency DAG: (Wood+Stone) -> Pickaxe -> Iron -> "
         "(Sword+Armor) -> Bridge -> Defeat Enemy -> Gold.\n"
@@ -150,7 +173,7 @@ class PromptBuilder:
         wb_pcts = [subtask_pcts.get(n, 0.0) for n in ["pickaxe", "sword", "armor"]]
         wb_pct = max(wb_pcts) if wb_pcts else 0.0
         wb_flag = " ✓ SATURATED" if wb_pct >= 0.95 else ""
-        subtask_lines.append(f"  * Workbench (Pickaxe/Sword/Armor): {wb_pct * 100:.1f}%{wb_flag}")
+        subtask_lines.append(f"  * {self._alias('workbench')} (Pickaxe/Sword/Armor): {wb_pct * 100:.1f}%{wb_flag}")
         subtask_block = "\n".join(subtask_lines)
 
         # Format current weights
@@ -159,6 +182,10 @@ class PromptBuilder:
             v = current_weights.get(k, 1.0)
             weight_lines.append(f"  * {k}: {v:.3f}")
         weight_block = "\n".join(weight_lines)
+
+        # Apply zone alias for workbench display
+        wb_display = self._alias("workbench")
+        dag_desc = self.dag_description  # Uses aliased names
 
         # Episodic Memory Integration
         memory_buffer = metrics.get("memory_buffer", [])
@@ -173,6 +200,7 @@ class PromptBuilder:
         memory_block = "\n".join(memory_lines)
 
         return f"""You are an expert RL reward designer for a cooperative multi-agent POMDP environment.
+{dag_desc}
 
 ### TRIGGER EVENT:
 The system's automatic critic-monitoring has detected a learning problem.

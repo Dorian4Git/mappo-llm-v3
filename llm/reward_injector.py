@@ -46,6 +46,7 @@ class RewardInjector:
         enforce_dag_guardrails: bool = True,
         use_softmax_attention: bool = False,
         softmax_temperature: float = 0.5,
+        skip_ema: bool = False,
     ):
         self.max_weight = max_weight
         self.weight_sum_bound = weight_sum_bound
@@ -56,6 +57,7 @@ class RewardInjector:
         self.enforce_dag_guardrails = enforce_dag_guardrails
         self.use_softmax_attention = use_softmax_attention
         self.softmax_temperature = softmax_temperature
+        self.skip_ema = skip_ema
 
         # Rollback state
         self._pre_intervention_weights: Optional[dict] = None
@@ -154,12 +156,15 @@ class RewardInjector:
             # Store pre-EMA softmax weights for logging
             self._last_softmax_weights = dict(softmax_weights)
 
-            # ── EMA Smoothing ────────────────────────────────────────
-            alpha = self.ema_alpha
-            smoothed = {}
-            for k in WEIGHT_KEYS:
-                old = current_weights.get(k, 1.0)
-                smoothed[k] = alpha * softmax_weights[k] + (1.0 - alpha) * old
+            # ── EMA Smoothing (skipped in ablation mode) ─────────
+            if self.skip_ema:
+                smoothed = dict(softmax_weights)
+            else:
+                alpha = self.ema_alpha
+                smoothed = {}
+                for k in WEIGHT_KEYS:
+                    old = current_weights.get(k, 1.0)
+                    smoothed[k] = alpha * softmax_weights[k] + (1.0 - alpha) * old
 
             # ── Programmatic Guardrails (skipped in fair mode) ────────
             if self.enforce_dag_guardrails:
@@ -171,12 +176,15 @@ class RewardInjector:
             # Legacy path: EMA + divide-by-average normalization (HRL-safe)
             self._last_softmax_weights = None
 
-            # ── EMA Smoothing ────────────────────────────────────────
-            alpha = self.ema_alpha
-            smoothed = {}
-            for k in WEIGHT_KEYS:
-                old = current_weights.get(k, 1.0)
-                smoothed[k] = alpha * clipped[k] + (1.0 - alpha) * old
+            # ── EMA Smoothing (skipped in ablation mode) ─────────
+            if self.skip_ema:
+                smoothed = dict(clipped)
+            else:
+                alpha = self.ema_alpha
+                smoothed = {}
+                for k in WEIGHT_KEYS:
+                    old = current_weights.get(k, 1.0)
+                    smoothed[k] = alpha * clipped[k] + (1.0 - alpha) * old
 
             # ── Programmatic Guardrails ──────────────────────────────
             if self.enforce_dag_guardrails:

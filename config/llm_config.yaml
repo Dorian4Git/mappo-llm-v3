@@ -1,7 +1,7 @@
 llm:
-  backend: gemini          # ollama | huggingface | gemini
+  backend: ollama          # ollama | huggingface | gemini
   # to go back to ollama, change the backend to 'ollama' and model_name to 'qwen2.5:7b'
-  model_name: "gemini-3.1-flash-lite"
+  model_name: "qwen2.5:7b"
   host: "http://localhost:11434/api/generate"
   timeout: 30
   max_retries: 3

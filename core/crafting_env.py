@@ -76,9 +76,12 @@ ITEM_NAMES = [
 # BatchCraftingEnvV2 — Fully Vectorized
 # ---------------------------------------------------------------------------
 class BatchCraftingEnvV2:
-    def __init__(self, n_envs: int = 32, seed: Optional[int] = None):
+    def __init__(self, n_envs: int = 32, seed: Optional[int] = None, zone_aliases: dict = None):
         self.n_envs = n_envs
         self.rng = np.random.default_rng(seed)
+
+        # Semantic aliases for zone names (used in prompts, not mechanics)
+        self.zone_aliases = zone_aliases or {}
 
         self.pos = np.zeros((n_envs, 2, 2), dtype=np.float32)
         self.inventory = np.zeros((n_envs, NUM_ITEMS), dtype=np.int32)
@@ -97,6 +100,10 @@ class BatchCraftingEnvV2:
         ])
 
         self.reset()
+
+    def get_zone_display_name(self, canonical_name: str) -> str:
+        """Return the display name for a zone (may be aliased for env shift experiments)."""
+        return self.zone_aliases.get(canonical_name.lower(), canonical_name)
 
     def _spawn_positions(self, n: int) -> np.ndarray:
         pos = np.zeros((n, 2, 2), dtype=np.float32)
