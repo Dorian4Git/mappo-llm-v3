@@ -60,6 +60,9 @@ class TrajectoryLogger:
         self._episode_file = gzip.open(
             os.path.join(output_dir, f"episodes_{timestamp}.jsonl.gz"), "wt", encoding="utf-8"
         )
+        self._update_file = open(
+            os.path.join(output_dir, f"update_metrics_{timestamp}.jsonl"), "wt", encoding="utf-8"
+        )
 
         # Per-env episode buffers: env_id -> list of step dicts
         self._episode_buffers: dict[int, list] = {}
@@ -206,6 +209,13 @@ class TrajectoryLogger:
         """Flush and close all files."""
         self._step_file.flush()
         self._episode_file.flush()
+        self._update_file.flush()
         self._step_file.close()
         self._episode_file.close()
+        self._update_file.close()
+
+    def log_update_metrics(self, data: dict):
+        """Log update-level metrics (e.g., KL divergence, option shifts)."""
+        self._update_file.write(json.dumps(data, cls=NumpyEncoder) + "\n")
+        self._update_file.flush()
         print(f"[TrajectoryLogger] Closed. Total episodes logged: {self._total_episodes}")

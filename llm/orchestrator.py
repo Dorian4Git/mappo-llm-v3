@@ -307,7 +307,9 @@ Respond ONLY with valid JSON exactly matching this schema:
                 raw_text = response.json()["response"]
             
             # Safe JSON parsing
-            clean_text = raw_text.replace("```json", "").replace("```", "").strip()
+            import re
+            match = re.search(r'(\{.*\})', raw_text, re.DOTALL)
+            clean_text = match.group(1) if match else raw_text.replace("```json", "").replace("```", "").strip()
             raw = json.loads(clean_text)
             
             # Log reasoning

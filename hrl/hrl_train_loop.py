@@ -8,22 +8,27 @@ high-level Options, and the OptionController provides intrinsic rewards
 to the low-level MAPPO agents.
 """
 
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import time
-import os
 import json
 import math
 from collections import deque
 from torch.utils.tensorboard import SummaryWriter
+from logging_utils.trajectory_logger import TrajectoryLogger
 
 from core.mappo_agent import (
     RoleConditionedMAPPOAgentV2,
     embed_goal_batch_v2,
     _to_chunks,
 )
+from hrl.hrl_crafting_env import HRLCraftingEnv
 from core.crafting_env import BatchCraftingEnvV2, I_GOLD, NUM_ITEMS, ITEM_NAMES
 from llm.prompt_builder import PromptBuilder
 from llm.async_bridge import LLMBridge
@@ -70,6 +75,7 @@ def train_mappo_hrl(
     llm_backend: str = "ollama",
     llm_model: str = "qwen2.5:7b",
     disable_lora: bool = False,
+    disable_reflection: bool = False,
     resume_path: str = None,
 ):
     num_agents = 2
@@ -81,7 +87,7 @@ def train_mappo_hrl(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[HRL Train] Device : {device}")
 
-    vec_env = BatchCraftingEnvV2(n_envs=n_envs, seed=seed)
+    vec_env = HRLCraftingEnv(n_envs=n_envs, seed=seed)
     
     # Init LLM & Option Controller
     bridge = LLMBridge(backend=llm_backend, model_name=llm_model)
@@ -134,6 +140,7 @@ def train_mappo_hrl(
     run_name = f"v3_HRL_{'Deep' if deep else 'Std'}_{model_str}_E{n_envs}_s{seed}_{time.strftime('%Y%m%d-%H%M%S')}"
     os.makedirs("runs", exist_ok=True)
     writer = SummaryWriter(f"runs/{run_name}")
+    trajectory_logger = TrajectoryLogger()
     os.makedirs("checkpoints", exist_ok=True)
     
     llm_log_path = os.path.join(f"runs/{run_name}", "llm_queries.jsonl")
@@ -171,7 +178,12 @@ def train_mappo_hrl(
         for step in range(num_steps):
             global_step_counter += n_envs
 
-            goal_emb = np.zeros((n_envs, 2, 3), dtype=np.float32) # Padding to match vec_dim
+            dynamic_enemy_state = np.column_stack((
+                vec_env.enemy_pos[:, 0], 
+                vec_env.enemy_pos[:, 1], 
+                vec_env.enemy_health / 100.0
+            ))
+            goal_emb = np.stack([dynamic_enemy_state, dynamic_enemy_state], axis=1)
             inv_repeat = np.stack([all_obs[:, 0, 4:4+NUM_ITEMS], all_obs[:, 0, 4:4+NUM_ITEMS]], axis=1)
             opt_repeat = option_controller.get_option_embeddings()
             pos_repeat = vec_env.pos.copy()
@@ -281,7 +293,7 @@ def train_mappo_hrl(
             trigger_envs = np.where(ready_mask)[0]
             
             if len(trigger_envs) > 0:
-                print(f"Batching LLM queries for {len(trigger_envs)} environments...")
+                # Removed spammy print statement
                 
                 # Lock these environments
                 option_controller.set_pending(trigger_envs, True)
@@ -307,7 +319,7 @@ def train_mappo_hrl(
                     a0_stat = "Finished" if a0_success[rep_env] else f"Working on {a0_opt[rep_env]}"
                     a1_stat = "Finished" if a1_success[rep_env] else f"Working on {a1_opt[rep_env]}"
                     
-                    if is_stale:
+                    if is_stale and not disable_reflection:
                         prompt = prompt_builder.build_hrl_reflection_prompt(
                             inv_dict,
                             a0_option=a0_opt[rep_env], a1_option=a1_opt[rep_env],
@@ -349,7 +361,7 @@ def train_mappo_hrl(
                     return _cb
                     
                 # 4. Dispatch to the async bridge
-                bridge.query_batch_async(batched_prompts, callback=make_batch_cb(unique_to_envs, batched_prompts, batched_inventories, global_step_counter))
+                bridge.query_batch_async(batched_prompts, callback=make_batch_cb(unique_to_envs, batched_prompts, batched_inventories, global_step_counter), require_json=True)
 
             # Halve intrinsic influence to prevent drowning sparse env rewards
             total_r = env_rewards + 0.5 * intrinsic_r
@@ -389,7 +401,12 @@ def train_mappo_hrl(
             next_gmap_repeat = np.stack([all_gmap, all_gmap], axis=1)
             next_gmap_t = torch.from_numpy(next_gmap_repeat.reshape(N, 9, 61, 61)).to(device)
             
-            goal_emb_next = np.zeros((n_envs, 2, 3), dtype=np.float32)
+            dynamic_enemy_state_next = np.column_stack((
+                vec_env.enemy_pos[:, 0], 
+                vec_env.enemy_pos[:, 1], 
+                vec_env.enemy_health / 100.0
+            ))
+            goal_emb_next = np.stack([dynamic_enemy_state_next, dynamic_enemy_state_next], axis=1)
             inv_repeat_next = np.stack([all_obs[:, 0, 4:4+NUM_ITEMS], all_obs[:, 0, 4:4+NUM_ITEMS]], axis=1)
             opt_repeat_next = option_controller.get_option_embeddings()
             pos_repeat_next = vec_env.pos.copy()
@@ -451,8 +468,10 @@ def train_mappo_hrl(
 
         epoch_losses, epoch_v_losses, epoch_pg_losses, epoch_ent = [], [], [], []
 
+        max_kl = 0.0
+        target_kl_reached = False
+
         for _ppo_epoch in range(ppo_epochs):
-            target_kl_reached = False
             indices = np.random.permutation(total_samples)
             for start in range(0, total_samples, mb_chunk_size):
                 end = min(start + mb_chunk_size, total_samples)
@@ -475,6 +494,9 @@ def train_mappo_hrl(
                     # Calculate approximate KL Divergence
                     approx_kl = (-logratio).mean().item()
                 
+                if approx_kl > max_kl:
+                    max_kl = approx_kl
+                    
                 # If the policy has shifted too far, abort the remaining epochs for this batch
                 target_kl = 0.015
                 if approx_kl > target_kl:
@@ -505,6 +527,13 @@ def train_mappo_hrl(
             if target_kl_reached:
                 break
 
+        trajectory_logger.log_update_metrics({
+            "update": update,
+            "max_kl": max_kl,
+            "early_stop_triggered": target_kl_reached,
+            "option_shifted": option_controller.has_option_changed()
+        })
+
         # Logging & Scheduling
         avg_loss = float(np.mean(epoch_losses))
         avg_env_reward = epoch_env_reward_sum / max(1, epoch_env_reward_count)
@@ -528,7 +557,7 @@ def train_mappo_hrl(
         for fi in range(NUM_ITEMS):
             writer.add_scalar(f"Subtasks/{ITEM_NAMES[fi]}_Pct", epoch_subtask_steps[fi] / max(epoch_episode_count, 1), global_step_counter)
 
-        if update % 10 == 0:
+        if update % 1 == 0:
             print(f"Epoch {update:>4}/{num_updates} | Loss: {avg_loss:.4f} | "
                   f"R_env: {avg_env_reward:.4f} | Gold: {gold_pct/100.0:.0%} | "
                   f"TD: {td_stats['abs_mean_td_error']:.4f} | {update_time:.2f}s")
@@ -551,8 +580,20 @@ def train_mappo_hrl(
 
     vec_env.close()
     writer.close()
+    trajectory_logger.close()
     bridge.close()
     print(f"[HRL Train] Training complete. Best R_env: {best_avg_env_reward:.4f}")
 
 if __name__ == "__main__":
-    train_mappo_hrl()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--n_envs", type=int, default=128)
+    parser.add_argument("--disable_reflection", action="store_true")
+    parser.add_argument("--disable_lora", action="store_true")
+    args = parser.parse_args()
+    
+    train_mappo_hrl(
+        n_envs=args.n_envs,
+        disable_reflection=args.disable_reflection,
+        disable_lora=args.disable_lora
+    )

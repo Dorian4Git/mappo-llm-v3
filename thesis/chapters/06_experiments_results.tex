@@ -247,3 +247,20 @@ Conversely, the `Furnace` shift failed catastrophically on advanced tasks (`Iron
 However, by mapping the Furnace to the crafting bottleneck, the LLM heavily skewed the Potential-Based Reward Shaping (PBRS) landscape. The PPO agents successfully crafted the Pickaxe (Figure~\ref{fig:shift_all_subtasks}), but subsequently discovered they could accumulate massive intrinsic returns simply by navigating back to the Furnace and idling there. They optimized for the dense shaping signal at the expense of the sparse extrinsic reward, halting all exploration for `Iron` and `Sword`. 
 
 This finding highlights a critical vulnerability in neuro-symbolic MARL architectures: while LLMs possess exceptional zero-shot semantic mapping, coupling high-confidence oracle weights with dense gradient shaping can inadvertently trap low-level agents in local optima.
+
+\subsection{Stabilizing Non-Stationary Objectives via KL-Divergence Guarding}
+\label{sec:kl_guard}
+
+In the Meta-Controller architecture, the transition between discrete macro-actions (Options) induces abrupt shifts in the intrinsic reward landscape. From the perspective of the low-level PPO workers, the objective function is highly non-stationary. To prevent catastrophic forgetting of previously learned kinetic policies, we bound the surrogate objective update using a strict Kullback-Leibler (KL) divergence guard.
+
+During the optimization epochs, we continuously monitor the approximate KL divergence between the behavioral policy $\pi_{\theta_{\text{old}}}$ and the updating policy $\pi_{\theta}$:
+$$D_{\text{KL}}^{\text{approx}} = \mathbb{E}\left[ -\log \left( \frac{\pi_{\theta}(a|s, o)}{\pi_{\theta_{\text{old}}}(a|s, o)} \right) \right]$$
+
+If $D_{\text{KL}}^{\text{approx}}$ exceeds the predefined trust region threshold ($\delta = 0.015$), the gradient updates for the current batch are immediately aborted. To empirically validate the necessity of this mechanism, we log $\max(D_{\text{KL}}^{\text{approx}})$ per update alongside semantic option transitions. 
+
+\begin{figure}[H]
+    \centering
+    % \includegraphics[width=0.75\textwidth]{plots/hrl/kl_spike_overlay.png}
+    \caption{Maximum approximate KL divergence plotted over training updates. The dashed vertical lines represent instances where the LLM Meta-Controller issued a new semantic Option. Notice the immediate divergence spikes correlating with these objective shifts, demonstrating the activation of the early-stopping guardrail to prevent policy collapse.}
+    \label{fig:kl_spikes}
+\end{figure}

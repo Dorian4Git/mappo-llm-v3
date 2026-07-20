@@ -14,6 +14,7 @@ Usage:
 """
 
 import json
+import re
 import numpy as np
 
 OPTION_NAMES = [
@@ -35,6 +36,7 @@ class OptionController:
         
         # Track active duration of the current option per environment
         self.option_age = np.zeros(n_envs, dtype=np.int32)
+        self._option_changed = False
 
     def tick(self):
         """Increment the age of active options. Called once per rollout step."""
@@ -73,7 +75,10 @@ class OptionController:
             parsed_data = {"agent_0_option": None, "agent_1_option": None}
             if llm_json_str is not None:
                 try:
-                    clean_str = llm_json_str.replace("```json", "").replace("```", "").strip()
+                    match = re.search(r'(\{.*\})', llm_json_str, re.DOTALL)
+                    if not match:
+                        continue
+                    clean_str = match.group(1)
                     data = json.loads(clean_str)
                     
                     if data.get("agent_0_option") and data.get("agent_1_option"):
@@ -83,6 +88,7 @@ class OptionController:
                         self._active_options_a0[env_idx] = OPTION_NAMES.index(a0_opt) if a0_opt in OPTION_NAMES else 0
                         self._active_options_a1[env_idx] = OPTION_NAMES.index(a1_opt) if a1_opt in OPTION_NAMES else 0
                         self.option_age[env_idx] = 0
+                        self._option_changed = True
                         
                         parsed_data["agent_0_option"] = a0_opt
                         parsed_data["agent_1_option"] = a1_opt
@@ -90,6 +96,12 @@ class OptionController:
                     pass
             parsed_results.append(parsed_data)
         return parsed_results
+
+    def has_option_changed(self) -> bool:
+        """Returns True if the LLM assigned a new option, then resets the flag."""
+        changed = self._option_changed
+        self._option_changed = False
+        return changed
 
     def get_option_embeddings(self) -> np.ndarray:
         """Returns [n_envs, 2, NUM_OPTIONS] one-hot embeddings for the NN."""
@@ -106,8 +118,10 @@ class OptionController:
             return False
             
         try:
-            # Clean Markdown if LLM returned json block
-            clean_str = llm_json_str.replace("```json", "").replace("```", "").strip()
+            match = re.search(r'(\{.*\})', llm_json_str, re.DOTALL)
+            if not match:
+                return False
+            clean_str = match.group(1)
             data = json.loads(clean_str)
             
             # Only update if valid options are present
@@ -128,13 +142,10 @@ class OptionController:
                     self._active_options_a1[env_indices] = a1_idx
                     self.option_age[env_indices] = 0
                     
-                print(f"[Orchestrator Logic] {data.get('dag_check', 'No reasoning provided')}")
-                print(f"[Assigned Envs {env_indices}] A0: {OPTION_NAMES[a0_idx]} | A1: {OPTION_NAMES[a1_idx]}")
                 return True
             return False
             
-        except json.JSONDecodeError:
-            print("[Warning] LLM JSON parsing failed. Retaining previous options.")
+        except (json.JSONDecodeError, Exception):
             return False
 
     def get_active_option(self, agent_id, env_id=None):

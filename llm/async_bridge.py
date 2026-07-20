@@ -39,8 +39,8 @@ class LLMBridge:
         backend: str = "ollama",
         model_name: str = "qwen2.5:7b",
         host: str = "http://localhost:11434/api/generate",
-        timeout: int = 120,
-        max_retries: int = 3,
+        timeout: int = 600,
+        max_retries: int = 5,
         temperature: float = 0.0,
         top_p: float = 1.0,
         seed: int = 42,
@@ -126,9 +126,9 @@ class LLMBridge:
                     
                     # 3. Thread-safe Cache Update
                     with self._cache_lock:
-                        for i, res in zip(uncached_indices, new_results):
-                            results[i] = res
-                            key = self._get_cache_key(uncached_prompts[i])
+                        for idx, (original_i, res) in enumerate(zip(uncached_indices, new_results)):
+                            results[original_i] = res
+                            key = self._get_cache_key(uncached_prompts[idx])
                             self._cache[key] = res
 
                 if callback:
@@ -313,9 +313,11 @@ class LLMBridge:
             "raw": True,
             "stream": False,
             "options": {
-                "temperature": self.temperature,
+                "temperature": max(0.1, self.temperature),
                 "top_p": self.top_p,
                 "seed": self.seed,
+                "repeat_penalty": 1.15,
+                "num_predict": 256,
             },
         }
 
