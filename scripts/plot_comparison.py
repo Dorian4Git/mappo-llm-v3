@@ -105,3 +105,58 @@ if __name__ == "__main__":
         plot_multicomparison(args.runs, args.labels, args.outdir, 
                         f'Subtasks/{t}_Pct', "Success Rate (%)", f"{t} Success Rate", 
                         f"{args.prefix}subtask_{t}.png", smooth=50)
+
+    # Plot KL Divergence Spikes
+    plt.figure(figsize=(8, 5))
+    colors = ['gray', 'blue', 'red', 'green', 'orange']
+    has_kl_data = False
+    
+    import json
+    for i, run_dir in enumerate(args.runs):
+        # Extract timestamp from run_dir to find the JSONL file
+        # e.g. runs/v3_HRL_Std_LoRA_E128_s42_20260720-190702 -> 20260720-190702
+        timestamp = os.path.basename(run_dir).split('_')[-1]
+        jsonl_path = os.path.join("data", "trajectories", f"update_metrics_{timestamp}.jsonl")
+        
+        steps = []
+        vals = []
+        if os.path.exists(jsonl_path):
+            with open(jsonl_path, 'r') as f:
+                for line in f:
+                    try:
+                        data = json.loads(line)
+                        # We multiply update by 128 (n_envs) * 256 (rollout_length) to get approx env steps
+                        # Or just use the update number for x-axis if preferred. Let's use (update * 32768)
+                        # Wait, HRL updates are every 32768 steps (128*256).
+                        if "Max_Approx_KL" in data:
+                            steps.append(data.get("update", 0) * 32768)
+                            vals.append(data["Max_Approx_KL"])
+                    except json.JSONDecodeError:
+                        pass
+                        
+        if not steps:
+            print(f"Warning: No KL data found in {jsonl_path}")
+            continue
+            
+        has_kl_data = True
+        
+        # Slight rolling average to smooth noise but preserve spikes
+        smooth = 5
+        if len(vals) >= smooth:
+            smoothed_vals = moving_average(vals, smooth)
+            plt.plot(steps[smooth-1:], smoothed_vals, label=args.labels[i], color=colors[i % len(colors)], linewidth=1.5, alpha=0.8 if i==0 else 1.0)
+        else:
+            plt.plot(steps, vals, label=args.labels[i], color=colors[i % len(colors)], linewidth=1.5)
+            
+    if has_kl_data:
+        plt.axhline(y=0.015, color='r', linestyle='--', label='KL Guardrail Threshold')
+        plt.xlabel("Environment Steps")
+        plt.ylabel("Max Approx KL")
+        plt.title("Maximum Approximate KL Divergence")
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        kl_filename = f"{args.prefix}kl_spikes.png"
+        plt.savefig(os.path.join(args.outdir, kl_filename))
+        plt.close()
+        print(f"Saved {kl_filename}")
