@@ -141,6 +141,7 @@ def train_mappo_hrl(
     os.makedirs("runs", exist_ok=True)
     writer = SummaryWriter(f"runs/{run_name}")
     trajectory_logger = TrajectoryLogger()
+    logged_env_ids = np.arange(min(16, n_envs))
     os.makedirs("checkpoints", exist_ok=True)
     
     llm_log_path = os.path.join(f"runs/{run_name}", "llm_queries.jsonl")
@@ -217,6 +218,11 @@ def train_mappo_hrl(
                 saved_pos = vec_env.pos[pending_mask].copy()
                 saved_inv = vec_env.inventory[pending_mask].copy()
                 saved_mined = vec_env.total_mined[pending_mask].copy()
+                saved_enemy_pos = vec_env.enemy_pos[pending_mask].copy()
+                saved_enemy_hp = vec_env.enemy_health[pending_mask].copy()
+                
+                pending_mask_expanded = np.stack([pending_mask, pending_mask], axis=1).reshape(-1)
+                saved_rnn = rnn_state[pending_mask_expanded].clone()
 
             pos_prev = vec_env.pos.copy()
             next_obs, env_rewards, dones, truncs, info = vec_env.step(actions_np)
@@ -225,6 +231,12 @@ def train_mappo_hrl(
                 vec_env.pos[pending_mask] = saved_pos
                 vec_env.inventory[pending_mask] = saved_inv
                 vec_env.total_mined[pending_mask] = saved_mined
+                vec_env.enemy_pos[pending_mask] = saved_enemy_pos
+                vec_env.enemy_health[pending_mask] = saved_enemy_hp
+                
+                pending_mask_expanded = np.stack([pending_mask, pending_mask], axis=1).reshape(-1)
+                rnn_state_out[pending_mask_expanded] = saved_rnn
+                
                 vec_env.step_counts[pending_mask] -= 1  # Pause the environment timer
                 env_rewards[pending_mask] = 0.0
                 # Revert next_obs using the previous obs (all_obs is shape: batch x 2 x obs_dim)
@@ -238,7 +250,10 @@ def train_mappo_hrl(
             
             # --- HRL Reward Function & LLM Trigger Logic ---
             inv_prev = all_obs[:, 0, 4:4+NUM_ITEMS]
-            inv_next = next_obs[:, 0, 4:4+NUM_ITEMS]
+            inv_next = next_obs[:, 0, 4:4+NUM_ITEMS].copy()
+            if terminal.any():
+                term_idx = np.where(terminal)[0]
+                inv_next[term_idx] = info['terminal_flags'][term_idx, :NUM_ITEMS]
             
             a0_opt = option_controller.get_active_option(0)
             a1_opt = option_controller.get_active_option(1)
@@ -276,6 +291,42 @@ def train_mappo_hrl(
             # Intrinsic reward is PURE shaping + success bonus. No step penalty.
             intrinsic_r[:, 1] = np.where(a1_success, 1.0, shaping1 * 0.05)
             
+            # --- Trajectory Logging ---
+            if trajectory_logger is not None and step % 4 == 0:
+                # Mock goal zones to match the logging signature (or use actual zones)
+                goal_zones = np.stack([safe_z0, safe_z1], axis=1)
+                goal_active = np.ones((n_envs, 2), dtype=bool)
+                
+                # Format options exactly how the logger expects dynamic weights
+                opt_weights = {
+                    "a0_opt": a0_opt,
+                    "a1_opt": a1_opt
+                }
+                
+                trajectory_logger.log_step(
+                    update=update,
+                    step=step,
+                    env_ids=logged_env_ids,
+                    snapshot=vec_env.get_state_snapshot(logged_env_ids),
+                    actions=actions_np[logged_env_ids],
+                    env_rewards=env_rewards[logged_env_ids],
+                    shaped_rewards=intrinsic_r[logged_env_ids],
+                    goal_zones=goal_zones[logged_env_ids],
+                    goal_active=goal_active[logged_env_ids],
+                    terminal=terminal[logged_env_ids],
+                    llm_weights=None, # HRL does not use dynamic LLM weights
+                    raw_llm_weights=opt_weights, # Hijack this to log the text options
+                )
+                
+            if terminal.any():
+                term_idx = np.where(terminal)[0]
+                term_logged = np.intersect1d(term_idx, logged_env_ids)
+                if len(term_logged) > 0:
+                    term_success = info['terminal_flags'][term_logged, 6] == 1 # I_GOLD is 6
+                    trajectory_logger.log_episode_end(
+                        term_logged, info['terminal_flags'][term_logged], term_success
+                    )
+
             # --- HRL Vectorized LLM Trigger Logic ---
             
             # Tick option ages at start of each step
@@ -590,10 +641,14 @@ if __name__ == "__main__":
     parser.add_argument("--n_envs", type=int, default=128)
     parser.add_argument("--disable_reflection", action="store_true")
     parser.add_argument("--disable_lora", action="store_true")
+    parser.add_argument("--llm_backend", type=str, default="ollama")
+    parser.add_argument("--llm_model", type=str, default="qwen2.5:7b")
     args = parser.parse_args()
     
     train_mappo_hrl(
         n_envs=args.n_envs,
         disable_reflection=args.disable_reflection,
-        disable_lora=args.disable_lora
+        disable_lora=args.disable_lora,
+        llm_backend=args.llm_backend,
+        llm_model=args.llm_model
     )

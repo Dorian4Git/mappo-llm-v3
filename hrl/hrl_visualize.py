@@ -6,6 +6,8 @@ import sys
 import os
 import argparse
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from core.crafting_env import NUM_ITEMS, ZONES, GRID_LIMIT, DIST_THRESHOLD
 from hrl.hrl_crafting_env import HRLCraftingEnv
 from core.mappo_agent import RoleConditionedMAPPOAgentV2
@@ -35,7 +37,7 @@ WINDOW_HEIGHT = GRID_PIXELS_Y + 80
 ASSETS = {}
 def load_assets():
     global ASSETS
-    asset_dir = os.path.join(os.path.dirname(__file__), "assets")
+    asset_dir = os.path.join(os.path.dirname(__file__), "..", "assets")
     
     def load(name, scale=None):
         path = os.path.join(asset_dir, name)
@@ -320,7 +322,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=str, default="checkpoints/best_agent.pt")
     parser.add_argument("--llm-backend", type=str, default="huggingface_peft")
-    parser.add_argument("--llm-model", type=str, default=os.path.abspath(os.path.join(os.path.dirname(__file__), "data", "models", "qlora_adapter")))
+    parser.add_argument("--llm-model", type=str, default=os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "models", "qlora_adapter")))
     parser.add_argument("--disable-lora", action="store_true", help="Run the base Qwen model without the LoRA adapter")
     args = parser.parse_args()
 
@@ -393,6 +395,25 @@ def main():
                     visual_effects.clear()
                     print("Environment reset manually.")
 
+        # If LLM is thinking, pause the environment so agents don't drift with old options
+        if option_controller.llm_pending[0]:
+            current_options = [option_controller.get_active_option(0, env_id=0), option_controller.get_active_option(1, env_id=0)]
+            draw_env(screen, env, font, current_options=current_options, visual_effects=visual_effects, prev_pos=env.pos[0].copy())
+            
+            # Draw thinking overlay
+            text = font.render("LLM Thinking...", True, (255, 255, 0))
+            bg = pygame.Surface((text.get_width() + 20, text.get_height() + 20))
+            bg.set_alpha(200)
+            bg.fill((0, 0, 0))
+            x = WINDOW_WIDTH // 2 - bg.get_width() // 2
+            y = WINDOW_HEIGHT // 2 - bg.get_height() // 2
+            screen.blit(bg, (x, y))
+            screen.blit(text, (x + 10, y + 10))
+            
+            pygame.display.flip()
+            clock.tick(15)
+            continue
+
         # Update effects
         alive_effects = []
         for fx in visual_effects:
@@ -410,13 +431,18 @@ def main():
         prev_inv = inv[0].copy()
         
         # Check success to trigger LLM
-        a0_opt = option_controller.get_active_option(0)
-        a1_opt = option_controller.get_active_option(1)
+        a0_opt = option_controller.get_active_option(0, env_id=0)
+        a1_opt = option_controller.get_active_option(1, env_id=0)
         
         a0_success = check_option_success([a0_opt], np.expand_dims(prev_inv, 0), np.expand_dims(prev_inv, 0)) # Fake previous step success to trigger correctly
         # Wait, check_option_success takes inv_prev, inv_next. We check after step!
         
-        goal_emb = np.zeros((1, 2, 3), dtype=np.float32)
+        dynamic_enemy_state = np.column_stack((
+            env.enemy_pos[:, 0], 
+            env.enemy_pos[:, 1], 
+            env.enemy_health / 100.0
+        ))
+        goal_emb = np.stack([dynamic_enemy_state, dynamic_enemy_state], axis=1)
         inv_repeat = np.stack([inv, inv], axis=1)
         opt_repeat = option_controller.get_option_embeddings()
         pos_repeat = env.pos.copy()
@@ -432,21 +458,40 @@ def main():
             rnn_state = rnn_state_out
             
         actions_np = action.cpu().numpy().reshape(1, 2)
-        obs_raw, rewards, done, trunc, _ = env.step(actions_np)
+        obs_raw, rewards, done, trunc, info = env.step(actions_np)
         
-        new_inv = obs_raw[0, 0, 4:4+NUM_ITEMS]
+        if done[0] or trunc[0]:
+            new_inv = info['terminal_flags'][0, :NUM_ITEMS]
+        else:
+            new_inv = obs_raw[0, 0, 4:4+NUM_ITEMS]
         
-        # Now check success!
+        # Check success: did the inventory change THIS frame?
         a0_success = check_option_success([a0_opt], np.expand_dims(prev_inv, 0), np.expand_dims(new_inv, 0))
         a1_success = check_option_success([a1_opt], np.expand_dims(prev_inv, 0), np.expand_dims(new_inv, 0))
+        
+        # Also check: is the current option ALREADY completed? (inventory already has the item)
+        # This catches the case where the LLM assigned an option that was already done.
+        OPTION_TO_INV = {
+            "COLLECT_WOOD": 0, "COLLECT_STONE": 1, "MINE_IRON": 2,
+            "CRAFT_PICKAXE": 3, "CRAFT_SWORD": 4, "CRAFT_ARMOR": 5,
+            "COLLECT_GOLD": 6, "BUILD_BRIDGE": 7, "FIGHT_ENEMY": 8,
+        }
+        a0_already_done = a0_opt in OPTION_TO_INV and new_inv[OPTION_TO_INV[a0_opt]] > 0
+        a1_already_done = a1_opt in OPTION_TO_INV and new_inv[OPTION_TO_INV[a1_opt]] > 0
+        
+        needs_new_options = (
+            a0_success.any() or a1_success.any() or 
+            a0_already_done or a1_already_done or
+            "IDLE" in [a0_opt, a1_opt]
+        )
         
         if option_controller.cooldown_counter[0] > 0:
             option_controller.cooldown_counter[0] -= 1
             
-        if (a0_success.any() or a1_success.any() or "IDLE" in [a0_opt, a1_opt]) and not option_controller.llm_pending[0] and option_controller.cooldown_counter[0] == 0:
-            print(f"Option terminated. Triggering LLM Orchestrator...")
+        if needs_new_options and not option_controller.llm_pending[0] and option_controller.cooldown_counter[0] == 0:
+            print(f"Option terminated (a0={a0_opt}, a1={a1_opt}). Triggering LLM Orchestrator...")
             option_controller.set_pending([0], True)
-            option_controller.cooldown_counter[0] = 50
+            option_controller.cooldown_counter[0] = 30
             inv_arr = new_inv.astype(int)
             inv_dict = {
                 "wood": int(inv_arr[0]),
@@ -459,11 +504,23 @@ def main():
                 "bridge": int(inv_arr[7]),
                 "enemy": int(inv_arr[8]),
             }
-            a0_stat = "Idle/Finished" if a0_success[0] else f"Working on {a0_opt}"
-            a1_stat = "Idle/Finished" if a1_success[0] else f"Working on {a1_opt}"
+            a0_done = a0_success[0] or a0_already_done
+            a1_done = a1_success[0] or a1_already_done
+            a0_stat = "Idle/Finished" if a0_done else f"Working on {a0_opt}"
+            a1_stat = "Idle/Finished" if a1_done else f"Working on {a1_opt}"
             prompt = prompt_builder.build_hrl_prompt(inv_dict, a0_stat, a1_stat)
+            print(f"  Inventory: {inv_dict}")
+            print(f"  Status: A0={a0_stat}, A1={a1_stat}")
             def _cb(res):
-                option_controller.update_options_from_llm(res, env_indices=[0])
+                if res:
+                    print(f"  LLM Response: {res[:200]}")
+                success = option_controller.update_options_from_llm(res, env_indices=[0])
+                if success:
+                    new_a0 = option_controller.get_active_option(0, env_id=0)
+                    new_a1 = option_controller.get_active_option(1, env_id=0)
+                    print(f"  Options updated: A0={new_a0}, A1={new_a1}")
+                else:
+                    print(f"  WARNING: LLM response failed to parse!")
                 option_controller.set_pending([0], False)
             bridge.query_async(prompt, callback=_cb)
         
@@ -488,17 +545,36 @@ def main():
                     'timer': 20
                 })
 
-        current_options = [option_controller.get_active_option(0), option_controller.get_active_option(1)]
+        current_options = [option_controller.get_active_option(0, env_id=0), option_controller.get_active_option(1, env_id=0)]
 
         draw_env(screen, env, font, current_options=current_options, visual_effects=visual_effects, prev_pos=prev_pos)
         pygame.display.flip()
 
         if done[0] or trunc[0]:
-            print(f"Episode finished at step {env.step_counts[0]}. Gold: {obs_raw[0, 0, 4+6] > 0}")
-            pygame.time.delay(1000)
-            obs_raw, _ = env.reset()
+            # Note: base env already auto-reset inventory/pos/step_counts inside super().step()
+            # So we just need to reset our HRL-specific state
+            final_gold = new_inv[6] > 0  # Check from new_inv captured BEFORE auto-reset wipes it
+            print(f"Episode finished. Gold collected: {final_gold}")
+            pygame.time.delay(2000)
+            
+            # Reset option controller back to initial state
+            option_controller.reset_options([0])
+            
+            # Reset RNN state for fresh episode
             rnn_state = torch.zeros(2, 256, device=device)
             visual_effects.clear()
+            
+            # Re-trigger initial LLM prompt for the new episode
+            option_controller.set_pending([0], True)
+            initial_prompt = prompt_builder.build_hrl_prompt(
+                {"wood":0, "stone":0, "iron":0, "pickaxe":0, "sword":0, "armor":0, "gold":0, "bridge":0, "enemy":0},
+                "Starting", "Starting"
+            )
+            def _reset_cb(res):
+                option_controller.update_options_from_llm(res, env_indices=[0])
+                option_controller.set_pending([0], False)
+                print(f"  New episode options: A0={option_controller.get_active_option(0, env_id=0)}, A1={option_controller.get_active_option(1, env_id=0)}")
+            bridge.query_async(initial_prompt, callback=_reset_cb)
 
         clock.tick(15)
 

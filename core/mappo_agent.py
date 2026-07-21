@@ -117,7 +117,7 @@ class RoleConditionedMAPPOAgentV2(nn.Module):
         combined = torch.cat([cnn_feat, vec], dim=-1)
         return self.critic(self.critic_mlp(combined))
 
-    def get_action_and_value(self, fov, global_map, vec, role_ids, hx, action=None):
+    def get_action_and_value(self, fov, global_map, vec, role_ids, hx, action=None, deterministic=False):
         """Single-step forward for rollout collection (no grad)."""
         # Actor
         a_cnn_feat = self.actor_cnn(fov)
@@ -136,7 +136,10 @@ class RoleConditionedMAPPOAgentV2(nn.Module):
 
         probs = Categorical(logits=logits)
         if action is None:
-            action = probs.sample()
+            if deterministic:
+                action = logits.argmax(dim=-1)
+            else:
+                action = probs.sample()
 
         # Critic
         c_cnn_feat = self.critic_cnn(global_map)

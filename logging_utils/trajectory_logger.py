@@ -127,11 +127,20 @@ class TrajectoryLogger:
             if td_errors is not None:
                 step_data["td_errors"] = td_errors[i].tolist()
             if llm_weights is not None:
-                step_data["llm_weights"] = llm_weights
+                step_data["llm_weights"] = {
+                    k: (v[i].tolist() if isinstance(v, np.ndarray) else v[i]) if isinstance(v, (np.ndarray, list)) else v
+                    for k, v in llm_weights.items()
+                }
             if raw_llm_weights is not None:
-                step_data["raw_llm_weights"] = raw_llm_weights
+                step_data["raw_llm_weights"] = {
+                    k: (v[i].tolist() if isinstance(v, np.ndarray) else v[i]) if isinstance(v, (np.ndarray, list)) else v
+                    for k, v in raw_llm_weights.items()
+                }
             if softmax_llm_weights is not None:
-                step_data["softmax_llm_weights"] = softmax_llm_weights
+                step_data["softmax_llm_weights"] = {
+                    k: (v[i].tolist() if isinstance(v, np.ndarray) else v[i]) if isinstance(v, (np.ndarray, list)) else v
+                    for k, v in softmax_llm_weights.items()
+                }
 
             # Subtask progress (compact)
             sp = snapshot["subtask_progress"]
