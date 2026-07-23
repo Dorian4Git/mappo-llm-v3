@@ -4,7 +4,7 @@
 % ==========================================
 % 1. Fonts & Language
 % ==========================================
-\usepackage[english]{babel}
+\usepackage[french,english]{babel}
 \usepackage[utf8]{inputenc}
 \usepackage[T1]{fontenc}
 \usepackage{lmodern}  % Base font support
@@ -47,6 +47,7 @@
 % Custom Heading Sizes (matching Word template)
 % ==========================================
 \usepackage{titlesec}
+\newcommand{\sectionbreak}{\clearpage}
 
 % Level 1 Heading (16pt) - e.g., \section
 % The {16}{19} means 16pt font size with 19pt line spacing.
@@ -65,6 +66,10 @@
 \titleformat{\subsubsection}
   {\fontsize{12}{14}\bfseries\sffamily}{\thesubsubsection}{1em}{}
 
+% Level 4 Heading (11pt) - e.g., \paragraph
+\titleformat{\paragraph}
+  {\fontsize{11}{13}\bfseries\sffamily}{\theparagraph}{1em}{}
+
 % Note: If you are using the 'report' document class, you might also want to format \chapter to 16pt:
 % \titleformat{\chapter}[hang]
 %   {\fontsize{16}{19}\bfseries\sffamily}{\thechapter}{1em}{}
@@ -76,8 +81,8 @@
 % Right: 
 %   Line 1: (empty)
 %   Line 2: Page Number (Aligns with Author Name)
-\lfoot{\footnotesize \shorttitle \\ \authorname} 
-\rfoot{\footnotesize \\ \thepage}
+\lfoot{\fontsize{8}{10}\selectfont \shorttitle \\ \authorname} 
+\rfoot{\fontsize{8}{10}\selectfont \\ \thepage}
 
 % Increase footer space slightly to accommodate two lines
 \setlength{\footskip}{30pt}
@@ -162,7 +167,7 @@
     urlcolor=black,
     pdfpagemode=FullScreen
 }
-\usepackage{cleveref} % Must be loaded after hyperref
+\usepackage[english]{cleveref} % Must be loaded after hyperref
 
 % --- Custom HEG Title Page ---
 \newcommand{\makeHEGtitle}[5]{
@@ -198,12 +203,12 @@
         % 3. Submission Statement & Author
         \begingroup 
             \linespread{1.2} \selectfont
-            {\large \bfseries Master’s thesis submitted for the degree of\\
+            {\bfseries Master’s thesis submitted for the degree of\\
             Master of Science HES-SO in Information Science\\
             by}\\[0.5cm]
             
             % Author Name (Bold, no caps)
-            {\Large \bfseries #1} 
+            {\bfseries #1} 
         \endgroup
 
         \vspace{2cm}
@@ -211,8 +216,8 @@
         % 4. Supervisor Section
         \begingroup 
             \linespread{1.2} \selectfont
-            {\large Under the direction of:}\\[0.5cm]
-            {\Large \bfseries #2} % Supervisor Name
+            {Under the direction of:}\\[0.5cm]
+            {\bfseries #2} % Supervisor Name
         \endgroup
 
         % 5. Push remaining text to bottom, but leave space for logo
@@ -222,11 +227,11 @@
         \begingroup 
             \linespread{1.2} \selectfont
             % Date and Place
-            {\large \bfseries #3}\\[2cm] 
+            {\bfseries #3}\\[2cm] 
             
             % School Information
-            {\large \bfseries Information Sciences}\\
-            {\large \bfseries Haute École de Gestion de Genève (HEG-GE)}
+            {\bfseries Information Sciences}\\
+            {\bfseries Haute École de Gestion de Genève (HEG-GE)}
         \endgroup
         
         % Buffer to prevent text from hitting the bottom logo

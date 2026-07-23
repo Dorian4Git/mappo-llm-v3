@@ -13,7 +13,7 @@
 \newcommand{\fulltitle}{Integrating LLMs with Multi-Agent Reinforcement Learning}
 \newcommand{\shorttitle}{LLM-MARL Integration}
 \newcommand{\place}{Geneva}
-\newcommand{\keywords}[2]{\par \vspace{.01em}\noindent{\small\bfseries \keywordsname:} #1\par}
+\newcommand{\keywords}[1]{\par \vspace{.01em}\noindent{\small\bfseries \keywordsname:} #1\par}
 \def\keywordsname{Keywords}
 
 \title{\fulltitle}
@@ -61,11 +61,37 @@ I acknowledge the use of the following resources:
 \end{itemize}
 
 \newpage
+
+\section*{Résumé}
+\addcontentsline{toc}{section}{Résumé}
+
+\begin{otherlanguage}{french}
+Ce mémoire examine l'intégration des grands modèles de langage (LLM) avec l'apprentissage par renforcement multi-agents (MARL) afin de résoudre les goulets d'étranglement liés à l'exploration dans des environnements à récompenses rares. L'objectif principal est d'évaluer comment le raisonnement sémantique d'un LLM peut guider des agents optimisés par l'algorithme MAPPO à travers des tâches interdépendantes modélisées par un graphe orienté acyclique (DAG).
+\medskip
+
+Pour ce faire, la méthodologie s'est articulée autour du développement et de l'évaluation de deux architectures neuro-symboliques distinctes. La première approche, le façonnage dynamique (Dynamic Reward Shaping), utilise le LLM comme un superviseur stratégique ajustant en continu les pondérations d'une fonction de récompense basée sur le potentiel (PBRS). La seconde approche introduit un méta-contrôleur hiérarchique (HRL) au sein duquel le LLM assigne des macro-actions discrètes (Options) aux agents, modifiant ainsi directement leur espace d'observation et leur signal de récompense intrinsèque. L'étude évalue l'impact de ces architectures à travers des études d'ablation ciblant le lissage temporel, l'adaptation sémantique en "zero-shot", l'ajustement fin (QLoRA) et la réflexion contrefactuelle.
+\medskip
+
+Les résultats démontrent que l'architecture HRL surpasse largement le façonnage dynamique, permettant aux agents de maîtriser l'intégralité de l'environnement, y compris les phases de coordination complexes liées au combat. Le bilan critique des réalisations révèle que l'intégration de modèles sémantiques avec des politiques cinétiques nécessite des mécanismes de stabilisation stricts. L'utilisation d'une moyenne mobile exponentielle (EMA) et de garde-fous basés sur la divergence de Kullback-Leibler (KL) s'est avérée indispensable pour empêcher l'oubli catastrophique face à la non-stationnarité des objectifs. Par ailleurs, cette recherche met en lumière deux vulnérabilités fondamentales des systèmes neuro-symboliques. Premièrement, l'excès de confiance sémantique du LLM peut induire un piratage des récompenses (reward hacking), piégeant les agents dans des optima locaux. Deuxièmement, la réflexion contrefactuelle provoque une sur-correction induite face à de simples retards physiques, dégradant l'efficacité de l'apprentissage. D'un point de vue prospectif, bien que l'ajustement fin par QLoRA multiplie par cinq la vitesse de convergence, la viabilité de ces architectures pour le contrôle à haute fréquence nécessitera le développement de modèles de fondation dotés d'une véritable mémoire spatio-temporelle.
+\medskip
+
+\keywords{Apprentissage par renforcement multi-agents (MARL), Grands modèles de langage (LLM), Apprentissage hiérarchique par renforcement (HRL), Façonnage de récompenses, Optimisation de la politique proximale (PPO), Systèmes neuro-symboliques, QLoRA.}
+\end{otherlanguage}
+
+\vspace{2cm}
+
 \section*{Summary}
 \addcontentsline{toc}{section}{Summary}
-This thesis explores the integration of Large Language Models (LLMs) with Multi-Agent Reinforcement Learning (MARL), specifically focusing on dynamic implementations and Hierarchical Reinforcement Learning (HRL).
+This thesis investigates the integration of Large Language Models (LLMs) with Multi-Agent Reinforcement Learning (MARL) to overcome exploration bottlenecks in sparse-reward environments. The primary objective is to evaluate how the semantic reasoning capabilities of an LLM can guide MAPPO agents through complex, interdependent tasks modeled by a Directed Acyclic Graph (DAG).
+\medskip
 
-\keywords{Large Language Models, Multi-Agent Reinforcement Learning, Hierarchical Reinforcement Learning, Dynamic Implementation}
+The methodology involved the development and rigorous evaluation of two distinct neuro-symbolic architectures. The first approach, Dynamic Reward Shaping, utilizes the LLM as a strategic supervisor to continuously adjust the priority weights of a Potential-Based Reward Shaping (PBRS) function. The second approach introduces a Hierarchical Reinforcement Learning (HRL) Meta-Controller, where the LLM directly assigns discrete macro-actions (Options) to the agents, augmenting their observation space and localizing their intrinsic rewards. The impact of these architectures was evaluated through targeted ablation studies on temporal smoothing, zero-shot semantic adaptation, QLoRA fine-tuning, and counterfactual reflection.
+\medskip
+
+The empirical results demonstrate that the HRL architecture significantly outperforms continuous dynamic shaping, enabling the agents to master the complete environment, including complex combat coordination. A critical assessment of these realizations reveals that integrating semantic models with kinetic execution policies requires strict mathematical stabilization. The application of Exponential Moving Average (EMA) smoothing and Kullback-Leibler (KL) divergence guardrails proved strictly necessary to prevent catastrophic forgetting against non-stationary objectives. Furthermore, this research identifies two fundamental vulnerabilities in neuro-symbolic systems. First, the LLM's semantic over-confidence can inadvertently trigger reward hacking, trapping agents in local optima. Second, counterfactual reflection induces an over-correction phenomenon in the presence of purely kinetic delays, actively degrading sample efficiency. Prospectively, while QLoRA fine-tuning accelerated convergence by a factor of five, the future viability of LLM-guided control systems will require the development of foundation models equipped with innate spatio-temporal memory to resolve the friction between semantic planning and physical execution.
+\medskip
+
+\textbf{Keywords:} Multi-Agent Reinforcement Learning (MARL), Large Language Models (LLMs), Hierarchical Reinforcement Learning (HRL), Reward Shaping, Proximal Policy Optimization (PPO), Neuro-Symbolic AI, QLoRA.
 
 \newpage
 
