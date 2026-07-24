@@ -1,13 +1,37 @@
 \section{Introduction}
 \label{ch:introduction}
 
-This chapter introduces the context, motivation, and objectives of the master thesis.
+\subsection{Context: Multi-Agent Systems in Open-World Environments}
+\label{sec:context}
 
-\subsection{Context}
+The ability to model, simulate, and optimize the behavior of multiple interacting entities is a cornerstone of modern artificial intelligence. Multi-Agent Reinforcement Learning (MARL) provides a mathematical framework for training decentralized agents to maximize a shared or competitive utility. As the field has matured, researchers have increasingly utilized Massively Multiplayer Online Role-Playing Games (MMORPGs) and open-world environments, such as Neural MMO and Minecraft, as microcosms for real-world complexity. These environments require agents to navigate vast state spaces, manage resources, and engage in high-level strategic coordination.
 
-\subsection{Motivation}
+To solve these tasks, the Centralized Training with Decentralized Execution (CTDE) paradigm has emerged as the standard architecture. Under this paradigm, algorithms such as Multi-Agent Proximal Policy Optimization (MAPPO) have demonstrated surprising effectiveness in cooperative settings. By utilizing a centralized critic that has access to the global state during training, agents can learn robust decentralized execution policies that rely solely on local observations.
 
-\subsection{Objectives}
+\subsection{Problem Statement: Sparse Rewards and the Exploration Bottleneck}
+\label{sec:problem_statement}
 
-\subsection{Document Structure}
-The remainder of this thesis is structured as follows...
+Despite the success of algorithms like MAPPO, pure deep reinforcement learning struggles catastrophically in environments characterized by long-horizon, sparse-reward structures. In complex RPG-style environments, progress is often gated behind strict dependency graphs (e.g., agents must jointly collect wood and stone, navigate to a workbench, craft a pickaxe, and then coordinate to mine iron). 
+
+Traditional RL agents rely on random exploration to discover these initial reward signals. However, as the depth of the dependency chain increases, the probability of agents randomly executing the exact sequence of required motor commands approaches zero. While engineers traditionally attempt to solve this via dense, hand-crafted reward shaping, this introduces significant risks. Poorly designed shaping signals frequently lead to reward hacking, where agents optimize for surrogate metrics without achieving the true environmental milestone \parencite{ma2024eurekahumanlevelrewarddesign}. Furthermore, as multiple agents update their policies simultaneously, the environment becomes highly non-stationary from the perspective of any individual agent, leading to variance spikes and policy collapse \parencite{Lowe_Wu_Tamar_Harb_Abbeel_Mordatch_2020}. Consequently, the fundamental problem lies in bridging the gap between high-level semantic planning (knowing \emph{what} to do) and low-level kinetic control (learning \emph{how} to do it) without destabilizing the multi-agent learning process.
+
+To systematically investigate this intersection of large language models and multi-agent reinforcement learning, this thesis poses the following three central research questions:
+
+\begin{description}
+    \item[\textbf{RQ1:}] How can the zero-shot semantic reasoning capabilities of Large Language Models be utilized to dynamically shape potential-based rewards, and to what extent does this continuous shaping mitigate the exploration bottlenecks inherent in sparse-reward MARL environments?
+    \item[\textbf{RQ2:}] Does a Hierarchical Reinforcement Learning architecture, wherein the LLM functions as a Meta-Controller issuing discrete macro-actions (Options), provide superior sample efficiency and coordination compared to continuous dynamic reward shaping when solving complex, long-horizon dependency graphs?
+    \item[\textbf{RQ3:}] What are the fundamental vulnerabilities of neuro-symbolic MARL architectures regarding semantic over-confidence and induced over-correction, and how can mathematical constraints (such as Kullback-Leibler divergence guardrails) stabilize the underlying execution policies against these non-stationary objective shifts?
+\end{description}
+
+\subsection{Proposed Approach: Neuro-Symbolic MARL}
+\label{sec:proposed_approach}
+
+To resolve this exploration bottleneck, this thesis proposes and evaluates two novel neuro-symbolic MARL architectures. We treat the learning process as a dual-tier problem, introducing Large Language Models (LLMs) as high-level semantic reasoners coupled with low-level MAPPO execution policies \parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022}. This approach leverages the pre-trained world knowledge of LLMs to synergize reasoning and acting \parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023}, bypassing the need for the agents to discover basic logical dependencies via trial-and-error.
+
+Specifically, the subject is addressed through two progressive implementations:
+\begin{enumerate}
+    \item \textbf{Dynamic Reward Shaping (The Mixing Board):} An architecture where the LLM acts as a strategic meta-supervisor. By observing aggregate training statistics, the LLM dynamically adjusts priority weights over subtasks. These weights govern a continuous Potential-Based Reward Shaping (PBRS) signal \parencite{Ng_Harada_Russell_1999}, guiding the MAPPO agents toward critical bottlenecks while theoretically preserving the optimal policy.
+    \item \textbf{Hierarchical Reinforcement Learning (The Meta-Controller):} A discrete architecture building upon the Options framework \parencite{Sutton_Precup_Singh_1999} and hierarchical meta-controllers \parencite{Kulkarni_Narasimhan_Saeedi_Tenenbaum_2016}. The LLM completely replaces the traditional symbolic planner, issuing temporally extended macro-actions directly to the agents. By augmenting the agents' observation space with one-hot option encodings and enforcing strict Kullback-Leibler (KL) divergence guardrails, this approach enables agents to master the complete dependency graph and adapt to zero-shot semantic shifts in the environment.
+\end{enumerate}
+
+Through these architectures, this work demonstrates how the zero-shot planning capabilities of quantized, self-hosted language models (QLoRA) \parencite{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023} can be seamlessly integrated into deep reinforcement learning pipelines to solve complex cooperative tasks.

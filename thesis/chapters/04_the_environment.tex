@@ -1,0 +1,120 @@
+\section{The Custom MARL Environment}
+\label{ch:the_environment}
+
+Before detailing the neuro-symbolic architectures developed in this thesis, it is crucial to establish the experimental testbed. The intersection of Large Language Models (LLMs) and Multi-Agent Reinforcement Learning (MARL) requires an environment that exhibits both kinetic complexity (movement, collision avoidance, spatial reasoning) and deep semantic dependencies (long horizon tasks gated by logical preconditions). To this end, a custom 2D multi-agent grid-world environment was engineered entirely from scratch.
+
+\subsection{Environment Design \& Mechanics}
+\label{sec:env_design}
+
+The environment operates as a cooperative spatial grid where multiple agents must jointly gather resources, craft tools, and defeat adversaries to achieve a final objective. Unlike standard dense-reward environments—where agents receive incremental gradient signals based on Euclidean distance to a target—this environment utilizes a logical sparse-reward formulation. The agents receive meaningful extrinsic rewards solely upon the completion of discrete logical milestones (subtasks).
+
+\subsubsection{The Dependency Graph (DAG)}
+\label{subsec:env_dag}
+
+The fundamental exploration challenge of the environment is formulated as a strict Directed Acyclic Graph (DAG) of dependencies. Agents cannot arbitrarily navigate to the final goal; they must coordinate to satisfy a rigid sequence of material and infrastructural preconditions. The required topological task progression is illustrated in Figure \ref{fig:env_dag}.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        node distance=1.5cm,
+        box/.style={rectangle, draw=black, thick, fill=blue!10, text width=3cm, align=center, rounded corners, minimum height=1cm},
+        gather/.style={box, fill=green!10},
+        craft/.style={box, fill=orange!10},
+        combat/.style={box, fill=red!10},
+        arrow/.style={-{Stealth[scale=1.2]}, thick, draw=gray!80}
+    ]
+        % Row 1
+        \node[gather] (wood) at (3, 0) {1a. Collect Wood (x2)};
+        \node[gather] (stone) at (7, 0) {1b. Collect Stone};
+
+        % Row 2
+        \node[craft] (bridge) at (0, -2) {2a. Build Bridge};
+        \node[craft] (pickaxe) at (5, -2) {2b. Craft Pickaxe};
+        
+        % Row 3
+        \node[gather] (iron) at (5, -4) {3. Mine Iron (x2)};
+        
+        % Row 4
+        \node[craft] (sword) at (3, -6) {4a. Craft Sword};
+        \node[craft] (armor) at (7, -6) {4b. Craft Armor};
+
+        % Row 5
+        \node[combat] (enemy) at (3, -8.5) {5. Defeat Enemy};
+        
+        % Row 6
+        \node[gather] (gold) at (3, -10.5) {6. Mine Gold};
+
+        % Edges Row 1 -> 2
+        \draw[arrow] (wood.west) -| (bridge.north);
+        
+        \coordinate (pickaxe_join) at (5, -1.2);
+        \draw[thick, draw=gray!80, rounded corners=4pt] (wood.east) -| (pickaxe_join);
+        \draw[thick, draw=gray!80, rounded corners=4pt] (stone.west) -| (pickaxe_join);
+        \draw[arrow] (pickaxe_join) -- (pickaxe.north);
+
+        % Edges Row 2 -> 3
+        \draw[arrow] (pickaxe.south) -- (iron.north);
+        
+        % Edges Row 3 -> 4
+        \coordinate (iron_split) at (5, -4.8);
+        \draw[thick, draw=gray!80, rounded corners=4pt] (iron.south) -- (iron_split);
+        \draw[arrow] (iron_split) -| (sword.north);
+        \draw[arrow] (iron_split) -| (armor.north);
+        
+        % Edges to Enemy
+        \draw[arrow] (bridge.south) |- (enemy.west);
+        \draw[arrow] (sword.south) -- (enemy.north);
+        \draw[arrow] (armor.south) |- (enemy.east);
+        
+        % Edge to Gold
+        \draw[arrow] (enemy.south) -- (gold.north);
+
+    \end{tikzpicture}
+    \caption{The strict dependency Directed Acyclic Graph (DAG) governing environment progression. Agents must jointly acquire basic resources to clear logical bottlenecks. Notably, Wood is required for both the Pickaxe and the Bridge, while Iron supplies both Sword and Armor.}
+    \label{fig:env_dag}
+\end{figure}
+
+As the topological depth of this chain increases, the probability of agents discovering the complete sequence through purely random, entropy-driven exploration decays exponentially. This rigid structure perfectly isolates the ``exploration bottleneck'' that our neuro-symbolic models are designed to circumvent.
+
+\subsubsection{Action and Observation Spaces}
+\label{subsec:env_spaces}
+
+The agents are trained under the Centralized Training with Decentralized Execution (CTDE) paradigm. During the decentralized execution phase, agents perceive a 14-dimensional global state vector. Instead of relying on a visual grid crop, the observation space explicitly encodes the absolute $(x,y)$ coordinates of all agents, alongside the boolean status of the shared inventory. While the state is fully observable, the coordinates of the target zones (resources, workbenches, enemies) are completely hidden from the state vector, forcing the agents to explore the spatial grid to locate them.
+
+The discrete action space consists of five parameters: four cardinal movement directions (Up, Down, Left, Right) and one semantic ``Interact'' action. The interaction mechanic is highly context-sensitive; for instance, triggering the action while adjacent to a forest tile harvests wood, whereas executing it at a workbench—contingent upon possessing the requisite inventory—initiates tool crafting.
+
+\subsubsection{Visual Representation}
+\label{subsec:env_visual}
+
+\begin{figure}[H]
+    \centering
+    \caption{[PLACEHOLDER] Visual rendering of the custom MARL environment, demonstrating the spatial grid layout, dynamic entity placement, and multi-agent coordination zones.}
+    \label{fig:env_screenshots}
+\end{figure}
+
+\subsection{Architecture \& Technology Stack}
+\label{sec:env_tech}
+
+Engineering a custom MARL environment demands a rigorous assessment of the underlying technology stack, requiring a delicate balance between visual debugging capabilities and raw, parallelized simulation throughput.
+
+\subsubsection{The Necessity of Array-Native Execution over Game Engines}
+Initially, robust open-source game engines such as Godot were considered for the simulation backbone. Godot provides a powerful visual editor, robust collision physics, and a mature node-based hierarchy, making it an optimal choice for traditional game development.
+
+However, modern on-policy deep reinforcement learning algorithms like MAPPO require simulating tens of millions of environment transitions to converge. Full-stack game engines introduce massive computational overhead for rendering pipelines, audio processing, and internal state management. Attempting to spawn hundreds of headless engine instances in parallel quickly bottlenecks system memory and CPU inter-process communication.
+
+Consequently, the environment was engineered natively in Python utilizing \textbf{Pygame} and \textbf{NumPy}. This lower-level approach offers critical architectural advantages for reinforcement learning:
+\begin{itemize}
+    \item \textbf{Headless Vectorization:} The environment logic (kinematics, state transitions, collision detection) is mathematically decoupled from the rendering loop. During the training loop, the visual renderer is entirely disabled, allowing a vectorized wrapper to step thousands of environments simultaneously without graphical overhead.
+    \item \textbf{Direct Tensor Integration:} The underlying grid and inventory states are natively represented as NumPy arrays. This bypasses the expensive serialization and deserialization bottlenecks typically encountered when passing state matrices between a Python-based RL training script and an external C++ game engine, mitigating Python's Global Interpreter Lock (GIL) limitations during rollout collection.
+\end{itemize}
+
+\subsection{Libraries \& Infrastructure}
+\label{sec:env_libs}
+
+The codebase relies on a modern, standardized stack of Python libraries to seamlessly interface the custom environment with the deep neural networks and the large language models:
+
+\begin{itemize}
+    \item \textbf{MARL Interface:} The environment conforms to the PettingZoo API, which has established itself as the canonical standard for multi-agent RL (analogous to the Gymnasium API for single-agent RL). Utilizing the Parallel API variant ensures the environment integrates natively with synchronous MAPPO tensor rollouts.
+    \item \textbf{Deep Learning Framework:} PyTorch serves as the computational backbone for designing, compiling, and optimizing the MAPPO Actor and Critic networks, leveraging GPU acceleration for Generalized Advantage Estimation (GAE) and gradient descent.
+    \item \textbf{LLM Integration:} To interface with the semantic Meta-Controllers, the Transformers library by Hugging Face is deployed. For the Hierarchical Reinforcement Learning phase (which necessitates rapid, localized inference), the language models are quantized using bitsandbytes (QLoRA) and served via highly optimized inference engines to strictly bound the latency introduced during the training loop.
+\end{itemize}
