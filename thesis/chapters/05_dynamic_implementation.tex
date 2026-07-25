@@ -500,7 +500,7 @@ You might notice that the LLM's priority weights $w_j$ do not appear in \cref{eq
 \paragraph{The Scale Factor ($\lambda_{\text{scale}} = 0.05$):}
 This factor acts as a volume knob to ensure the dense shaping reward does not drown out the actual game. For instance, successfully mining Gold yields a true, sparse environment reward of $+15.0$. If an agent runs a long distance across the map, its potential $\Phi$ might change by $+20$ points. If we did not scale this, the agent would receive $+20$ just for running, making it more lucrative to run back and forth than to actually fight an enemy and mine Gold. Multiplying by $0.05$ shrinks that $+20$ movement reward down to $+1.0$. This ensures the shaping reward remains a gentle nudge, while the true environment milestones remain the ultimate prize.
 
-\medskip
+
 
 The shaping reward $F_t^{(i)}$ is computed at every environment transition
 $t \to t{+}1$, hence the subscript~$t$.

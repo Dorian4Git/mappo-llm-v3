@@ -11,7 +11,7 @@ This chapter introduces the theoretical foundations of Large Language Models (LL
 \label{sec:llm_foundations}
 
 Unlike standard reinforcement learning policies that output continuous action vectors or low-dimensional discrete distributions, LLMs operate over massive discrete vocabularies (often exceeding $100,000$ unique tokens). These models rely entirely on the Transformer architecture, dispensing with classical temporal recurrence in favor of parallelizable self-attention mechanisms~\parencite{Vaswani_Shazeer_Parmar_Uszkoreit_Jones_Gomez_Kaiser_Polosukhin_2017}.
-\medskip
+
 
 The core computational engine of the LLM is Scaled Dot-Product Attention. For a given input sequence, the model projects the embedded tokens into three distinct weight matrices: Queries ($Q$), Keys ($K$), and Values ($V$). The attention mechanism computes a weighted sum of the values, where the weight assigned to each value is determined by the dot-product similarity of the query with the corresponding key:
 \begin{equation}
@@ -19,9 +19,9 @@ The core computational engine of the LLM is Scaled Dot-Product Attention. For a 
     \text{Attention}(Q, K, V) = \text{softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V
 \end{equation}
 where $d_k$ is the dimension of the key vectors, utilized as a scaling factor to prevent vanishing gradients within the softmax function~\parencite{Vaswani_Shazeer_Parmar_Uszkoreit_Jones_Gomez_Kaiser_Polosukhin_2017}. In Causal Language Modeling (CLM), a strict lower-triangular mask is applied to the $Q K^T$ matrix. This ensures that the prediction for token $i$ can only attend to tokens at positions less than $i$, mathematically preserving the autoregressive property.
-\medskip
 
-Given a context sequence $X$ and a target sequence of tokens $\mathbf{y} = (y_1, y_2, \dots, y_N)$, the network is optimized by minimizing the negative log-likelihood (Categorical Cross-Entropy) over the sequence:
+
+Given a context sequence $X$ and a target sequence of tokens $\mathbf{y} = (y_1, y_2, \dots, y_N)$, the network is optimized by minimizing the negative log-likelihood (Categorical Cross-Entropy) over the sequence~\parencite{Radford_Narasimhan_Salimans_Sutskever_2018}:
 \begin{equation}
 \label{eq:clm_loss}
     L_{\text{CLM}} = -\frac{1}{N} \sum_{i=1}^{N} \log P(y_i \mid y_{<i}, X; \Theta)
@@ -70,10 +70,10 @@ This foundational pre-training endows LLMs with vast latent world models, encomp
 \label{sec:qlora}
 
 Deploying raw foundation models within high-frequency MARL loops introduces prohibitive computational latency and memory constraints. Full parameter fine-tuning of billion-parameter models requires massive GPU clusters, rendering it infeasible for standard local execution. To mitigate this, this thesis utilizes Quantized Low-Rank Adaptation (QLoRA)~\parencite{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023}, a state-of-the-art Parameter-Efficient Fine-Tuning (PEFT) technique building upon the foundational Low-Rank Adaptation (LoRA) framework~\parencite{Hu_Shen_Wallis_Allen-Zhu_Li_Wang_Wang_Chen_2021}.
-\medskip
+
 
 The mathematical intuition behind LoRA relies on the hypothesis that the updates to the weight matrices during fine-tuning possess an intrinsically low ``rank''. Instead of updating the full pre-trained weight matrix $W_0 \in \mathbb{R}^{d \times k}$, QLoRA freezes $W_0$ using 4-bit NormalFloat quantization. It then injects two trainable, low-rank adapter matrices $A \in \mathbb{R}^{r \times k}$ and $B \in \mathbb{R}^{d \times r}$, where the rank $r \ll \min(d, k)$~\parencite{Hu_Shen_Wallis_Allen-Zhu_Li_Wang_Wang_Chen_2021}. 
-\medskip
+
 
 To ensure that the untrained adapters do not inject noise into the network at the beginning of training, matrix $A$ is initialized with random Gaussian values, while matrix $B$ is initialized as a zero matrix. Consequently, the initial product $BA = 0$. The modified forward pass is defined as:
 \begin{equation}
@@ -112,8 +112,8 @@ where $\alpha$ is a constant scaling factor utilized to modulate the magnitude o
     \node[above=0.8cm of add] (output) {Output $h$};
 
     % Arrows from input
-    \draw[arrow] (input) |- (w0.south);
-    \draw[arrow] (input) |- (matrix_a.south);
+    \draw[arrow] (input) -| (w0.south);
+    \draw[arrow] (input) -| (matrix_a.south);
     
     % Arrows inside LoRA
     \draw[arrow] (matrix_a) -- node[right, font=\footnotesize] {$Ax$} (matrix_b);
@@ -137,7 +137,7 @@ The computational efficiency of this architecture is realized exclusively during
 \label{sec:qwen_architecture}
 
 To serve as the cognitive controller in a MARL system, the chosen foundation model must possess advanced coding, reasoning, and instruction-following capabilities. This thesis leverages the Qwen model family, specifically utilizing the Qwen 2.5 7B parameters architecture, representing state-of-the-art open-weights performance~\parencite{Yang_Li_Yang_Zhang_Hui_Zheng_Yu_Gao_Huang_Lv_et_al._2025}.
-\medskip
+
 
 A key innovation in the Qwen architecture is the inherent integration of a ``thinking mode'' for complex, multi-step reasoning alongside a non-thinking mode for rapid, context-driven responses~\parencite{Yang_Li_Yang_Zhang_Hui_Zheng_Yu_Gao_Huang_Lv_et_al._2025}. In the context of reinforcement learning, this duality is critical. The model can rapidly parse structured JSON inputs representing the environment state, while simultaneously allocating internal computational resources to process multi-step dependency paths (e.g., verifying that a Pickaxe must be crafted before Iron can be mined) without requiring separate, dedicated reasoning models. By coupling the Qwen architecture with QLoRA, the model can be locally fine-tuned to act as a highly specialized, latency-bound orchestrator.
 
@@ -146,7 +146,7 @@ A key innovation in the Qwen architecture is the inherent integration of a ``thi
 \label{sec:llm_rl_integration}
 
 As established in Chapter 2, pure deep reinforcement learning struggles with severe exploration bottlenecks in sparse-reward environments. While frameworks such as Potential-Based Reward Shaping (PBRS) and the Options Framework offer mathematical solutions to temporal abstraction, designing the requisite potential functions $\Phi(s)$ or initiation sets $\mathcal{I}_o$ traditionally demands extensive human engineering. 
-\medskip
+
 
 By leveraging the latent reasoning capabilities established during CLM pre-training, LLMs can act as zero-shot semantic orchestrators, bypassing manual heuristic design. Frameworks such as ReAct~\parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023} demonstrate that interleaving language reasoning traces with concrete actions enables models to solve complex, multi-step tasks autonomously. In reinforcement learning specifically, systems like EUREKA~\parencite{ma2024eurekahumanlevelrewarddesign} and PRM4RL~\parencite{Zhang_Gao_Jiang_Chen_Pan_Zhang_Deng_2025} successfully utilize LLMs to autonomously write and refine continuous reward functions. Similarly, literature highlights an emergent paradigm of LLM-as-an-Orchestrator~\parencite{Sun_Huang_Pompili_2024}, decoupling strategic goal formulation from low-level kinetic execution.
 
@@ -187,21 +187,24 @@ Furthermore, language agents can leverage \emph{Verbal Reflection}~\parencite{Sh
     action/.style={block, fill=green!15},
     arrow/.style={-{Stealth[length=2.5mm]}, thick, draw=black!80}
 ]
-    % Nodes
+    % Nodes (Increased horizontal gap to 2cm to give arrows room to breathe)
     \node[state] (env) {Environment\\Staleness Trigger};
-    \node[prompt, right=1.5cm of env] (prompt) {Reflection Prompt\\(Context + Failure)};
-    \node[llm, below=1.5cm of prompt] (llm) {LLM Orchestrator\\(Chain of Thought)};
-    \node[action, left=1.5cm of llm] (action) {Corrected\\Discrete Option};
+    \node[prompt, right=2.2cm of env] (prompt) {Reflection Prompt\\(Context + Failure)};
+    \node[llm, below=1.5cm of prompt] (llm) {LLM Orchestrator\\(Chain of Thought \parencite{Wei_Wang_Schuurmans_Bosma_Ichter_Xia_Chi_Le_Zhou_2022})};
+    \node[action, left=2.2cm of llm] (action) {Corrected\\Discrete Option};
 
     % Arrows
     \draw[arrow] (env) -- (prompt);
     \draw[arrow] (prompt) -- (llm);
-    \draw[arrow] (llm) -- node[below, font=\footnotesize] {JSON Output} (action);
-    \draw[arrow] (action) -- node[left, font=\footnotesize] {Execution} (env);
+    
+    % Shifted JSON Output slightly down and split it into two lines to prevent horizontal overlap
+    \draw[arrow] (llm) -- node[below=0.1cm, font=\footnotesize, align=center] {JSON\\Output} (action);
+    
+    \draw[arrow] (action) -- node[left=0.1cm, font=\footnotesize, align=center] {Execution} (env);
 
 \end{tikzpicture}
 \caption{The Verbal Reflection mechanism. Upon encountering kinetic stagnation, the environment halts and prompts the LLM to explicitly diagnose the failure before assigning a corrected Option.}
 \label{fig:verbal_reflection}
 \end{figure}
 
-As illustrated in Figure~\ref{fig:verbal_reflection}, this forms a complete neuro-symbolic feedback loop where the LLM dictates the logical \emph{what} and the MAPPO algorithm learns the spatial \emph{how}.
+As illustrated in Figure~\ref{fig:verbal_reflection}, this forms a complete neuro-symbolic feedback loop where the LLM dictates the logical \emph{what} and the MAPPO algorithm learns the spatial \emph{how}. 
