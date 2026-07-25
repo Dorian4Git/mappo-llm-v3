@@ -1,42 +1,207 @@
+% ==========================================================================
+% Chapter 3 — Background: Large Language Models
+% ==========================================================================
 \section{Background: Large Language Models}
 \label{ch:background_llm}
 
-This chapter introduces Large Language Models (LLMs) and their capabilities, specifically in the context of reasoning and acting.
+This chapter introduces the theoretical foundations of Large Language Models (LLMs) and their optimization mechanisms. It establishes how these autoregressive models can be adapted via parameter-efficient fine-tuning and subsequently integrated with Multi-Agent Reinforcement Learning (MARL) as high-level cognitive controllers.
 
-\subsection{Foundations of LLMs}
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Foundations of Causal Language Modeling}
+\label{sec:llm_foundations}
 
-\subsection{LLMs as Agents}
-(e.g., ReAct, Prompting strategies)
+Unlike standard reinforcement learning policies that output continuous action vectors or low-dimensional discrete distributions, LLMs operate over massive discrete vocabularies (often exceeding $100,000$ unique tokens). These models rely entirely on the Transformer architecture, dispensing with classical temporal recurrence in favor of parallelizable self-attention mechanisms~\parencite{Vaswani_Shazeer_Parmar_Uszkoreit_Jones_Gomez_Kaiser_Polosukhin_2017}.
+\medskip
 
-\subsection{State of the Art in LLM Integration with RL}
-
-\subsection{LLM Fine-Tuning: QLoRA and Cross-Entropy}
-To clarify an important technical detail regarding the language model side: the LLM does not use Binary Cross-Entropy. Because an LLM must predict the next token out of a massive vocabulary (often 32,000 to 128,000 possible tokens), it uses Categorical Cross-Entropy (specifically, Causal Language Modeling Loss).
-
-\subsubsection{The Loss Function (Causal Language Modeling)}
-\textbf{What is trained:} The LLM is trained to maximize the likelihood of the next token in a sequence, given all preceding tokens.
-
-If we have a context sequence $X$ and a target sequence of tokens $y$, the loss function is the negative log-likelihood over the sequence of $N$ tokens:
+The core computational engine of the LLM is Scaled Dot-Product Attention. For a given input sequence, the model projects the embedded tokens into three distinct weight matrices: Queries ($Q$), Keys ($K$), and Values ($V$). The attention mechanism computes a weighted sum of the values, where the weight assigned to each value is determined by the dot-product similarity of the query with the corresponding key:
 \begin{equation}
-L_{\text{LLM}} = -\frac{1}{N} \sum_{i=1}^{N} \log P(y_i \mid y_{<i}, X)
+\label{eq:self_attention}
+    \text{Attention}(Q, K, V) = \text{softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V
 \end{equation}
-The probability $P(y_i)$ is calculated by applying a Softmax function over the final output logits across the entire vocabulary dimension.
+where $d_k$ is the dimension of the key vectors, utilized as a scaling factor to prevent vanishing gradients within the softmax function~\parencite{Vaswani_Shazeer_Parmar_Uszkoreit_Jones_Gomez_Kaiser_Polosukhin_2017}. In Causal Language Modeling (CLM), a strict lower-triangular mask is applied to the $Q K^T$ matrix. This ensures that the prediction for token $i$ can only attend to tokens at positions less than $i$, mathematically preserving the autoregressive property.
+\medskip
 
-\subsubsection{Low-Rank Adaptation (LoRA) Formulation}
-In modern LLM fine-tuning, we do not train the entire billion-parameter model (Full Fine-Tuning), as this requires massive GPU clusters. Instead, we use Parameter-Efficient Fine-Tuning (PEFT), specifically QLoRA (Quantized Low-Rank Adaptation).
-
-\textbf{The Math of LoRA:} We freeze the pre-trained weight matrix $W_0 \in \mathbb{R}^{d \times k}$ and inject two tiny trainable matrices, $A \in \mathbb{R}^{r \times k}$ and $B \in \mathbb{R}^{d \times r}$, where the rank $r$ is very small (e.g., 8, 16, or 32). The forward pass becomes:
+Given a context sequence $X$ and a target sequence of tokens $\mathbf{y} = (y_1, y_2, \dots, y_N)$, the network is optimized by minimizing the negative log-likelihood (Categorical Cross-Entropy) over the sequence:
 \begin{equation}
-h = W_0 x + \Delta W x = W_0 x + \frac{\alpha}{r} B A x
+\label{eq:clm_loss}
+    L_{\text{CLM}} = -\frac{1}{N} \sum_{i=1}^{N} \log P(y_i \mid y_{<i}, X; \Theta)
 \end{equation}
-Here, $\alpha$ is a scaling constant.
+where $\Theta$ represents the parameters of the neural network. The probability $P(y_i)$ is computed by applying a softmax function over the final projection layer logits across the entire vocabulary dimension. 
 
-\subsubsection{How the Gradients Flow in QLoRA}
-This is where the computational efficiency happens:
-\begin{itemize}
-    \item \textbf{Forward Pass:} The input passes through the frozen 4-bit weights $W_0$ and the trainable 16-bit matrices $A$ and $B$.
-    \item \textbf{Loss Calculation:} The output logits are compared against the target tokens using the Categorical Cross-Entropy loss $L_{\text{LLM}}$.
-    \item \textbf{Gradient Flow (Backpropagation):} The gradients flow backward from the loss function, down through the network layers. However, when the gradient reaches the weight matrices, the gradients for $W_0$ are discarded (zeroed out). The optimizer only calculates and applies the gradients to the small matrices $A$ and $B$.
-\end{itemize}
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    >=stealth,
+    node distance=1.0cm and 1.5cm,
+    block/.style={rectangle, draw=black!80, thick, fill=blue!5, text width=2.5cm, align=center, rounded corners, minimum height=0.8cm, font=\small\sffamily},
+    model/.style={rectangle, draw=purple!80, thick, fill=purple!10, text width=3.5cm, align=center, rounded corners, minimum height=1.2cm, font=\small\sffamily\bfseries},
+    token/.style={rectangle, draw=green!80, thick, fill=green!10, text width=2.0cm, align=center, rounded corners, minimum height=0.6cm, font=\small\ttfamily},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick, draw=black!70}
+]
+    % Context
+    \node[block] (context) {Context $X$};
+    
+    % LLM
+    \node[model, right=1.5cm of context] (llm) {Transformer Decoder\\(Masked Attention)};
+    
+    % Logits / Softmax
+    \node[block, fill=orange!10, right=1.5cm of llm] (softmax) {Softmax\\$P(y_i \mid X)$};
+    
+    % Next Token
+    \node[token, right=1.5cm of softmax] (next_token) {Next Token $y_i$};
 
-By freezing the base model and only routing gradients to the $A$ and $B$ adapters, memory consumption is reduced by up to 75\%, allowing you to fine-tune massive reasoning models on consumer hardware to act as your MARL meta-controller.
+    % Arrows
+    \draw[arrow] (context) -- (llm);
+    \draw[arrow] (llm) -- node[above, font=\footnotesize] {Logits} (softmax);
+    \draw[arrow] (softmax) -- (next_token);
+
+    % Autoregressive loop
+    \draw[arrow, dashed, draw=blue!80] (next_token.south) -- ++(0,-0.8) -| node[near start, below, font=\footnotesize] {Appended to Context (Autoregressive)} (context.south);
+
+\end{tikzpicture}
+\caption{The Causal Language Modeling (CLM) autoregressive generation loop. The Transformer applies masked self-attention to compute a probability distribution over the vocabulary. The sampled token is subsequently appended to the input context.}
+\label{fig:clm_autoregressive}
+\end{figure}
+
+This foundational pre-training endows LLMs with vast latent world models, encompassing logical dependencies, domain knowledge, and common-sense heuristics.
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Parameter-Efficient Fine-Tuning (QLoRA)}
+\label{sec:qlora}
+
+Deploying raw foundation models within high-frequency MARL loops introduces prohibitive computational latency and memory constraints. Full parameter fine-tuning of billion-parameter models requires massive GPU clusters, rendering it infeasible for standard local execution. To mitigate this, this thesis utilizes Quantized Low-Rank Adaptation (QLoRA)~\parencite{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023}, a state-of-the-art Parameter-Efficient Fine-Tuning (PEFT) technique building upon the foundational Low-Rank Adaptation (LoRA) framework~\parencite{Hu_Shen_Wallis_Allen-Zhu_Li_Wang_Wang_Chen_2021}.
+\medskip
+
+The mathematical intuition behind LoRA relies on the hypothesis that the updates to the weight matrices during fine-tuning possess an intrinsically low ``rank''. Instead of updating the full pre-trained weight matrix $W_0 \in \mathbb{R}^{d \times k}$, QLoRA freezes $W_0$ using 4-bit NormalFloat quantization. It then injects two trainable, low-rank adapter matrices $A \in \mathbb{R}^{r \times k}$ and $B \in \mathbb{R}^{d \times r}$, where the rank $r \ll \min(d, k)$~\parencite{Hu_Shen_Wallis_Allen-Zhu_Li_Wang_Wang_Chen_2021}. 
+\medskip
+
+To ensure that the untrained adapters do not inject noise into the network at the beginning of training, matrix $A$ is initialized with random Gaussian values, while matrix $B$ is initialized as a zero matrix. Consequently, the initial product $BA = 0$. The modified forward pass is defined as:
+\begin{equation}
+\label{eq:lora_forward}
+    h = W_0 x + \Delta W x = W_0 x + \frac{\alpha}{r} (B A) x
+\end{equation}
+where $\alpha$ is a constant scaling factor utilized to modulate the magnitude of the adapter activations~\parencite{Hu_Shen_Wallis_Allen-Zhu_Li_Wang_Wang_Chen_2021}. 
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    >=stealth,
+    node distance=1.5cm and 2.0cm,
+    frozen/.style={rectangle, draw=blue!80, thick, fill=blue!10, text width=3cm, align=center, rounded corners, minimum height=2.5cm, font=\small\sffamily},
+    trainable/.style={rectangle, draw=orange!80, thick, fill=orange!10, text width=2.5cm, align=center, rounded corners, minimum height=0.8cm, font=\small\sffamily},
+    sum/.style={circle, draw=black!80, thick, fill=gray!10, minimum size=0.6cm, font=\large\bfseries},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick, draw=black!70}
+]
+    % Input
+    \node (input) {Input $x$};
+    
+    % Frozen Weights
+    \node[frozen, above left=1.2cm and -0.5cm of input] (w0) {Frozen Pre-trained\\Weights\\$W_0 \in \mathbb{R}^{d \times k}$};
+    
+    % LoRA Adapters
+    \node[trainable, above right=0.8cm and 0.5cm of input] (matrix_a) {Adapter $A$\\$\in \mathbb{R}^{r \times k}$};
+    \node[trainable, above=0.6cm of matrix_a] (matrix_b) {Adapter $B$\\$\in \mathbb{R}^{d \times r}$};
+    
+    % Rank r annotation
+    \node[right=0.2cm of matrix_a, font=\footnotesize\sffamily, text=orange!90!black] (rank) {Rank $r \ll \min(d, k)$};
+
+    % Summation
+    \node[sum, above=4.5cm of input] (add) {$\oplus$};
+    
+    % Output
+    \node[above=0.8cm of add] (output) {Output $h$};
+
+    % Arrows from input
+    \draw[arrow] (input) |- (w0.south);
+    \draw[arrow] (input) |- (matrix_a.south);
+    
+    % Arrows inside LoRA
+    \draw[arrow] (matrix_a) -- node[right, font=\footnotesize] {$Ax$} (matrix_b);
+    
+    % Arrows to Sum
+    \draw[arrow] (w0.north) |- node[near end, below, font=\footnotesize] {$W_0 x$} (add.west);
+    \draw[arrow] (matrix_b.north) |- node[near end, below, font=\footnotesize] {$BAx$} (add.east);
+    
+    % Arrow to Output
+    \draw[arrow] (add) -- (output);
+
+\end{tikzpicture}
+\caption{The Low-Rank Adaptation (LoRA) architecture. Gradients are selectively routed through the low-rank matrices $A$ and $B$, drastically reducing memory requirements while the base weights $W_0$ remain frozen.}
+\label{fig:lora_architecture}
+\end{figure}
+
+The computational efficiency of this architecture is realized exclusively during backpropagation. When the loss $L_{\text{CLM}}$ is calculated against the target tokens, gradients are propagated backward through the network layers. Crucially, when the gradients reach the attention blocks, the gradients for the frozen matrix $W_0$ are discarded. The optimizer exclusively calculates and applies updates to the dense, low-dimensional adapter matrices $A$ and $B$. This targeted gradient flow prevents the caching of massive optimizer states, reducing overall VRAM consumption by up to 75\% compared to full fine-tuning. 
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{The Qwen Architecture and Agentic Capabilities}
+\label{sec:qwen_architecture}
+
+To serve as the cognitive controller in a MARL system, the chosen foundation model must possess advanced coding, reasoning, and instruction-following capabilities. This thesis leverages the Qwen model family, specifically utilizing the Qwen 2.5 7B parameters architecture, representing state-of-the-art open-weights performance~\parencite{Yang_Li_Yang_Zhang_Hui_Zheng_Yu_Gao_Huang_Lv_et_al._2025}.
+\medskip
+
+A key innovation in the Qwen architecture is the inherent integration of a ``thinking mode'' for complex, multi-step reasoning alongside a non-thinking mode for rapid, context-driven responses~\parencite{Yang_Li_Yang_Zhang_Hui_Zheng_Yu_Gao_Huang_Lv_et_al._2025}. In the context of reinforcement learning, this duality is critical. The model can rapidly parse structured JSON inputs representing the environment state, while simultaneously allocating internal computational resources to process multi-step dependency paths (e.g., verifying that a Pickaxe must be crafted before Iron can be mined) without requiring separate, dedicated reasoning models. By coupling the Qwen architecture with QLoRA, the model can be locally fine-tuned to act as a highly specialized, latency-bound orchestrator.
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Neuro-Symbolic Orchestration and Verbal Reflection}
+\label{sec:llm_rl_integration}
+
+As established in Chapter 2, pure deep reinforcement learning struggles with severe exploration bottlenecks in sparse-reward environments. While frameworks such as Potential-Based Reward Shaping (PBRS) and the Options Framework offer mathematical solutions to temporal abstraction, designing the requisite potential functions $\Phi(s)$ or initiation sets $\mathcal{I}_o$ traditionally demands extensive human engineering. 
+\medskip
+
+By leveraging the latent reasoning capabilities established during CLM pre-training, LLMs can act as zero-shot semantic orchestrators, bypassing manual heuristic design. Frameworks such as ReAct~\parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023} demonstrate that interleaving language reasoning traces with concrete actions enables models to solve complex, multi-step tasks autonomously. In reinforcement learning specifically, systems like EUREKA~\parencite{ma2024eurekahumanlevelrewarddesign} and PRM4RL~\parencite{Zhang_Gao_Jiang_Chen_Pan_Zhang_Deng_2025} successfully utilize LLMs to autonomously write and refine continuous reward functions. Similarly, literature highlights an emergent paradigm of LLM-as-an-Orchestrator~\parencite{Sun_Huang_Pompili_2024}, decoupling strategic goal formulation from low-level kinetic execution.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    >=stealth,
+    node distance=1.2cm and 1.8cm,
+    llm/.style={rectangle, draw=blue!80, thick, fill=blue!10, text width=4.5cm, align=center, rounded corners, minimum height=1.1cm, font=\small\sffamily},
+    bridge/.style={rectangle, draw=orange!80, thick, fill=orange!10, text width=4.5cm, align=center, rounded corners, minimum height=1.1cm, font=\small\sffamily},
+    marl/.style={rectangle, draw=green!80, thick, fill=green!10, text width=4.5cm, align=center, rounded corners, minimum height=1.1cm, font=\small\sffamily},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick, draw=black!70}
+]
+    \node[llm] (meta) {\textbf{High-Level Meta-Controller}\\(LLM reasoning over semantic DAG)};
+    \node[bridge, below=1.0cm of meta] (trans) {\textbf{Translation Layer}\\(PBRS Logits or Discrete Option $o_t$)};
+    \node[marl, below=1.0cm of trans] (low) {\textbf{Low-Level Execution Workers}\\(MAPPO Policies $\pi_\theta(a \mid s, o)$)};
+
+    \draw[arrow] (meta) -- node[right, font=\footnotesize] {JSON Priorities / Decisions} (trans);
+    \draw[arrow] (trans) -- node[right, font=\footnotesize] {Shaping $F_t$ or State Vector $\mathbf{e}_o$} (low);
+    \draw[arrow] (low.west) -- ++(-0.8,0) |- node[near start, left, font=\footnotesize] {Staleness / Milestone Metrics} (meta.west);
+
+\end{tikzpicture}
+\caption{The Neuro-Symbolic Hierarchy. The high-level LLM handles strategic temporal abstraction, while low-level MAPPO agents execute high-frequency kinetic control.}
+\label{fig:neuro_symbolic_hierarchy}
+\end{figure}
+
+Furthermore, language agents can leverage \emph{Verbal Reflection}~\parencite{Shinn_Cassano_Berman_Gopinath_Narasimhan_Yao_2023} to evaluate execution failures. When low-level MAPPO agents stagnate within the environment, counterfactual reflection prompts can force the LLM to diagnose missing prerequisites in its context window before issuing updated macro-actions. 
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    >=stealth,
+    node distance=2.5cm,
+    block/.style={rectangle, draw=black!80, thick, text width=3.5cm, align=center, rounded corners, minimum height=1.2cm, font=\small\sffamily},
+    state/.style={block, fill=gray!15},
+    prompt/.style={block, fill=yellow!15},
+    llm/.style={block, fill=purple!10},
+    action/.style={block, fill=green!15},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick, draw=black!80}
+]
+    % Nodes
+    \node[state] (env) {Environment\\Staleness Trigger};
+    \node[prompt, right=1.5cm of env] (prompt) {Reflection Prompt\\(Context + Failure)};
+    \node[llm, below=1.5cm of prompt] (llm) {LLM Orchestrator\\(Chain of Thought)};
+    \node[action, left=1.5cm of llm] (action) {Corrected\\Discrete Option};
+
+    % Arrows
+    \draw[arrow] (env) -- (prompt);
+    \draw[arrow] (prompt) -- (llm);
+    \draw[arrow] (llm) -- node[below, font=\footnotesize] {JSON Output} (action);
+    \draw[arrow] (action) -- node[left, font=\footnotesize] {Execution} (env);
+
+\end{tikzpicture}
+\caption{The Verbal Reflection mechanism. Upon encountering kinetic stagnation, the environment halts and prompts the LLM to explicitly diagnose the failure before assigning a corrected Option.}
+\label{fig:verbal_reflection}
+\end{figure}
+
+As illustrated in Figure~\ref{fig:verbal_reflection}, this forms a complete neuro-symbolic feedback loop where the LLM dictates the logical \emph{what} and the MAPPO algorithm learns the spatial \emph{how}.

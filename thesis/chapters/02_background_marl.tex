@@ -1,19 +1,227 @@
-\section{Background: Multi-Agent Reinforcement Learning}
-\label{ch:background_marl}
+% ==========================================================================
+% Chapter 2 — Background and State of the Art
+% ==========================================================================
+\section{Background and State of the Art}
+\label{ch:background}
 
-This chapter provides the necessary background on Multi-Agent Reinforcement Learning (MARL). 
-Separating this from the LLM background helps keep the text focused and modular.
+This chapter establishes the theoretical foundations required to contextualize the neuro-symbolic multi-agent architectures presented in this thesis. We begin by formalizing single-agent Markovian decision processes and policy optimization. We then extend these concepts to multi-agent environments under partial observability, detailing the Centralized Training with Decentralized Execution (CTDE) paradigm and Multi-Agent Proximal Policy Optimization (MAPPO). Finally, we examine temporal abstraction frameworks—specifically Potential-Based Reward Shaping (PBRS) and the Options framework—before reviewing modern integrations of Large Language Models (LLMs) as cognitive controllers.
 
-\subsection{Reinforcement Learning Fundamentals}
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Fundamentals of Reinforcement Learning}
+\label{sec:rl_fundamentals}
 
-\subsection{Multi-Agent Systems}
+Reinforcement learning (RL) formalizes sequential decision-making under uncertainty, where an autonomous agent learns to optimize its behavior through interaction with a dynamic environment~\parencite{Sutton_Barto_2020}.
 
-\subsection{State of the Art in MARL}
+\subsubsection{Markov Decision Processes (MDPs)}
+\label{subsec:mdp}
 
-\subsection{MAPPO Agents: Training and Gradient Flow}
+At any discrete timestep $t \in \{0, 1, 2, \dots\}$, an environment exists in a state $S_t \in \mathcal{S}$. The mathematical foundation of RL relies on the \emph{Markov Property}, which asserts that the future state transition depends strictly on the current state and action, rendered independent of historical trajectories:
+\begin{equation}
+    \mathbb{P}[S_{t+1} = s' \mid S_t = s_t, A_t = a_t, S_{t-1} = s_{t-1}, \dots] = \mathbb{P}[S_{t+1} = s' \mid S_t = s, A_t = a]
+\end{equation}
+
+A fully observable single-agent control problem is modeled as a Markov Decision Process (MDP), defined by the 5-tuple $\langle \mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \gamma \rangle$~\parencite{Szepesvári_2011}:
+\begin{itemize}[nosep]
+    \item $\mathcal{S}$ is the set of all valid environment states.
+    \item $\mathcal{A}$ is the set of primitive actions available to the agent.
+    \item $\mathcal{P}: \mathcal{S} \times \mathcal{A} \times \mathcal{S} \rightarrow [0, 1]$ represents the transition probability distribution $\mathcal{P}(s' \mid s, a) = \mathbb{P}[S_{t+1} = s' \mid S_t = s, A_t = a]$.
+    \item $\mathcal{R}: \mathcal{S} \times \mathcal{A} \rightarrow \mathbb{R}$ is the scalar reward function $\mathcal{R}(s, a) = \mathbb{E}[R_{t+1} \mid S_t = s, A_t = a]$.
+    \item $\gamma \in [0, 1)$ is the discount factor ensuring mathematical convergence over infinite horizons.
+\end{itemize}
+
+The agent's decision-making strategy is defined by a stochastic policy $\pi(a \mid s) = \mathbb{P}[A_t = a \mid S_t = s]$. The goal of the agent is to find an optimal policy $\pi^*$ that maximizes the expected discounted return $G_t = \sum_{k=0}^{\infty} \gamma^k R_{t+k+1}$.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    >=stealth,
+    node distance=2.5cm,
+    block/.style={rectangle, draw=black!80, thick, text width=3cm, align=center, rounded corners, minimum height=1.2cm, font=\sffamily},
+    agent/.style={block, fill=blue!10},
+    env/.style={block, fill=green!10},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick, draw=black!80}
+]
+    % Nodes
+    \node[agent] (agent) {\textbf{Agent}};
+    \node[env, below=2.5cm of agent] (env) {\textbf{Environment}};
+    
+    % Edges
+    \draw[arrow] (agent.west) to[out=200, in=160] node[left, font=\small\sffamily, align=center, xshift=-0.2cm] {Action $A_t$} (env.west);
+    
+    \draw[arrow] (env.east) to[out=20, in=-20] node[right, font=\small\sffamily, align=center, xshift=0.2cm] {State $S_{t+1}$ \\ Reward $R_{t+1}$} (agent.east);
+
+\end{tikzpicture}
+\caption{The standard Reinforcement Learning interaction loop modeling a Markov Decision Process (MDP). At each discrete timestep, the agent executes an action, and the environment responds with the subsequent state and a scalar reward signal.}
+\label{fig:mdp_loop}
+\end{figure}
+
+\subsubsection{Policy Optimization and Proximal Policy Optimization (PPO)}
+\label{subsec:ppo}
+
+Rather than inferring policies implicitly through action-value functions, policy gradient methods directly parameterize the policy network $\pi_\theta(a \mid s)$ with weights $\theta \in \mathbb{R}^d$ and optimize the performance objective $J(\theta) = \mathbb{E}_{\pi_\theta}[G_0]$ via gradient ascent~\parencite{Sutton_Barto_2020}. By the Policy Gradient Theorem, the objective gradient is analytically expressed as:
+\begin{equation}
+    \nabla_\theta J(\theta) = \mathbb{E}_{s \sim \rho^{\pi_\theta}, a \sim \pi_\theta} \left[ \nabla_\theta \log \pi_\theta(a \mid s) A^{\pi_\theta}(s, a) \right]
+\end{equation}
+where $A^{\pi_\theta}(s, a) = Q^{\pi_\theta}(s, a) - V^{\pi_\theta}(s)$ represents the Advantage function, quantifying the relative superiority of action $a$ compared to the expected baseline return of state $s$.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    >=stealth,
+    node distance=1.5cm and 2.5cm,
+    block/.style={rectangle, draw=black!80, thick, text width=2.8cm, align=center, rounded corners, minimum height=1.2cm, font=\small\sffamily},
+    state/.style={block, fill=gray!15},
+    actor/.style={block, fill=blue!10},
+    critic/.style={block, fill=red!10},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick, draw=black!80}
+]
+    % Nodes
+    \node[state] (state) {\textbf{Environment State} \\ $S_t$};
+    
+    \node[actor, above right=0.6cm and 2.5cm of state] (actor) {\textbf{Actor} \\ $\pi_\theta(a \mid s)$};
+    \node[critic, below right=0.6cm and 2.5cm of state] (critic) {\textbf{Critic} \\ $V_\phi(s)$};
+    
+    \node[right=2.5cm of actor, font=\small\sffamily, align=center] (action) {Sampled Action \\ $A_t \sim \pi_\theta$};
+
+    % State to Actor/Critic
+    \draw[arrow] (state.east) -- ++(0.8,0) |- (actor.west);
+    \draw[arrow] (state.east) -- ++(0.8,0) |- (critic.west);
+    
+    % Actor to Action
+    \draw[arrow] (actor.east) -- (action.west);
+    
+    % Advantage Signal (Critic to Actor)
+    \draw[arrow, dashed, draw=red!80] (critic.north) -- node[right, font=\footnotesize\sffamily, text=red!80, align=center] {Advantage \\ $\hat{A}_t = R_t + \gamma V_\phi(S_{t+1}) - V_\phi(S_t)$} (actor.south);
+
+\end{tikzpicture}
+\caption{The Actor-Critic architecture. The Critic network estimates the value of the current state, computing an Advantage signal that dictates the direction and magnitude of the Actor's policy gradient update.}
+\label{fig:actor_critic}
+\end{figure}
+
+Standard policy gradient estimation suffers from high variance and destructive step updates. Proximal Policy Optimization (PPO) resolves this by enforcing a soft trust-region constraint through a clipped surrogate objective~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}:
+\begin{equation}
+\label{eq:ppo_clip}
+    L^{\text{CLIP}}(\theta) = \hat{\mathbb{E}}_t \left[ \min\left( r_t(\theta)\hat{A}_t, \; \text{clip}\bigl(r_t(\theta), 1-\epsilon, 1+\epsilon\bigr)\hat{A}_t \right) \right]
+\end{equation}
+where $r_t(\theta) = \frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_{\text{old}}}(a_t \mid s_t)}$ is the probability ratio between the updating and old policy, and $\epsilon$ (typically $0.2$) bounds the maximum permissible policy shift per update iteration.
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Cooperative Multi-Agent Reinforcement Learning}
+\label{sec:marl_foundations}
+
+Transitioning from single-agent to multi-agent environments invalidates standard MDP assumptions. Because agents update their policies concurrently, the environment transition dynamics become non-stationary from the local perspective of any individual agent~\parencite{Albrecht_Christianos_Schäfer_2024}.
+
+\subsubsection{Decentralized Partially Observable MDPs (Dec-POMDPs)}
+\label{subsec:dec_pomdp}
+
+In complex multi-agent domains, agents rarely possess global state vision. Fully cooperative tasks featuring local sensory limitations are formally defined as a Decentralized Partially Observable Markov Decision Process (Dec-POMDP)~\parencite{Oliehoek_Amato_2016}, structured as the tuple $\langle \mathcal{N}, \mathcal{S}, \boldsymbol{\mathcal{A}}, \mathcal{P}, \mathcal{R}, \boldsymbol{\Omega}, \mathcal{O}, \gamma \rangle$:
+\begin{itemize}[nosep]
+    \item $\mathcal{N} = \{1, \dots, N\}$ is the set of $N$ active agents.
+    \item $\boldsymbol{\mathcal{A}} = \mathcal{A}_1 \times \dots \times \mathcal{A}_N$ is the joint action space. At timestep $t$, agents simultaneously execute joint action $\mathbf{a}_t = (a_t^{(1)}, \dots, a_t^{(N)}) \in \boldsymbol{\mathcal{A}}$.
+    \item $\boldsymbol{\Omega} = \Omega_1 \times \dots \times \Omega_N$ is the joint observation space.
+    \item $\mathcal{O}: \mathcal{S} \times \boldsymbol{\mathcal{A}} \times \boldsymbol{\Omega} \rightarrow [0, 1]$ is the observation probability distribution $\mathcal{O}(\mathbf{o} \mid s', \mathbf{a})$.
+    \item $\mathcal{R}: \mathcal{S} \times \boldsymbol{\mathcal{A}} \rightarrow \mathbb{R}$ is the globally shared reward signal emitted to all agents upon completing joint transitions.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    >=stealth,
+    node distance=1.5cm and 2.0cm,
+    block/.style={rectangle, draw=black!80, thick, fill=gray!8, text width=2.6cm, align=center, rounded corners, minimum height=1.0cm, font=\small\sffamily},
+    agent/.style={rectangle, draw=blue!80, thick, fill=blue!5, text width=2.0cm, align=center, rounded corners, minimum height=0.9cm, font=\small\sffamily},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick, draw=black!70}
+]
+    % Environment
+    \node[block, fill=green!8] (env) {Global Environment\\State $s_t \in \mathcal{S}$};
+    
+    % Observation Function
+    \node[block, above=1.2cm of env, text width=5.5cm] (obs_func) {Observation Emission Filter $\mathcal{O}(\mathbf{o} \mid s_t, \mathbf{a}_{t-1})$};
+    
+    % Agents
+    \node[agent, above left=1.2cm and 0.5cm of obs_func] (agent1) {Agent 1\\$\pi_{\theta_1}(a^{(1)} \mid \tau^{(1)})$};
+    \node[agent, above right=1.2cm and 0.5cm of obs_func] (agent2) {Agent $N$\\$\pi_{\theta_N}(a^{(N)} \mid \tau^{(N)})$};
+
+    % Connections
+    \draw[arrow] (env) -- node[right, font=\footnotesize] {True State $s_t$} (obs_func);
+    
+    % Observations
+    \draw[arrow] (obs_func.north) -- ++(0, 0.4) -| (agent1.south) node[pos=0.25, above, font=\footnotesize] {Local $o_t^{(1)}$};
+    \draw[arrow] (obs_func.north) -- ++(0, 0.4) -| (agent2.south) node[pos=0.25, above, font=\footnotesize] {Local $o_t^{(N)}$};
+    
+    % Actions
+    \draw[arrow] (agent1.north) -- ++(0, 0.5) -| ([xshift=-1.2cm]agent1.west) |- (env.west) node[pos=0.75, above, font=\footnotesize] {Action $a_t^{(1)}$};
+    \draw[arrow] (agent2.north) -- ++(0, 0.5) -| ([xshift=1.2cm]agent2.east) |- (env.east) node[pos=0.75, above, font=\footnotesize] {Action $a_t^{(N)}$};
+    
+    % Shared Reward
+    \draw[arrow, dashed, draw=red!70] (env.south) -- ++(0, -0.6) -| ([xshift=-0.6cm]agent1.south) node[pos=0.25, below, font=\footnotesize] {Shared Extrinsic Reward $r_t^{\text{env}}$};
+    \draw[arrow, dashed, draw=red!70] (env.south) -- ++(0, -0.6) -| ([xshift=0.6cm]agent2.south);
+
+\end{tikzpicture}
+\caption{The Dec-POMDP interaction framework. The global environment state is hidden behind an observation emission filter, forcing agents to condition policies strictly on localized histories.}
+\label{fig:dec_pomdp}
+\end{figure}
+
+Because an individual agent $i$ cannot perceive the full state $s_t$, a single observation $o_t^{(i)} \in \Omega_i$ breaks the Markov property. To restore temporal context, agent $i$ maintains an action-observation history $\tau_t^{(i)} = (o_1^{(i)}, a_1^{(i)}, \dots, o_t^{(i)})$, parameterizing its decentralized policy as $\pi_i(a_i \mid \tau_i)$ using recurrent layers such as GRUs or LSTMs~\parencite{Hausknecht_Stone_2017}.
+
+\subsubsection{Centralized Training with Decentralized Execution (CTDE)}
+\label{subsec:ctde}
+
+To resolve non-stationarity without violating execution constraints, modern MARL algorithms adopt the Centralized Training with Decentralized Execution (CTDE) paradigm~\parencite{Albrecht_Christianos_Schäfer_2024}. During the offline training phase, the algorithm leverages privileged global state information $\mathbf{s}_t$ and joint actions $\mathbf{a}_t$. During online deployment, centralized structures are severed, allowing decentralized actors to execute independently based strictly on local histories $\tau_i$.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    >=stealth,
+    node distance=1.2cm and 1.5cm,
+    box/.style={rectangle, draw=black!80, thick, fill=blue!10, text width=2.4cm, align=center, rounded corners, minimum height=0.9cm, font=\small\sffamily},
+    critic/.style={rectangle, draw=red!80, thick, fill=red!10, text width=3.2cm, align=center, rounded corners, minimum height=1.0cm, font=\small\sffamily},
+    arrow/.style={-{Stealth[length=2.5mm]}, thick, draw=black!70}
+]
+    % Centralized Training Panel
+    \node[critic] (critic) {Centralized Critic $V_\phi(\mathbf{s}_t)$\\(Full State Information)};
+    \node[box, below left=1.0cm and -0.4cm of critic] (act1_train) {Actor $\pi_{\theta_1}$\\$\pi(a_1 \mid \tau_1)$};
+    \node[box, below right=1.0cm and -0.4cm of critic] (act2_train) {Actor $\pi_{\theta_2}$\\$\pi(a_2 \mid \tau_2)$};
+    
+    \draw[arrow, draw=red!80, dashed] (critic) -- node[left, font=\tiny] {Advantage $\hat{A}_t$} (act1_train);
+    \draw[arrow, draw=red!80, dashed] (critic) -- node[right, font=\tiny] {Advantage $\hat{A}_t$} (act2_train);
+    
+    % Draw box around Training
+    \node[draw=red!50, thick, dotted, fit=(critic) (act1_train) (act2_train), label=above:{\small\sffamily\bfseries Centralized Training Phase}] (train_box) {};
+
+    % Decentralized Execution Panel
+    \node[box, right=1.4cm of act2_train] (act1_exec) {Actor $\pi_{\theta_1}$\\$\pi(a_1 \mid \tau_1)$};
+    \node[box, right=0.8cm of act1_exec] (act2_exec) {Actor $\pi_{\theta_2}$\\$\pi(a_2 \mid \tau_2)$};
+    
+    % Draw box around Execution
+    \node[draw=blue!50, thick, dotted, fit=(act1_exec) (act2_exec), label=above:{\small\sffamily\bfseries Decentralized Execution Phase}] (exec_box) {};
+
+    % Transition Arrow (perfectly horizontal by aligning Y-coordinates)
+    \coordinate (arrow_start) at (train_box.east |- act2_train);
+    \coordinate (arrow_end) at (exec_box.west |- act1_exec);
+    \draw[-{Stealth[length=3mm]}, ultra thick, draw=gray!80] (arrow_start) -- node[above, align=center, font=\footnotesize\sffamily] {Sever\\Critic} node[below, align=center, font=\footnotesize\sffamily] {Deploy\\Policy} (arrow_end);
+
+\end{tikzpicture}
+\caption{Structural division in Centralized Training with Decentralized Execution (CTDE). The high-dimensional state critic assists policy gradient estimation during training but is discarded during real-time deployment.}
+\label{fig:ctde_mappo}
+\end{figure}
+
+\subsubsection{Multi-Agent Proximal Policy Optimization (MAPPO)}
+\label{subsec:mappo}
+
+Multi-Agent PPO (MAPPO) extends single-agent PPO into the CTDE paradigm~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022}. MAPPO maintains $N$ decentralized actors $\pi_{\theta_i}(a_i \mid \tau_i)$ alongside a centralized state-value critic $V_\phi(\mathbf{s}_t)$ that conditions directly on the unclipped global environment state $\mathbf{s}_t$.
+
+The centralized critic is optimized by minimizing the Mean Squared Error against Generalized Advantage Estimator (GAE) targets $\hat{R}_t$:
+\begin{equation}
+    L(\phi) = \frac{1}{B \cdot N} \sum_{i=1}^B \sum_{k=1}^N \left( V_\phi(\mathbf{s}_{t,k}) - \hat{R}_{t,k} \right)^2
+\end{equation}
+
+By estimating baseline returns using the true joint state $\mathbf{s}_t$, the centralized critic stabilizes variance in the Advantage calculation $\hat{A}_t^{\text{GAE}}$, enabling MAPPO to achieve state-of-the-art sample efficiency across complex cooperative benchmarks~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022}.
+
+\subsubsection{MAPPO Agents: Training and Gradient Flow}
 In Multi-Agent Proximal Policy Optimization (MAPPO), the system relies on the Centralized Training with Decentralized Execution (CTDE) paradigm. This means there are two distinct neural networks (or sets of networks) being trained: the Actor and the Critic.
 
-\subsubsection{The Actor Network (Policy)}
+\paragraph{The Actor Network (Policy)}
 \textbf{What is trained:} The Actor network, parameterized by $\theta$, learns the policy $\pi_\theta(a_t\vert{}s_t)$. This defines the probability of an agent taking a specific action $a_t$ given its local observation $s_t$.
 
 \textbf{The Objective Function:} The Actor is trained to maximize a clipped surrogate objective function. We calculate the probability ratio $r_t(\theta)$ between the new policy and the old policy:
@@ -26,7 +234,7 @@ L^{\text{CLIP}}(\theta) = \hat{\mathbb{E}}_t \left[ \min\left( r_t(\theta) \hat{
 \end{equation}
 Here, $\hat{A}_t$ is the Advantage estimate, and $\epsilon$ is the clipping hyperparameter (usually 0.2).
 
-\subsubsection{The Centralized Critic Network (Value)}
+\paragraph{The Centralized Critic Network (Value)}
 \textbf{What is trained:} The Critic network, parameterized by $\phi$, learns the value function $V_\phi(S_t)$. Crucially, $S_t$ is not just the local observation; it is the global joint state (or the concatenation of all agents' observations). This allows the Critic to accurately assess the true value of a state across the entire multi-agent system.
 
 \textbf{The Objective Function:} The Critic minimizes the Mean Squared Error (MSE) between its predicted value and the actual calculated returns $\hat{R}_t$ (usually derived via Generalized Advantage Estimation, GAE):
@@ -34,9 +242,40 @@ Here, $\hat{A}_t$ is the Advantage estimate, and $\epsilon$ is the clipping hype
 L^{\text{VF}}(\phi) = \hat{\mathbb{E}}_t \left[ \left( V_\phi(S_t) - \hat{R}_t \right)^2 \right]
 \end{equation}
 
-\subsubsection{How the Gradients Flow in MAPPO}
+\paragraph{How the Gradients Flow in MAPPO}
 During a training update:
 \begin{itemize}
     \item \textbf{Critic Gradient Flow:} The error $L^{\text{VF}}(\phi)$ is computed. Gradients flow backward strictly through the Centralized Critic network, updating the weights $\phi$ to make its future predictions more accurate.
     \item \textbf{Actor Gradient Flow:} The Advantage $\hat{A}_t$ is computed using the Critic's evaluations. If $\hat{A}_t$ is positive (the action was better than expected), the Actor's loss $L^{\text{CLIP}}(\theta)$ pushes the gradient to increase the probability of that action. The gradient flows backward entirely through the local Actor network, updating weights $\theta$.
 \end{itemize}
+
+% ──────────────────────────────────────────────────────────────────────────
+\subsection{Temporal Abstraction and Reward Shaping}
+\label{sec:abstraction_shaping}
+
+While MAPPO exhibits strong sample efficiency in dense tasks, it struggles in long-horizon domains gated by sparse rewards. To mitigate exploration bottlenecks, structural abstraction techniques are required.
+
+\subsubsection{Potential-Based Reward Shaping (PBRS)}
+\label{subsec:pbrs}
+
+Reward shaping supplements sparse environmental rewards $r^{\text{env}}$ with an auxiliary dense signal $F(s, s')$. However, unconstrained reward additions frequently alter the underlying MDP, causing agents to discover local optima or engage in \emph{reward hacking}.
+
+To prevent policy distortion, Ng et al. (1999) proved that a shaping signal $F(s, s')$ preserves the optimal policy set $\pi^*$ if and only if it is expressed as the difference of a state potential function $\Phi(s)$~\parencite{Ng_Harada_Russell_1999}:
+\begin{equation}
+\label{eq:pbrs_canonical}
+    F(s, s') = \gamma \Phi(s') - \Phi(s)
+\end{equation}
+where $\Phi: \mathcal{S} \rightarrow \mathbb{R}$ maps any state to a scalar value. Adding $F(s, s')$ to the environment reward creates an augmented signal $r^{\text{total}}_t = r_t^{\text{env}} + F(s_t, s_{t+1})$. Because $\sum_{t=0}^\infty \gamma^t F(s_t, s_{t+1}) = -\Phi(s_0)$, the potential function acts as a conservative vector field, guaranteeing policy invariance.
+
+\subsubsection{The Options Framework for Hierarchical RL}
+\label{subsec:options_framework}
+
+Rather than modifying the reward landscape, Hierarchical Reinforcement Learning (HRL) achieves temporal abstraction by organizing actions into high-level macro-structures. The \emph{Options Framework} formalizes macro-actions over MDPs~\parencite{Sutton_Precup_Singh_1999}. An option $o \in \mathcal{O}$ is defined by the triple $\langle \mathcal{I}_o, \pi_o, \beta_o \rangle$:
+\begin{itemize}[nosep]
+    \item $\mathcal{I}_o \subseteq \mathcal{S}$ is the initiation set. Option $o$ can be initiated in state $s$ if and only if $s \in \mathcal{I}_o$.
+    \item $\pi_o(a \mid s)$ is the intra-option policy governing primitive execution while option $o$ is active.
+    \item $\beta_o: \mathcal{S} \rightarrow [0, 1]$ is the stochastic termination condition, giving the probability $\beta_o(s)$ that option $o$ terminates in state $s$.
+\end{itemize}
+
+When an option $o$ is selected, the intra-option policy $\pi_o$ controls primitive actions until termination condition $\beta_o$ triggers, transforming the underlying decision process into a Semi-Markov Decision Process (SMDP) operating over variable temporal steps~\parencite{Sutton_Precup_Singh_1999}.
+
