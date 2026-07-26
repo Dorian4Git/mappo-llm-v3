@@ -79,18 +79,25 @@ As the topological depth of this chain increases, the probability of agents disc
 \subsubsection{Action and Observation Spaces}
 \label{subsec:env_spaces}
 
-The agents are trained under the Centralized Training with Decentralized Execution (CTDE) paradigm. During the decentralized execution phase, agents perceive a 14-dimensional global state vector. Instead of relying on a visual grid crop, the observation space explicitly encodes the absolute $(x,y)$ coordinates of all agents, alongside the boolean status of the shared inventory. While the state is fully observable, the coordinates of the target zones (resources, workbenches, enemies) are completely hidden from the state vector, forcing the agents to explore the spatial grid to locate them.
+The agents are trained under the Centralized Training with Decentralized Execution (CTDE) paradigm. During the decentralized execution phase, each agent perceives a 14-dimensional observation vector. Within this vector, the agents know exactly two things: \emph{where they are} (the absolute $(x,y)$ coordinates of the agents) and \emph{what they have} (the boolean status of the shared inventory). 
 
-The discrete action space consists of five parameters: four cardinal movement directions (Up, Down, Left, Right) and one semantic ``Interact'' action. The interaction mechanic is highly context-sensitive; for instance, triggering the action while adjacent to a forest tile harvests wood, whereas executing it at a workbench—contingent upon possessing the requisite inventory—initiates tool crafting.
+However, they are completely blind to the map layout. The environment strictly enforces the Dec-POMDP partial observability (established in Section~\ref{subsec:dec_pomdp}) by completely hiding the coordinates of the target zones (resources, workbenches, enemies) from the state vector. Because the true mathematical state of the environment includes these target locations, hiding them creates a cognitive "fog of war." This forces the agents to physically explore the spatial grid to locate their objectives, rather than simply calculating a direct mathematical path to a known coordinate.
+
+The discrete action space consists of five parameters: four cardinal movement directions (Up, Down, Left, Right) and one semantic ``Interact'' action. The interaction mechanic is highly context-sensitive; for instance, triggering the action while adjacent to a forest tile chops wood, whereas executing it at a workbench (contingent upon possessing the requisite inventory) initiates tool crafting.
 
 \subsubsection{Visual Representation}
 \label{subsec:env_visual}
 
+Figure~\ref{fig:env_screenshots} provides a visual representation of the discrete grid-world environment utilized throughout the MARL training process. The interface explicitly renders the underlying state matrix, allowing human observers to track the spatial coordinates of the autonomous agents as they navigate the map. Furthermore, it visualizes the dynamic entity zones critical to the dependency DAG (e.g., forests for wood harvesting, ore deposits for iron mining, and localized workbenches for tool crafting). While the core simulation runs headlessly via highly optimized arrays to maximize transition throughput, this renderer serves as an essential tool for visual debugging and policy interpretation. 
+
 \begin{figure}[H]
     \centering
-    \caption{[PLACEHOLDER] Visual rendering of the custom MARL environment, demonstrating the spatial grid layout, dynamic entity placement, and multi-agent coordination zones.}
+    \includegraphics[width=\textwidth]{../images/capture_from_the_game.png}
+    \caption{Visual rendering of the custom MARL environment, demonstrating the spatial grid layout, dynamic entity placement, and multi-agent coordination zones.}
     \label{fig:env_screenshots}
 \end{figure}
+
+All visual assets utilized in this rendering engine, including the 2D pixel-art sprites representing the agents, terrain tiles, and interactive elements, were procedurally generated using the Gemini 3.1 Pro model via the Antigravity coding assistant platform.
 
 \subsection{Architecture \& Technology Stack}
 \label{sec:env_tech}
