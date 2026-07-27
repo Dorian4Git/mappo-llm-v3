@@ -1,38 +1,31 @@
 % ==========================================================================
-% Chapter 5 — HRL Architecture: The "Meta-Controller" Approach
+% Section 6 — HRL Architecture: The "Meta-Controller" Approach
 % ==========================================================================
 \section{Hierarchical Reinforcement Learning Architecture}
 \label{ch:hrl_architecture}
 
-This chapter details the second integration strategy: a Hierarchical
-Reinforcement Learning (HRL) framework in which the LLM acts as a
-\emph{Meta-Controller}, selecting discrete high-level \emph{Options}
-that govern the behaviour of the low-level MAPPO policy.
+The previous section established the \emph{Mixing Board} architecture, representing a "soft integration" of Large Language Models into MARL. In that paradigm, the LLM acted as an environmental architect, manipulating the gravitational pull of potential-based rewards to gently guide the agents toward logical milestones. While this elegant separation preserves the underlying Markov properties, it restricts the LLM to an indirect role: it can only suggest a direction, not enforce a strategy. 
 
-Unlike the Mixing Board approach (\cref{ch:dynamic_implementation}),
-which adjusts continuous weights over a fixed greedy planner, the
-Meta-Controller replaces the planner entirely.
-The LLM issues explicit macro-action assignments per agent, and the
-low-level policy receives the active option as part of its observation,
-creating a two-level decision hierarchy.
+To fully explore the spectrum of neuro-symbolic integration, we must ask: what happens when we grant the LLM direct semantic authority over the agents' cognitive state?
+
+This section details the second integration strategy: a Hierarchical Reinforcement Learning (HRL) framework. Here, we transition from soft environmental guidance to hard architectural integration. The LLM ceases to be a distant architect and becomes a direct \emph{Meta-Controller}. Instead of adjusting continuous weights over a fixed greedy planner, the Meta-Controller replaces the planner entirely. It selects discrete high-level \emph{Options} (macro-actions) that strictly govern the behavior of the low-level MAPPO policy.
+
+In our established metaphor, the Commander is no longer just shifting the gravity; it is radioing explicit, non-negotiable orders directly into the sensory inputs of the lumberjack and miner.
 
 The exposition follows the implementation order:
-\textbf{Option definitions} (\cref{sec:option_defs}) $\rightarrow$
-\textbf{discrete option selection} (\cref{sec:discrete_selection}) $\rightarrow$
-\textbf{one-hot observation augmentation} (\cref{sec:onehot_aug}) $\rightarrow$
-\textbf{bipartite reward structure} (\cref{sec:bipartite_reward}) $\rightarrow$
-\textbf{staleness and reflection} (\cref{sec:staleness}).
+\begin{enumerate}
+    \item \textbf{Option Definitions} (\cref{sec:option_defs}): Defining the discrete macro-actions available to the Commander.
+    \item \textbf{Discrete Option Selection} (\cref{sec:discrete_selection}): How the LLM is triggered to assign these explicit tasks.
+    \item \textbf{One-Hot Observation Augmentation} (\cref{sec:onehot_aug}): How the Commander's text-based orders are mathematically injected into the MAPPO neural network.
+    \item \textbf{Bipartite Reward Structure} (\cref{sec:bipartite_reward}): The dual-reward system required to train the workers to follow these new explicit orders.
+    \item \textbf{Staleness and Counterfactual Reflection} (\cref{sec:staleness}): How the Commander diagnoses its own mistakes when an order fails on the ground.
+\end{enumerate}
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{System Overview}
 \label{sec:hrl_overview}
 
-\Cref{fig:hrl_system_flow} shows the two-level architecture.
-The Meta-Controller (LLM) observes inventory transitions and
-assigns Options to each agent asynchronously; the low-level MAPPO
-policy conditions on the active option and receives a composite reward
-signal comprising both the environment's sparse reward and
-an option-specific dense intrinsic reward.
+\Cref{fig:hrl_system_flow} illustrates this two-level command architecture. The Meta-Controller (LLM) observes inventory transitions and assigns explicit Options to each agent asynchronously. Unlike the dynamic approach where the MAPPO policy remained blind to the LLM's existence, here, the low-level MAPPO policy receives the active option directly as part of its mathematical observation space. This creates a true, tightly coupled two-level decision hierarchy.
 
 \begin{figure}[H]
 \centering
@@ -72,10 +65,7 @@ an option-specific dense intrinsic reward.
     % Env -> Controller (reset on terminal)
     \draw[arr,dashed] (env.north east) -- node[right,font=\footnotesize,pos=0.3]{\scriptsize terminal} (ctrl.south west);
 \end{tikzpicture}
-\caption{Two-level HRL architecture.
-         The LLM Meta-Controller is triggered by option success or
-         staleness (dashed). The OptionController passes one-hot
-         embeddings to the MAPPO agent at every step (solid).}
+\caption{Two-level HRL architecture. The LLM Meta-Controller is triggered by option success or staleness (dashed). The OptionController passes one-hot embeddings to the MAPPO agent at every step (solid), directly altering the agent's cognitive state.}
 \label{fig:hrl_system_flow}
 \end{figure}
 
@@ -84,34 +74,10 @@ an option-specific dense intrinsic reward.
 \subsection{Option Definitions}
 \label{sec:option_defs}
 
-An \emph{Option} $o\in\mathcal{O}$ is a macro-action defined by the
-triple $\langle \mathcal{I}_o, \pi_o, \beta_o \rangle$: an initiation
-set, an intra-option policy, and a termination condition~\parencite{Sutton_Precup_Singh_1999}.
-In our implementation, the intra-option policy is not explicitly
-separate; instead, the low-level MAPPO policy is conditioned on the
-active option via observation augmentation (\cref{sec:onehot_aug}).
+In the dynamic shaping approach, the LLM merely influenced a hard-coded planner. In this Hierarchical Reinforcement Learning (HRL) architecture, the LLM completely replaces the planner. It selects from a finite set of explicit macro-actions, or \emph{Options}, and directly commands the low-level MAPPO agents.
 
-The option set is hard-coded from the DAG:
-\begin{equation}
-\label{eq:option_set}
-\mathcal{O} = \left\{
-\begin{array}{l}
-    \texttt{COLLECT\_WOOD},\;
-    \texttt{COLLECT\_STONE},\;
-    \texttt{CRAFT\_PICKAXE},\\
-    \texttt{MINE\_IRON},\;
-    \texttt{CRAFT\_SWORD},\;
-    \texttt{CRAFT\_ARMOR},\\
-    \texttt{BUILD\_BRIDGE},\;
-    \texttt{DEFEAT\_ENEMY},\;
-    \texttt{MINE\_GOLD},\;
-    \texttt{IDLE}
-\end{array}
-\right\}
-\end{equation}
-giving $|\mathcal{O}|=10$ discrete options.
-
-Each option has three associated properties defined in \texttt{options.py}:
+An Option $o\in\mathcal{O}$ is mathematically defined by the triple $\langle \mathcal{I}_o, \pi_o, \beta_o \rangle$: an initiation set, an intra-option policy, and a termination condition~\parencite{Sutton_Precup_Singh_1999}.
+In our framework, the option set $\mathcal{O}$ is derived directly from the dependency DAG, providing 10 discrete macro-actions as detailed in Table~\ref{tab:option_props}.
 
 \begin{table}[H]
 \centering
@@ -129,16 +95,17 @@ Each option has three associated properties defined in \texttt{options.py}:
 \texttt{CRAFT\_SWORD}   & Workbench (2) & Both  & iron $\ge 1$, sword $< 1$ \\
 \texttt{CRAFT\_ARMOR}   & Workbench (2) & Both  & iron $\ge 1$, armor $< 1$ \\
 \texttt{BUILD\_BRIDGE}  & Bridge (4)    & Both  & wood $\ge 1$, bridge $< 1$ \\
-\texttt{DEFEAT\_ENEMY}  & Enemy (5)     & Both  & bridge, sword, armor $\ge 1$ \\
-\texttt{MINE\_GOLD}     & Gold (6)      & 1     & enemy defeated, gold $< 1$ \\
+\texttt{FIGHT\_ENEMY}   & Enemy (5)     & Both  & bridge, sword, armor $\ge 1$ \\
+\texttt{COLLECT\_GOLD}  & Gold (6)      & 1     & enemy defeated, gold $< 1$ \\
 \texttt{IDLE}           & ---           & Both  & Always \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\noindent
-\textbf{Termination.}
-An option terminates when the relevant inventory slot increases:
+Rather than building 10 separate neural networks, the intra-option policy $\pi_o$ is executed by the single, shared MAPPO network, which conditions its kinetic movements based on the active option (detailed in Section~\ref{sec:onehot_aug}).
+
+Crucially, the termination condition ($\beta_o$) is not based on spatial coordinates, but on semantic success. For example, if the Commander radios the \texttt{COLLECT\_WOOD} Option to the lumberjack, that Option only terminates when the system registers an increase in the wood inventory:
+
 \begin{lstlisting}[style=code, language=Python, caption={Termination check (excerpt from \texttt{options.py}).}, label={lst:option_term}]
 def is_terminated(option, inventory):
     if option == Option.COLLECT_WOOD:
@@ -147,38 +114,26 @@ def is_terminated(option, inventory):
         return inventory[:, I_PICKAXE] >= 1
     # ... analogous for all other options
     elif option == Option.IDLE:
-        return np.zeros(n, dtype=bool)  # never terminates
+        return np.zeros(n, dtype=bool)  # IDLE never terminates naturally
 \end{lstlisting}
-
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Discrete Option Selection by the LLM}
 \label{sec:discrete_selection}
 
-The Meta-Controller is an LLM (Qwen~2.5 7B via Ollama, or a LoRA-finetuned variant)
-that receives a structured prompt and returns a JSON object specifying
-one option per agent.
+Because the Meta-Controller issues explicit, discrete commands, it does not need to continuously monitor the mathematical variance of the Critic network (unlike the Mixing Board approach). Instead, the Commander acts reactively, stepping in only when a worker completes a task or fails to make progress.
 
-\subsubsection{Trigger Conditions}
+\subsubsection{Trigger Conditions: Success and Staleness}
 
-Option selection is triggered under two conditions, evaluated per-environment:
+Option selection is triggered dynamically under two specific conditions, evaluated per-environment:
 \begin{enumerate}[nosep]
-    \item \textbf{Success}: at least one agent's active option has completed
-          (the corresponding inventory slot changed).
-    \item \textbf{Staleness}: the active option has been running for more
-          than $T_{\text{stale}}=150$ steps without completion.
+    \item \textbf{Success:} The agent successfully acquired the item (the inventory slot changed), meaning the current Option has terminated and the agent awaits a new order.
+    \item \textbf{Staleness:} The active option has been running for more than $T_{\text{stale}}=150$ steps without completion.
+    In MARL, a step $t \to t{+}1$ represents a physical movement or action in the grid. If an agent executes 150 low-level kinetic actions without satisfying its macro-objective, the system assumes the agent is stuck (e.g., trying to mine iron without a pickaxe) and forces an LLM intervention.
 \end{enumerate}
 
-\noindent
-In MARL, a \emph{step} $t \to t{+}1$ occurs when all agents execute one
-low-level action and the environment returns the next state.
-A staleness of $T_{\text{stale}}=150$ steps therefore means the agent
-has executed 150~low-level navigation or interaction commands (e.g.\
-moving in the grid, attacking) without achieving its assigned
-macro-option.
+Environments that are already awaiting an LLM response (\texttt{llm\_pending}) or are on a brief 50-step cooldown are safely excluded from triggering new queries:
 
-Environments currently awaiting an LLM response (\texttt{llm\_pending})
-or on cooldown (50~steps after the last query) are excluded:
 \begin{lstlisting}[style=code, language=Python, caption={Trigger logic in \texttt{hrl\_train\_loop.py}.}, label={lst:hrl_trigger}]
 success_mask = a0_success | a1_success
 stale_mask = option_controller.get_stale_mask(threshold=150)
@@ -188,19 +143,12 @@ ready_mask = (success_mask | stale_mask) \
 trigger_envs = np.where(ready_mask)[0]
 \end{lstlisting}
 
-\subsubsection{Prompt Structure}
+\subsubsection{Prompt Structure and Counterfactual Reflection}
 
-Just as the MAPPO agent receives a vector $\mathbf{v}_t$ representing its
-physical state (\cref{eq:hrl_obs}), the Meta-Controller receives a
-text-based JSON schema representing the \emph{semantic} state.
-\Cref{lst:hrl_prompt} shows how the Python inventory state is serialised
-into this semantic observation, while \cref{lst:reflection_prompt} shows
-the inverse: a diagnostic prompt that forces the LLM to reason about
-failures before issuing corrected actions.
+When a trigger fires, the \texttt{PromptBuilder} translates the grid-world's Python inventory state into a text-based JSON schema.
+For a standard \emph{Success} trigger, the Commander receives a Chain-of-Thought prompt detailing the current inventory and the DAG dependencies, requesting exactly one discrete Option per agent:
 
-For a normal trigger (success), the \texttt{PromptBuilder} constructs a
-Chain-of-Thought prompt:
-\begin{lstlisting}[style=llmprompt, caption={HRL prompt schema (from \texttt{prompt\_builder.py}).}, label={lst:hrl_prompt}]
+\begin{lstlisting}[style=llmprompt, caption={HRL prompt schema for successful completions (from \texttt{prompt\_builder.py}).}, label={lst:hrl_prompt}]
 """
 You are the high-level Cognitive Orchestrator for two MARL agents.
 Strict Dependency DAG: (Wood+Stone) -> Pickaxe -> Iron
@@ -213,7 +161,9 @@ Agent 1 Status: {a1_status}
 
 ### YOUR TASK:
 Assign exactly ONE discrete Option to each agent.
-Available Options: ["COLLECT_WOOD", "COLLECT_STONE", ...]
+Available Options: ["COLLECT_WOOD", "COLLECT_STONE", "CRAFT_PICKAXE",
+    "MINE_IRON", "CRAFT_SWORD", "CRAFT_ARMOR", "BUILD_BRIDGE",
+    "FIGHT_ENEMY", "COLLECT_GOLD", "IDLE"]
 
 Respond ONLY with valid JSON:
 {
@@ -224,14 +174,13 @@ Respond ONLY with valid JSON:
 """
 \end{lstlisting}
 
-For a staleness trigger, a \emph{counterfactual reflection prompt} is
-used instead, forcing the LLM to diagnose \textbf{why} the previous
-assignment failed before issuing new options:
+However, if a \emph{Staleness} trigger fires, the LLM receives a \emph{counterfactual reflection prompt}.
+Rather than simply asking for a new assignment, this prompt forces the LLM to diagnose \textbf{why} its previous assignment failed before issuing new options:
+
 \begin{lstlisting}[style=llmprompt, caption={Reflection prompt for stale options (from \texttt{prompt\_builder.py}).}, label={lst:reflection_prompt}]
 """
 ### REFLECTION REQUIRED:
-Agent 0 was assigned "{a0_option}" and Agent 1
-was assigned "{a1_option}".
+Agent 0 was assigned "{a0_option}" and Agent 1 was assigned "{a1_option}".
 After {stale_steps} steps, NEITHER has succeeded.
 
 ### YOUR TASK:
@@ -250,18 +199,9 @@ Respond ONLY with JSON:
 
 \subsubsection{Batched Queries with Deduplication}
 
-Conceptually, to train agents efficiently, MARL algorithms run
-$N$~parallel copies of the environment simultaneously---$N=128$
-identical game instances in our case.
-Multiple of these parallel environments may trigger an LLM query at
-the same time.
-If parallel roll-out environments~\parencite{Albrecht_Christianos_Schäfer_2024} (e.g.\ Environment~\#12 and Environment~\#85) both have the exact same
-inventory state (e.g.\ both agents have 1~Wood and 0~Pickaxes),
-querying the LLM twice with identical prompts wastes compute.
-The deduplication mechanism groups these parallel environments by their
-unique inventory vector, sends one prompt per unique state, and
-broadcasts the single response back to all environments sharing that
-state:
+Training MARL requires running 128 parallel copies of the grid-world simultaneously. If 40 parallel environments all trigger the LLM at the same time because the lumberjack just collected wood, querying the Commander 40 separate times for the exact same inventory state would waste massive computational resources.
+
+To optimize throughput, the system employs a deduplication mechanism. It groups the parallel environments by their unique inventory vectors, sends only one prompt per unique state to the LLM, and broadcasts the single response back to all environments sharing that exact state:
 
 \begin{lstlisting}[style=code, language=Python, caption={Inventory deduplication in \texttt{hrl\_train\_loop.py}.}, label={lst:dedup}]
 inv_batch = inv_next[trigger_envs].astype(int)
@@ -274,50 +214,52 @@ unique_to_envs = [
 ]
 \end{lstlisting}
 
-All unique prompts are dispatched as a batch to the \texttt{LLMBridge}
-via \texttt{query\_batch\_async}, and responses are applied asynchronously.
-
 \subsubsection{Environment Freezing During Pending Queries}
 
-\textbf{State drift} (also known as \emph{action-observation latency} or
-\emph{latency-induced non-stationarity})
-occurs because querying an LLM takes time---typically seconds.
-If the RL environment is not paused during this latency, the agent
-continues executing random or stale-policy actions; by the time the LLM
-responds, the environment state may have diverged significantly from the
-state the LLM observed~\parencite{Katsikopoulos_Engelbrecht_2003}.
+A critical challenge in asynchronous LLM-agent frameworks is \textbf{state drift} (latency-induced non-stationarity)~\parencite{Katsikopoulos_Engelbrecht_2003}.
+Querying the Commander takes several seconds. If the RL environment continues to run while awaiting the radio transmission, the lumberjack would execute random or stale actions. By the time the Commander's new Option arrives, the agent might have wandered to the opposite side of the map, rendering the LLM's decision irrelevant to the new physical reality.
 This problem is well-documented in LLM-agent systems: for instance,
 Ghost in the Minecraft~\parencite{Zhu_etal_2023}
 relies on pausing the simulation while the LLM reasons about its
 next action.
 
-In our implementation, while an environment is awaiting an LLM response,
-it is frozen to prevent this drift:
+To prevent this drift, any environment awaiting an LLM response is physically frozen.
+
 \begin{lstlisting}[style=code, language=Python, caption={Environment freezing for pending queries.}, label={lst:env_freeze}]
 pending_mask = option_controller.llm_pending.copy()
 if pending_mask.any():
-    actions_np[pending_mask] = 4  # NO-OP
+    actions_np[pending_mask] = 4  # Execute NO-OP
     saved_pos = vec_env.pos[pending_mask].copy()
     saved_inv = vec_env.inventory[pending_mask].copy()
-    # ... after env.step(), restore saved state:
+    saved_enemy_pos = vec_env.enemy_pos[pending_mask].copy()
+    saved_enemy_hp = vec_env.enemy_health[pending_mask].copy()
+    # RNN hidden state is also preserved (omitted for brevity)
+    
+    # ... after env.step(), restore saved physical state:
     vec_env.pos[pending_mask] = saved_pos
     vec_env.inventory[pending_mask] = saved_inv
-    vec_env.step_counts[pending_mask] -= 1  # pause timer
+    vec_env.enemy_pos[pending_mask] = saved_enemy_pos
+    vec_env.enemy_health[pending_mask] = saved_enemy_hp
+    vec_env.step_counts[pending_mask] -= 1  # Pause timeout clock
 \end{lstlisting}
 
-This ensures that the LLM's decision is applied to the exact state
-it observed, not a state that has drifted during inference latency.
+This ensures that the Commander's decision is applied to the exact physical state it observed, maintaining strict temporal alignment between strategy and execution.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{One-Hot Observation Augmentation}
 \label{sec:onehot_aug}
 
-The active option is communicated to the low-level MAPPO policy via
-a one-hot vector appended to the agent's observation.
+Once the Commander has selected a discrete Option, that command must be physically transmitted to the worker. In the MAPPO framework, this is achieved by appending a one-hot vector directly into the agent's localized observation space, effectively acting as a ``radio receiver'' for the Commander's orders.
+
+\subsubsection{Dynamic Enemy State}
+
+Unlike the Mixing Board approach, which used the base \texttt{BatchCraftingEnvV2} environment, the HRL architecture operates on a custom extended environment (\texttt{HRLCraftingEnv}) that introduces a \emph{dynamic enemy}. In this variant, the enemy is no longer a static zone interaction. Instead, the enemy tracks the agents' positions and actively chases any agent that crosses the river, creating a real-time pursuit challenge. Crucially, the combat system rewards coordination: if both agents attack the enemy simultaneously, they deal 50~HP of damage per step, compared to only 10~HP for a solo attack. This 5$\times$ coordination multiplier makes the \texttt{FIGHT\_ENEMY} option inherently cooperative.
+
+To give the agents spatial awareness of this dynamic threat, the three dimensions that were occupied by the goal embedding in the Mixing Board approach (indices 2--4) are repurposed to carry the enemy's real-time state: its $(x, y)$ position and its normalized health $h/100$.
 
 \subsubsection{Observation Construction}
 
-The vector input to the MAPPO network in HRL mode is:
+The vector input to the MAPPO network in this HRL mode is expanded to 25 dimensions:
 \begin{equation}
 \label{eq:hrl_obs}
     \mathbf{v}_t^{(i)}
@@ -325,7 +267,7 @@ The vector input to the MAPPO network in HRL mode is:
     \left[
         \underbrace{\mathbf{p}^{(i)}}_{\mathbb{R}^2}
         \;\Big\|\;
-        \underbrace{\mathbf{0}}_{\mathbb{R}^3\text{ (pad)}}
+        \underbrace{\mathbf{d}^{\text{enemy}}}_{\mathbb{R}^3}
         \;\Big\|\;
         \underbrace{\mathbf{x}}_{\mathbb{R}^{10}\text{ (inv)}}
         \;\Big\|\;
@@ -333,22 +275,19 @@ The vector input to the MAPPO network in HRL mode is:
     \right]
     \;\in\; \mathbb{R}^{25}
 \end{equation}
-where $\mathbf{p}^{(i)}$ is the agent's position,
-$\mathbf{x}$ is the inventory vector, and
-$\mathbf{e}_{o}\in\{0,1\}^{|\mathcal{O}|}$ is the one-hot encoding
-of the active option.
-The $\mathbf{0} \in \mathbb{R}^3$ padding exists to maintain a unified
-neural-network architecture with a fixed input dimension of
-$\mathbb{R}^{25}$ across the entire thesis.
-In \cref{ch:dynamic_implementation}, indices~2 through~4 were occupied
-by a 3-dimensional continuous Goal Embedding.
-Because the HRL approach replaces continuous goals with a
-10-dimensional one-hot vector appended at the end of the state, those
-3~dimensions are zero-padded to prevent architecture mismatch when
-loading or comparing models between the two approaches.
+where $\mathbf{p}^{(i)}$ is the agent's spatial position, $\mathbf{d}^{\text{enemy}} = (x_{\text{enemy}},\, y_{\text{enemy}},\, h_{\text{enemy}}/100)$ is the dynamic enemy state vector, $\mathbf{x}$ is the shared inventory vector, and $\mathbf{e}_{o}\in\{0,1\}^{10}$ is the one-hot encoding of the active option.
+
+This design maintains the same $\mathbb{R}^{25}$ dimensionality as the Mixing Board approach, allowing the identical neural network architecture to be used across both experiments. The three dimensions previously occupied by the continuous goal embedding are simply repurposed to carry the enemy state, preventing any architecture mismatch when loading or comparing models between the two approaches.
 
 \begin{lstlisting}[style=code, language=Python, caption={Observation construction in \texttt{hrl\_train\_loop.py}.}, label={lst:hrl_obs}]
-goal_emb = np.zeros((n_envs, 2, 3), dtype=np.float32)
+dynamic_enemy_state = np.column_stack((
+    vec_env.enemy_pos[:, 0],
+    vec_env.enemy_pos[:, 1],
+    vec_env.enemy_health / 100.0
+))
+goal_emb = np.stack(
+    [dynamic_enemy_state, dynamic_enemy_state], axis=1
+)
 inv_repeat = np.stack([
     all_obs[:, 0, 4:4+NUM_ITEMS],
     all_obs[:, 0, 4:4+NUM_ITEMS]
@@ -361,7 +300,7 @@ vec_input = np.concatenate(
 )
 \end{lstlisting}
 
-\subsubsection{One-Hot State Augmentation}
+\subsubsection{One-Hot State Augmentation vs. Dense Embeddings}
 
 There is a fundamental mathematical distinction in representation learning between a sparse one-hot encoding and a dense continuous embedding. The \texttt{OptionController} maintains per-environment, per-agent option indices and produces a categorical one-hot representation via vectorised indexing:
 
@@ -379,25 +318,20 @@ def get_option_embeddings(self):
     return embs
 \end{lstlisting}
 
-Although the codebase refers to these casually as "embeddings" (\texttt{embs}), they are mathematically sparse one-hot vectors $\mathbf{e}_o \in \{0, 1\}^{|\mathcal{O}|}$. True embeddings, by contrast, are dense, continuous vectors. 
+In deep reinforcement learning, appending a one-hot vector $\mathbf{e}_o$ to the agent's physical observation state $s_t$ effectively acts as an index lookup. 
+When the augmented state $s_t' = [s_t \parallel \mathbf{e}_{o}]$ is passed through the first linear layer of the MAPPO network, the matrix multiplication mathematically isolates a specific set of weights corresponding to the active option.
 
-However, in deep reinforcement learning, appending a one-hot vector to the agent's observation state $s_t$ effectively acts as an index lookup. When the augmented state $s_t' = [s_t \parallel \mathbf{e}_{o}]$ is passed through the first linear layer of the MAPPO network, the matrix multiplication mathematically isolates a specific set of weights corresponding to the active option. 
-
-This mechanism allows the first layer of the network to implicitly function as an embedding layer, mapping the sparse one-hot condition into a dense representation space. Ultimately, this one-hot conditioning allows the single MAPPO network to learn \emph{option-conditional behaviour} without requiring separate policy networks for each option, as the policy $\pi_\theta(a \mid s, o)$ dynamically specializes its internal activations based on the active one-hot "switch".
+This mechanism allows the single MAPPO network to learn \emph{option-conditional behaviour}. 
+We do not need to train 10 separate policy networks for 10 separate options; the singular policy $\pi_\theta(a \mid s, o)$ dynamically specializes its internal activations based on which one-hot "switch" the Commander has flipped.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Bipartite Reward Structure}
 \label{sec:bipartite_reward}
 
-The HRL approach uses a composite reward with two distinct components:
-a \textbf{sparse} environment reward and a \textbf{dense} intrinsic
-reward. This bipartite structure enables learning from both the
-environment's ground-truth signal and the Meta-Controller's guidance.
+In standard RL, the environment reward is the ground truth. However, in our sparse environment, relying solely on this is analogous to a university student only receiving feedback on graduation day (the diploma). To ensure the agents learn the day-to-day behaviors required to achieve that diploma, the HRL approach uses a \emph{bipartite} (two-part) composite reward: a sparse environment reward and a dense intrinsic reward.
 
 \subsubsection{Environment Reward (Sparse)}
-The environment reward $r_t^{\text{env}}$ is the unchanged signal from
-\texttt{BatchCraftingEnvV2}: a step penalty of $-0.01$ plus milestone
-bonuses upon successful interactions:
+The environment reward $r_t^{\text{env}}$ is the true, unmodified signal from the environment. It consists of a constant time-step penalty of $-0.01$ to encourage speed, plus massive milestone bonuses upon successfully completing a physical subtask:
 
 \begin{table}[H]
 \centering
@@ -423,25 +357,10 @@ Mine Gold (win)   & $+15.0$ \\
 \subsubsection{Intrinsic Reward (Dense)}
 \label{sec:intrinsic_reward}
 
-Conceptually, the extrinsic (environment) reward is the ground truth---a
-sparse signal analogous to receiving a diploma at the end of a four-year
-degree.
-It is the ultimate goal, but it occurs so rarely that it is difficult to
-learn day-to-day behaviours from it alone.
-The intrinsic (shaping) reward is a synthetic ``breadcrumb trail''
-generated internally by the architecture to keep the agent motivated---a
-dense signal analogous to the feeling of progress when finishing a
-single textbook chapter.
+The intrinsic (shaping) reward is a synthetic ``breadcrumb trail'' generated internally by the architecture to keep the agent motivated toward the Commander's assigned target. 
+It consists of two sub-components: a continuous distance-based shaping mechanism, and a discrete option success bonus.
 
-The intrinsic reward provides a dense shaping signal that guides agents
-toward the target zone of their currently active option. This bipartite formulation---where a meta-controller sets discrete goals and a low-level controller optimizes an intrinsic reward to achieve them---is a foundational structure in Deep Hierarchical Reinforcement Learning~\parencite{Kulkarni_Narasimhan_Saeedi_Tenenbaum_2016}. It consists of
-two components:
-
-\paragraph{Distance-based shaping.}
-For each agent, the potential-based shaping reward toward the active
-option's target zone is computed identically to the PBRS framework~\parencite{Ng_Harada_Russell_1999}
-in~\cref{sec:pbrs}, but applied to the option's target rather than
-the planner's target:
+First, the continuous distance-based shaping reward toward the active option's target zone is computed identically to the PBRS framework~\parencite{Ng_Harada_Russell_1999} established in Section~\ref{subsec:pbrs}, but applied to the option's target rather than the planner's target:
 \begin{equation}
 \label{eq:hrl_shaping}
     r_t^{\text{shape},(i)}
@@ -451,17 +370,11 @@ the planner's target:
     \lambda_{\text{intr}}
     \bigl(\gamma\,\Phi^{(i)}(s_{t+1}, z_o) - \Phi^{(i)}(s_t, z_o)\bigr)
 \end{equation}
-where $z_o$ is the target zone of option~$o$
-(\cref{tab:option_props}), $\Phi$ is the same potential function from
-\cref{eq:potential}, and $\lambda_{\text{intr}} = 0.05$.
+where $z_o$ is the target zone of option~$o$ (\cref{tab:option_props}), $\Phi$ is the potential function, and $\lambda_{\text{intr}} = 0.05$.
 
 This formulation is mathematically constructed to guarantee policy invariance while ensuring multi-agent coordination stability. The canonical difference form $\gamma\,\Phi(s_{t+1}) - \Phi(s_t)$ prevents the agent from exploiting the dense reward signal. Without the discount factor $\gamma$, an agent could theoretically accumulate infinite positive reward by stepping back and forth between two adjacent states. By decaying the future potential, any such cycle yields a net negative shaping reward~\parencite{Ng_Harada_Russell_1999}.
 
 The indicator function $\mathds{1}_{\{o^{(i)} \neq \texttt{IDLE}\}}$ serves as a critical coordination mask. In cooperative tasks, an agent assigned the \texttt{IDLE} option is intentionally waiting for its partner to satisfy a DAG dependency. If shaping rewards were applied during this state, the agent's policy gradient would be erroneously penalized for remaining stationary. The mask zeroes out the shaping gradient entirely, ensuring the agent learns to safely wait without introducing non-stationary noise into the value network.
-
-Finally, $\lambda_{\text{intr}}$ acts as a scaling constant to ensure the dense surrogate gradient does not overshadow the sparse environmental milestones. 
-
-The vectorised implementation safely handles the \texttt{IDLE} mask and computes the potentials across all parallel environments simultaneously:
 
 \begin{lstlisting}[style=code, language=Python, caption={Per-agent intrinsic shaping in \texttt{hrl\_train\_loop.py}.}, label={lst:hrl_intrinsic}]
 z0 = get_option_target_zone(a0_opt)
@@ -485,9 +398,7 @@ intrinsic_r[:, 0] = np.where(
 )
 \end{lstlisting}
 
-\paragraph{Option success bonus.}
-When an agent completes its active option (the relevant inventory slot
-increases), it receives a bonus of $+1.0$:
+Second, when an agent completes its active option (the relevant inventory slot increases), the distance shaping is overridden, and it receives a flat intrinsic success bonus of $+1.0$:
 \begin{equation}
 \label{eq:success_bonus}
     r_t^{\text{intr},(i)}
@@ -498,8 +409,7 @@ increases), it receives a bonus of $+1.0$:
     \end{cases}
 \end{equation}
 
-Success is detected by comparing the inventory before and after the
-environment step:
+Success is detected by comparing the inventory before and after the environment step:
 \begin{lstlisting}[style=code, language=Python, caption={Option success detection in \texttt{hrl\_train\_loop.py}.}, label={lst:success_check}]
 def check_option_success(opt_strs, inv_prev, inv_next):
     for i in range(n_envs):
@@ -514,8 +424,7 @@ def check_option_success(opt_strs, inv_prev, inv_next):
 
 \subsubsection{Composite Reward}
 
-The total reward signal is a weighted sum of the environment and
-intrinsic components:
+The total reward signal fed to the PPO algorithm is a weighted sum of the environment diploma and the intrinsic breadcrumbs:
 \begin{equation}
 \label{eq:hrl_total_reward}
 \boxed{
@@ -524,46 +433,39 @@ intrinsic components:
     + \alpha_{\text{intr}} \cdot r_t^{\text{intr}}
 }
 \end{equation}
-with $\alpha_{\text{intr}} = 0.5$. This coefficient was chosen to
-balance the dense intrinsic signal against the sparse environment
-milestones; too large a value causes the policy to over-optimise
-for intrinsic shaping at the expense of actual task completion.
+with $\alpha_{\text{intr}} = 0.5$. This coefficient was chosen to balance the dense intrinsic signal against the sparse environment milestones; too large a value causes the policy to over-optimise for intrinsic shaping at the expense of actual task completion.
 
 \begin{lstlisting}[style=code, language=Python, caption={Composite reward in \texttt{hrl\_train\_loop.py}.}, label={lst:composite_reward}]
 total_r = env_rewards + 0.5 * intrinsic_r
 \end{lstlisting}
 
-Note the key difference from the Mixing Board approach: here, no
-$\lambda$ decay schedule is applied. The intrinsic coefficient
-remains fixed because the LLM continuously updates the \emph{direction}
-(which option to pursue) rather than the \emph{magnitude} of shaping.
+Note the key difference from the Mixing Board approach: here, no $\lambda$ decay schedule is applied. The intrinsic coefficient remains fixed because the LLM continuously updates the \emph{direction} (which option to pursue) rather than the magnitude of shaping.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Mathematical Impact on the MAPPO Objective}
 \label{sec:hrl_math_impact}
 
-Unlike the Dynamic approach (\cref{sec:dyn_math_impact}), which acts purely as an environment architect through the reward signal, the Meta-Controller strikes the MAPPO equations in \emph{two places simultaneously}: the observation space (Actor) and the reward space (Critic).
+Unlike the Dynamic approach, which acted purely as an environment architect through the reward signal, the Meta-Controller strikes the MAPPO equations in \emph{two places simultaneously}: the observation space (Actor) and the reward space (Critic).
 
-\textbf{On the Actor side,} the one-hot option conditioning (\cref{sec:onehot_aug}) transforms the policy from $\pi_\theta(a_t \vert{} s_t)$ into a conditional distribution $\pi_\theta(a_t \vert{} s_t, o_t)$. 
-The Actor's goal in PPO is to maximize the probability of good actions, but it uses a ``clipped objective'' to ensure the network does not update its weights too aggressively in a single step, which would destroy previously learned behaviours. 
-By injecting the discrete option $o_t$, the probability ratio $r_t(\theta)$ between the new and old policy becomes option-aware, and the clipped surrogate objective updates accordingly:
+On the Actor side, the one-hot option conditioning transforms the decentralized policy of agent $i$ from $\pi_\theta(a_t^{(i)} \vert{} s_t^{(i)})$ into an option-conditional distribution $\pi_\theta(a_t^{(i)} \vert{} s_t^{(i)}, o_t^{(i)})$. 
+The Actor's goal in PPO is to maximize the probability of good actions, but it uses a ``clipped objective'' to ensure the network does not update its weights too aggressively in a single step. 
+By injecting the discrete option $o_t^{(i)}$, the probability ratio $r_t^{(i)}(\theta)$ between the new and old policy becomes option-aware:
 \begin{equation}
-    L^{\text{CLIP}}(\theta) = \mathbb{E} \left[ \min\left( r_t(\theta) A_t,\; \text{clip}\bigl(r_t(\theta), 1 - \epsilon, 1 + \epsilon\bigr) A_t \right) \right]
+    r_t^{(i)}(\theta) = \frac{\pi_\theta(a_t^{(i)} \vert{} s_t^{(i)}, o_t^{(i)})}{\pi_{\theta_{\text{old}}}(a_t^{(i)} \vert{} s_t^{(i)}, o_t^{(i)})}
 \end{equation}
-where the conditional probability ratio is defined as:
+and the clipped surrogate objective updates accordingly:
 \begin{equation}
-    r_t(\theta) = \frac{\pi_\theta(a_t \vert{} s_t, o_t)}{\pi_{\theta_{\text{old}}}(a_t \vert{} s_t, o_t)}
+    L^{\text{CLIP}}(\theta) = \mathbb{E} \left[ \min\left( r_t^{(i)}(\theta) A_t^{(i)},\; \text{clip}\bigl(r_t^{(i)}(\theta), 1 - \epsilon, 1 + \epsilon\bigr) A_t^{(i)} \right) \right]
 \end{equation}
 
-\textbf{On the Critic side,} learning is driven by the Advantage function ($A_t$). Advantage measures how much better a chosen action was compared to the baseline expectation. This baseline is provided by the Value function $V_\phi$, which estimates the expected discounted return from a given state.
-In this HRL architecture, the bipartite reward (\cref{eq:hrl_total_reward}) feeds into an option-conditional Advantage:
+On the Critic side, learning is driven by the Advantage function ($A_t^{(i)}$). Advantage measures how much better a chosen action was compared to the baseline expectation. This baseline is provided by the Centralized Value function $V_\phi$. 
+To maintain the CTDE paradigm established in Section~\ref{subsec:ctde}, the Critic evaluates the \emph{global} environment state $\mathbf{s}_t$. In this HRL architecture, it also receives the joint options of all agents $\mathbf{o}_t = (o_t^{(0)}, \dots, o_t^{(N)})$. The bipartite reward feeds into this option-conditional Advantage:
 \begin{equation}
-    A_t = r_t^{\text{total}} + \gamma V_\phi(s_{t+1}, o_{t+1}) - V_\phi(s_t, o_t)
+    A_t^{(i)} = r_t^{\text{total}, (i)} + \gamma V_\phi(\mathbf{s}_{t+1}, \mathbf{o}_{t+1}) - V_\phi(\mathbf{s}_t, \mathbf{o}_t)
 \end{equation}
-where the Value function $V_\phi$ now receives the augmented state $s_t' = [s_t \parallel \mathbf{e}_{o_t}]$. This allows the Critic to predict entirely different baseline expected returns depending on which option is actively guiding the agent.
+Because the Value function $V_\phi$ now receives the globally augmented state $\mathbf{s}_t' = [\mathbf{s}_t \parallel \mathbf{e}_{\mathbf{o}_t}]$, the Critic learns to predict entirely different baseline expected returns depending on the combination of options actively guiding the agents.
 
-The consequence is a tightly coupled learning loop: the Actor gradient explicitly links the physical state $s_t$, the LLM's command $o_t$, and the intrinsic success of that command through $A_t$. The network learns distinct sub-policies for each option---not through separate networks, but through a single policy that conditions its behaviour on which ``switch'' the LLM has flipped.
-
+The consequence is a tightly coupled learning loop: the Actor gradient explicitly links the local physical state $s_t^{(i)}$, the Commander's specific order $o_t^{(i)}$, and the intrinsic success of that command through $A_t^{(i)}$. The network learns distinct sub-policies for each option, not through separate networks, but through a single policy that conditions its behavior on which ``switch'' the LLM has flipped.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Staleness Detection and Counterfactual Reflection}
@@ -571,10 +473,7 @@ The consequence is a tightly coupled learning loop: the Actor gradient explicitl
 
 \subsubsection{Staleness Detection}
 
-The \texttt{OptionController} tracks the \emph{age} (number of steps)
-of each active option per environment. If an option exceeds
-$T_{\text{stale}}=150$ steps without termination, the environment
-is marked as stale and the LLM is re-queried:
+The \texttt{OptionController} acts as a watchdog, tracking the \emph{age} (number of steps) of each active option per environment. If an option exceeds $T_{\text{stale}}=150$ steps without termination, the environment is marked as stale and the Commander is re-queried:
 
 \begin{lstlisting}[style=code, language=Python, caption={Staleness detection in \texttt{option\_controller.py}.}, label={lst:stale_detect}]
 def get_stale_mask(self, threshold=150):
@@ -585,32 +484,19 @@ def get_stale_mask(self, threshold=150):
     return age_exceeded & not_idle
 \end{lstlisting}
 
-Crucially, \texttt{IDLE} options are excluded from staleness triggers,
-because intentional waiting (e.g.\ Agent~0 waiting while Agent~1
-collects stone) is a valid strategy.
+Crucially, \texttt{IDLE} options are excluded from staleness triggers, because intentional waiting (e.g., the lumberjack waiting while the miner collects stone) is a valid strategy.
 
 \subsubsection{Counterfactual Reflection}
 
-When a staleness trigger fires, the LLM receives a reflection prompt
-instead of the standard assignment prompt. This forces the LLM to
-reason about \emph{why} the previous option failed—typically a missing
-DAG precondition—before proposing a corrected assignment. Prompt in question is shown in \cref{lst:reflection_prompt}.
+When a staleness trigger fires, the LLM receives a reflection prompt instead of the standard assignment prompt. This forces the LLM to reason about \emph{why} the previous option failed—typically a missing DAG precondition—before proposing a corrected assignment. The prompt in question is shown in \cref{lst:reflection_prompt}.
 
-
-
-This design addresses the observed failure mode where the LLM
-repeatedly assigned options whose preconditions were not met (e.g.\
-\texttt{MINE\_IRON} without a pickaxe). The reflection mechanism
-leverages the LLM's zero-shot reasoning to debug its own prior
-hallucination. This synergizes reasoning and acting, a paradigm demonstrated by ReAct~\parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023}, and extends it into the realm of self-reflection and counterfactual critique~\parencite{Shinn_Cassano_Berman_Gopinath_Narasimhan_Yao_2023}.
+This design addresses the observed failure mode where the LLM repeatedly assigned options whose preconditions were not met (e.g., \texttt{MINE\_IRON} without a pickaxe). The reflection mechanism leverages the LLM's zero-shot reasoning to debug its own prior hallucination. This synergizes reasoning and acting, a paradigm demonstrated by ReAct~\parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023}, and extends it into the realm of self-reflection and counterfactual critique~\parencite{Shinn_Cassano_Berman_Gopinath_Narasimhan_Yao_2023}.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Episode Lifecycle and Option Reset}
 \label{sec:episode_lifecycle}
 
-When an environment reaches a terminal state (gold mined, game over,
-or truncation at 800 steps), the \texttt{OptionController} resets
-that environment to its initial options:
+When an environment reaches a terminal state (gold mined, game over, or truncation at 800 steps), the \texttt{OptionController} hard-resets that environment to its initial options:
 
 \begin{lstlisting}[style=code, language=Python, caption={Episode reset in \texttt{option\_controller.py}.}, label={lst:option_reset}]
 def reset_options(self, env_indices):
@@ -621,25 +507,21 @@ def reset_options(self, env_indices):
     self.option_age[env_indices] = 0
 \end{lstlisting}
 
-The initial options (\texttt{COLLECT\_WOOD} for Agent~0,
-\texttt{COLLECT\_STONE} for Agent~1) correspond to the first layer
-of the DAG, ensuring agents begin collecting resources immediately.
+The initial options (\texttt{COLLECT\_WOOD} for the lumberjack, \texttt{COLLECT\_STONE} for the miner) correspond to the first layer of the DAG, ensuring agents begin collecting resources immediately upon episode start.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{PPO Integration: Target KL Guard}
 \label{sec:target_kl}
 
-The HRL training loop adds a \emph{target KL divergence} early-stopping
-mechanism, a standard stability guardrail in Proximal Policy Optimization~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}. During each PPO epoch, the approximate KL divergence
-between the old and new policies is monitored:
+The HRL training loop adds a \emph{target KL divergence} early-stopping mechanism, a standard stability guardrail in Proximal Policy Optimization (as detailed in Section~\ref{subsec:kl_divergence})~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}.
+During each PPO epoch, the approximate KL divergence between the old and new policies is monitored:
 \begin{equation}
 \label{eq:approx_kl}
     D_{\text{KL}}^{\text{approx}}
     = \mathbb{E}\bigl[-\log \pi_{\theta_{\text{new}}}(a|s)
       + \log \pi_{\theta_{\text{old}}}(a|s)\bigr]
 \end{equation}
-If $D_{\text{KL}}^{\text{approx}} > 0.015$, the remaining PPO
-epochs are aborted for that update:
+If $D_{\text{KL}}^{\text{approx}} > 0.015$, the remaining PPO epochs are aborted for that update:
 
 \begin{lstlisting}[style=code, language=Python, caption={Target KL guard in \texttt{hrl\_train\_loop.py}.}, label={lst:target_kl}]
 with torch.no_grad():
@@ -650,8 +532,7 @@ if approx_kl > target_kl:
     break
 \end{lstlisting}
 
-This guard prevents destructive policy updates when the intrinsic
-reward signal changes abruptly after an LLM option reassignment.
+This guard prevents destructive policy updates when the intrinsic reward signal changes abruptly after an LLM option reassignment.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Comparison with the Mixing Board Approach}
@@ -664,7 +545,7 @@ reward signal changes abruptly after an LLM option reassignment.
 \small
 \begin{tabular}{@{}p{3.5cm}p{5cm}p{5cm}@{}}
 \toprule
-\textbf{Aspect} & \textbf{Mixing Board (Ch.~4)} & \textbf{Meta-Controller (Ch.~5)} \\
+\textbf{Aspect} & \textbf{Mixing Board (Soft Integration)} & \textbf{Meta-Controller (Hard Integration)} \\
 \midrule
 LLM output space &
     Continuous logits $\in \mathbb{R}^7$ &
@@ -679,7 +560,7 @@ Query granularity &
     Global (once per trigger) &
     Per-environment (batched) \\
 Observation augmentation &
-    Goal embedding $\in \mathbb{R}^3$ &
+    None (blind to LLM) &
     One-hot option $\in \{0,1\}^{10}$ \\
 Reward structure &
     PBRS with $\lambda$ decay &
@@ -694,19 +575,14 @@ Safety mechanism &
 \end{tabular}
 \end{table}
 
-
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Summary}
 \label{sec:hrl_summary}
 
-The Meta-Controller approach creates a clean separation of concerns:
-the LLM reasons about \emph{what to do} (strategic option selection),
-while the MAPPO policy learns \emph{how to do it} (low-level
-navigation and interaction). The one-hot conditioning allows a single
-network to exhibit option-dependent behaviour, and the bipartite
-reward structure ensures that the policy receives both a consistent
-dense gradient from intrinsic shaping and a grounding signal from
-the true environment rewards.
+The Meta-Controller approach creates a clean separation of concerns: the Commander reasons about \emph{what to do} (strategic option selection via one-hot augmentation), while the MAPPO policy learns \emph{how to do it} (low-level navigation and interaction). 
+The one-hot conditioning allows a single network to exhibit option-dependent behaviour, and the bipartite reward structure ensures that the policy receives both a consistent dense gradient from intrinsic shaping and a grounding signal from the true environment rewards.
+
+Furthermore, this architecture effectively acts as an automated curriculum generator (contrasting with the manual Curriculum Learning discussed in Section~\ref{sec:curriculum_learning}). While traditional curriculum learning requires a human engineer to laboriously design and schedule environments of increasing difficulty, our LLM Meta-Controller dynamically orchestrates a skill curriculum on the fly, seamlessly guiding the agents from simple resource gathering to complex combat coordination within a single, static environment.
 
 \begin{table}[H]
 \centering
