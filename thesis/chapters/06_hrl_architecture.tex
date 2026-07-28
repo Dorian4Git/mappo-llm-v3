@@ -576,6 +576,94 @@ Safety mechanism &
 \end{table}
 
 % ──────────────────────────────────────────────────────────────────────────
+\subsection{QLoRA Fine-Tuning Pipeline}
+\label{sec:qlora_pipeline}
+
+While Section~\ref{sec:qlora} established the theoretical foundations of Quantized Low-Rank Adaptation, this section details the complete practical pipeline used to produce the specialized Commander adapter deployed throughout the HRL experiments evaluated in Chapter~\ref{ch:experiments}. As will be demonstrated, a surprisingly brief fine-tuning process on a modest synthetic dataset is sufficient to dramatically improve the Meta-Controller's decision quality.
+
+\subsubsection{Oracle Dataset Generation}
+
+While the training data was ultimately generated synthetically to ensure exhaustive coverage of the environment's crafting DAG, the foundational state distributions were originally seeded by observations from early, successful exploratory RL trajectories. By grounding the generation process in these empirically observed states, a deterministic oracle function was developed to systematically enumerate all meaningful inventory combinations (\texttt{wood}, \texttt{stone}, \texttt{pickaxe}, \texttt{iron}, \texttt{sword}, \texttt{armor}, \texttt{bridge}, \texttt{enemy}, \texttt{gold}) and apply hardcoded DAG logic to determine the optimal \texttt{(agent\_0\_option, agent\_1\_option)} assignment for each state. This oracle encodes the optimal policy: for example, ``if no pickaxe and wood $\ge 1$ and stone $\ge 1$, then both agents should \texttt{CRAFT\_PICKAXE}.''
+
+To ensure balanced training signal across all phases of the DAG progression, the raw states are grouped into six progression phases (early collection, pickaxe crafting, iron mining, gear crafting, bridge building, and endgame combat). Each phase is upsampled to contribute an equal share of the final dataset, preventing the model from over-indexing on trivially simple early-game states.
+
+Two augmentation techniques are applied to improve generalization:
+
+\begin{enumerate}[nosep]
+    \item \textbf{Stochastic Oracle Augmentation (SOA):} Drawing inspiration from Input Dropout and state perturbation techniques in robust RL (e.g., Domain Randomization), we introduce SOA to prevent overfitting to perfect state representations. With a 10\% probability, a randomly selected inventory field is zeroed before querying the oracle. For example, if the true state is \texttt{[wood: 1, stone: 1, pickaxe: 0]}, SOA might perturb it to \texttt{[wood: 0, stone: 1, pickaxe: 0]}. This teaches the model to produce reasonable, safe outputs even when the prompt contains slightly degraded or inconsistent state information---a common occurrence during live RL rollouts where discrete observations may briefly lag behind true kinetic state transitions.
+
+    \item \textbf{Reflection Augmentation (40\% injection rate):} A synthetic hallucinated failure is prepended to the prompt: ``\emph{You previously chose [Incorrect Option]. It failed after [N] steps.}'' The model must then output the correct option despite this misleading prior. This augmentation was an intentional design decision to teach the Commander to recover from logical errors. However, as will be revealed in Section~\ref{sec:reflection_ablation}, this same training signal inadvertently caused the model to develop a strong prior that \emph{any} reported failure implies a logical mistake, even when the failure was purely kinetic (e.g., the agent simply had not walked far enough yet). This foreshadows the central ``Reflection Contradiction'' finding of the experimental evaluation.
+\end{enumerate}
+
+The final raw dataset contains \textbf{1,200 balanced examples} spanning all DAG phases and agent status combinations.
+
+\subsubsection{ChatML Formatting and Dataset Splits}
+
+The raw prompt and completion pairs are converted into Qwen's native ChatML format~\parencite{Yang_Li_Yang_Zhang_Hui_Zheng_Yu_Gao_Huang_Lv_et_al._2025}, structuring each example as a three-turn conversation (\texttt{system}, \texttt{user}, \texttt{assistant}). The system message contains the Commander's role description and DAG rules, the user message provides the current inventory state (and, for reflection examples, the failure context), and the assistant message contains the expected JSON output.
+
+After a 90/10 train--validation split and a $2\times$ training set duplication (to ensure sufficient gradient updates given the small dataset), the final corpus comprises \textbf{2,160 training examples} and \textbf{120 validation examples}.
+
+\subsubsection{Training Configuration}
+
+Fine-tuning was performed on the local workstation's NVIDIA RTX 5070 GPU (12GB VRAM), as described in Section~\ref{sec:env_hardware}. The strict memory envelope forced several architectural compromises documented in Table~\ref{tab:qlora_training_config}.
+
+\begin{table}[H]
+    \centering
+    \caption{QLoRA fine-tuning hyperparameters. Values marked with $\dagger$ were constrained by the 12GB VRAM budget.}
+    \label{tab:qlora_training_config}
+    \begin{tabular}{@{}llr@{}}
+        \toprule
+        \textbf{Category} & \textbf{Parameter} & \textbf{Value} \\
+        \midrule
+        Base Model & Architecture & Qwen 2.5 7B-Instruct \\
+        & Source & HuggingFace Hub \\
+        \midrule
+        Quantization & Precision & 4-bit NormalFloat (NF4) \\
+        & Compute dtype & bfloat16 \\
+        & Double quantization & Enabled \\
+        \midrule
+        LoRA Adapter & Rank $r$ & 16 \\
+        & Scaling $\alpha$ & 32 \\
+        & Dropout & 0.05 \\
+        & Target modules & All 7 (q/k/v/o/gate/up/down) \\
+        \midrule
+        Training & Epochs & 1 \\
+        & Batch size$^\dagger$ & 1 \\
+        & Gradient accumulation & 8 (eff.\ batch = 8) \\
+        & Learning rate & $2 \times 10^{-4}$ \\
+        & Scheduler & Cosine with warmup (10\%) \\
+        & Optimizer & Paged AdamW 8-bit \\
+        & Max sequence length$^\dagger$ & 1,024 tokens \\
+        & Gradient checkpointing$^\dagger$ & Enabled \\
+        \midrule
+        Infrastructure & Library & HuggingFace TRL (\texttt{SFTTrainer}) \\
+        & Adapter library & PEFT v0.19.1 \\
+        & Logging & TensorBoard \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+A critical engineering detail is the use of a custom \texttt{DataCollatorForCompletionOnlyLM}. During standard supervised fine-tuning, the causal language modeling loss is computed over all tokens in the sequence, including the system prompt and user message. This wastes gradient signal on tokens that the model should never generate at inference time. Our custom collator scans each tokenized sequence for the ChatML response delimiter (\texttt{<|im\_start|>assistant\textbackslash n}) and masks all preceding tokens by setting their labels to $-100$. Consequently, the cross-entropy loss is computed exclusively over the Commander's actual decision output (the JSON response), ensuring that every gradient update directly improves the quality of option selection rather than memorizing prompt boilerplate.
+
+\subsubsection{Training Results and Adapter Deployment}
+
+The complete fine-tuning process converged in approximately \textbf{3.1 hours} (1,910 steps) on the RTX 5070. As shown in Figure~\ref{fig:qlora_training}, the training loss dropped rapidly from 1.605 to 0.165, with the final evaluation metrics confirming near-perfect task acquisition:
+
+\begin{itemize}[nosep]
+    \item Evaluation loss: \textbf{0.0007}
+    \item Mean token accuracy: \textbf{99.98\%}
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{../../plots/qlora/QLoRA_Training_Performance.png}
+    \caption{QLoRA adapter fine-tuning performance over 1,910 training steps. The training loss (left axis) converges rapidly within the first 500 steps, while the mean token accuracy (right axis) saturates near 100\%.}
+    \label{fig:qlora_training}
+\end{figure}
+
+The resulting LoRA adapter weighs only \textbf{154~MB}, approximately 1\% of the full 15~GB base model, yet encodes the complete DAG reasoning and JSON formatting capabilities required by the Meta-Controller. For deployment during RL training, the adapter is loaded via the PEFT library and merged with the base model in memory, or alternatively converted to GGUF format and served through the Ollama inference framework (Section~\ref{sec:env_hardware}). Both pathways produce inference latencies compatible with the synchronous RL training loop, as quantified in Section~\ref{sec:computational_overhead}. This fine-tuned adapter serves as the Meta-Controller for all ``QLoRA'' HRL configurations evaluated in Chapter~\ref{ch:experiments}.
+
+% ──────────────────────────────────────────────────────────────────────────
 \subsection{Summary}
 \label{sec:hrl_summary}
 

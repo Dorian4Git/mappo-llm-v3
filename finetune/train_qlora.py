@@ -5,6 +5,8 @@ train_qlora.py — QLoRA Fine-Tuning for Bottleneck Expert LLM
 Fine-tunes Qwen2.5-7B with QLoRA on the bottleneck→resolution dataset.
 Produces a parameter-efficient adapter specialized in the crafting env mechanics.
 
+Hardware Target: NVIDIA RTX 5070 (12GB VRAM)
+
 Requirements:
     pip install transformers peft bitsandbytes datasets accelerate trl
 
@@ -160,10 +162,10 @@ def train_qlora(
     # ── Training Arguments ───────────────────────────────────────────
     lr = config.get("learning_rate", 2e-4)
     epochs = config.get("epochs", 2)
-    batch_size = 1  # Forced for 12GB VRAM
-    grad_accum = 8  # Forced for 12GB VRAM
+    batch_size = 1  # Forced for RTX 5070 (12GB VRAM)
+    grad_accum = 8  # Forced for RTX 5070 (12GB VRAM)
     warmup_ratio = config.get("warmup_ratio", 0.1)
-    max_seq_len = 1024  # Forced for 12GB VRAM
+    max_seq_len = 1024  # Forced for RTX 5070 (12GB VRAM)
 
     training_args = SFTConfig(
         output_dir=output_dir,
@@ -182,7 +184,7 @@ def train_qlora(
         max_steps=max_steps if max_steps > 0 else -1,
         report_to="tensorboard",
         logging_dir=os.path.join(output_dir, "logs"),
-        gradient_checkpointing=True, # Forced for 12GB VRAM
+        gradient_checkpointing=True, # Forced for RTX 5070 (12GB VRAM)
         optim="paged_adamw_8bit",
         max_length=max_seq_len,
     )
