@@ -616,7 +616,7 @@ Fine-tuning was performed on the local workstation's NVIDIA RTX 5070 GPU (12GB V
         \textbf{Category} & \textbf{Parameter} & \textbf{Value} \\
         \midrule
         Base Model & Architecture & Qwen 2.5 7B-Instruct \\
-        & Source & HuggingFace Hub \\
+        & Source & HuggingFace Hub~\parencite{Wolf_Debut_Sanh_Chaumond_Delangue_Moi_Cistac_Rault_Louf_Funtowicz_et_al._2020} \\
         \midrule
         Quantization & Precision & 4-bit NormalFloat (NF4) \\
         & Compute dtype & bfloat16 \\
@@ -632,12 +632,12 @@ Fine-tuning was performed on the local workstation's NVIDIA RTX 5070 GPU (12GB V
         & Gradient accumulation & 8 (eff.\ batch = 8) \\
         & Learning rate & $2 \times 10^{-4}$ \\
         & Scheduler & Cosine with warmup (10\%) \\
-        & Optimizer & Paged AdamW 8-bit \\
+        & Optimizer & Paged AdamW 8-bit~\parencite{bitsandbytes} \\
         & Max sequence length$^\dagger$ & 1,024 tokens \\
         & Gradient checkpointing$^\dagger$ & Enabled \\
         \midrule
-        Infrastructure & Library & HuggingFace TRL (\texttt{SFTTrainer}) \\
-        & Adapter library & PEFT v0.19.1 \\
+        Infrastructure & Library & HuggingFace TRL~\parencite{trl} (\texttt{SFTTrainer}) \\
+        & Adapter library & PEFT v0.19.1~\parencite{peft} \\
         & Logging & TensorBoard \\
         \bottomrule
     \end{tabular}
