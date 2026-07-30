@@ -104,18 +104,7 @@ In our framework, the option set $\mathcal{O}$ is derived directly from the depe
 
 Rather than building 10 separate neural networks, the intra-option policy $\pi_o$ is executed by the single, shared MAPPO network, which conditions its kinetic movements based on the active option (detailed in Section~\ref{sec:onehot_aug}).
 
-Crucially, the termination condition ($\beta_o$) is not based on spatial coordinates, but on semantic success. For example, if the Commander radios the \texttt{COLLECT\_WOOD} Option to the lumberjack, that Option only terminates when the system registers an increase in the wood inventory:
-
-\begin{lstlisting}[style=code, language=Python, caption={Termination check (excerpt from \texttt{options.py}).}, label={lst:option_term}]
-def is_terminated(option, inventory):
-    if option == Option.COLLECT_WOOD:
-        return inventory[:, I_WOOD] >= 1
-    elif option == Option.CRAFT_PICKAXE:
-        return inventory[:, I_PICKAXE] >= 1
-    # ... analogous for all other options
-    elif option == Option.IDLE:
-        return np.zeros(n, dtype=bool)  # IDLE never terminates naturally
-\end{lstlisting}
+Crucially, the termination condition ($\beta_o$) is not based on spatial coordinates, but on semantic success. For example, if the Commander radios the \texttt{COLLECT\_WOOD} Option to the lumberjack, that Option only terminates when the system registers an increase in the wood inventory.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Discrete Option Selection by the LLM}
@@ -132,24 +121,15 @@ Option selection is triggered dynamically under two specific conditions, evaluat
     In MARL, a step $t \to t{+}1$ represents a physical movement or action in the grid. If an agent executes 150 low-level kinetic actions without satisfying its macro-objective, the system assumes the agent is stuck (e.g., trying to mine iron without a pickaxe) and forces an LLM intervention.
 \end{enumerate}
 
-Environments that are already awaiting an LLM response (\texttt{llm\_pending}) or are on a brief 50-step cooldown are safely excluded from triggering new queries:
-
-\begin{lstlisting}[style=code, language=Python, caption={Trigger logic in \texttt{hrl\_train\_loop.py}.}, label={lst:hrl_trigger}]
-success_mask = a0_success | a1_success
-stale_mask = option_controller.get_stale_mask(threshold=150)
-ready_mask = (success_mask | stale_mask) \
-             & (~option_controller.llm_pending) \
-             & (option_controller.cooldown_counter == 0)
-trigger_envs = np.where(ready_mask)[0]
-\end{lstlisting}
+Environments that are already awaiting an LLM response (\texttt{llm\_pending}) or are on a brief 50-step cooldown are safely excluded from triggering new queries.
 
 \subsubsection{Prompt Structure and Counterfactual Reflection}
 
 When a trigger fires, the \texttt{PromptBuilder} translates the grid-world's Python inventory state into a text-based JSON schema.
 For a standard \emph{Success} trigger, the Commander receives a Chain-of-Thought prompt detailing the current inventory and the DAG dependencies, requesting exactly one discrete Option per agent:
 
-\begin{lstlisting}[style=llmprompt, caption={HRL prompt schema for successful completions (from \texttt{prompt\_builder.py}).}, label={lst:hrl_prompt}]
-"""
+\begin{hegquote}
+\begin{verbatim}
 You are the high-level Cognitive Orchestrator for two MARL agents.
 Strict Dependency DAG: (Wood+Stone) -> Pickaxe -> Iron
     -> (Sword+Armor) -> Bridge -> Enemy -> Gold.
@@ -171,14 +151,14 @@ Respond ONLY with valid JSON:
   "agent_0_option": "<Option>",
   "agent_1_option": "<Option>"
 }
-"""
-\end{lstlisting}
+\end{verbatim}
+\end{hegquote}
 
 However, if a \emph{Staleness} trigger fires, the LLM receives a \emph{counterfactual reflection prompt}.
 Rather than simply asking for a new assignment, this prompt forces the LLM to diagnose \textbf{why} its previous assignment failed before issuing new options:
 
-\begin{lstlisting}[style=llmprompt, caption={Reflection prompt for stale options (from \texttt{prompt\_builder.py}).}, label={lst:reflection_prompt}]
-"""
+\begin{hegquote}
+\begin{verbatim}
 ### REFLECTION REQUIRED:
 Agent 0 was assigned "{a0_option}" and Agent 1 was assigned "{a1_option}".
 After {stale_steps} steps, NEITHER has succeeded.
@@ -194,25 +174,14 @@ Respond ONLY with JSON:
   "agent_0_option": "<Option>",
   "agent_1_option": "<Option>"
 }
-"""
-\end{lstlisting}
+\end{verbatim}
+\end{hegquote}
 
 \subsubsection{Batched Queries with Deduplication}
 
 Training MARL requires running 128 parallel copies of the grid-world simultaneously. If 40 parallel environments all trigger the LLM at the same time because the lumberjack just collected wood, querying the Commander 40 separate times for the exact same inventory state would waste massive computational resources.
 
-To optimize throughput, the system employs a deduplication mechanism. It groups the parallel environments by their unique inventory vectors, sends only one prompt per unique state to the LLM, and broadcasts the single response back to all environments sharing that exact state:
-
-\begin{lstlisting}[style=code, language=Python, caption={Inventory deduplication in \texttt{hrl\_train\_loop.py}.}, label={lst:dedup}]
-inv_batch = inv_next[trigger_envs].astype(int)
-unique_invs, inverse_indices = np.unique(
-    inv_batch, axis=0, return_inverse=True
-)
-unique_to_envs = [
-    trigger_envs[inverse_indices == i]
-    for i in range(len(unique_invs))
-]
-\end{lstlisting}
+To optimize throughput, the system employs a deduplication mechanism. It groups the parallel environments by their unique inventory vectors, sends only one prompt per unique state to the LLM, and broadcasts the single response back to all environments sharing that exact state.
 
 \subsubsection{Environment Freezing During Pending Queries}
 
@@ -224,24 +193,6 @@ relies on pausing the simulation while the LLM reasons about its
 next action.
 
 To prevent this drift, any environment awaiting an LLM response is physically frozen.
-
-\begin{lstlisting}[style=code, language=Python, caption={Environment freezing for pending queries.}, label={lst:env_freeze}]
-pending_mask = option_controller.llm_pending.copy()
-if pending_mask.any():
-    actions_np[pending_mask] = 4  # Execute NO-OP
-    saved_pos = vec_env.pos[pending_mask].copy()
-    saved_inv = vec_env.inventory[pending_mask].copy()
-    saved_enemy_pos = vec_env.enemy_pos[pending_mask].copy()
-    saved_enemy_hp = vec_env.enemy_health[pending_mask].copy()
-    # RNN hidden state is also preserved (omitted for brevity)
-    
-    # ... after env.step(), restore saved physical state:
-    vec_env.pos[pending_mask] = saved_pos
-    vec_env.inventory[pending_mask] = saved_inv
-    vec_env.enemy_pos[pending_mask] = saved_enemy_pos
-    vec_env.enemy_health[pending_mask] = saved_enemy_hp
-    vec_env.step_counts[pending_mask] -= 1  # Pause timeout clock
-\end{lstlisting}
 
 This ensures that the Commander's decision is applied to the exact physical state it observed, maintaining strict temporal alignment between strategy and execution.
 
@@ -279,44 +230,9 @@ where $\mathbf{p}^{(i)}$ is the agent's spatial position, $\mathbf{d}^{\text{ene
 
 This design maintains the same $\mathbb{R}^{25}$ dimensionality as the Mixing Board approach, allowing the identical neural network architecture to be used across both experiments. The three dimensions previously occupied by the continuous goal embedding are simply repurposed to carry the enemy state, preventing any architecture mismatch when loading or comparing models between the two approaches.
 
-\begin{lstlisting}[style=code, language=Python, caption={Observation construction in \texttt{hrl\_train\_loop.py}.}, label={lst:hrl_obs}]
-dynamic_enemy_state = np.column_stack((
-    vec_env.enemy_pos[:, 0],
-    vec_env.enemy_pos[:, 1],
-    vec_env.enemy_health / 100.0
-))
-goal_emb = np.stack(
-    [dynamic_enemy_state, dynamic_enemy_state], axis=1
-)
-inv_repeat = np.stack([
-    all_obs[:, 0, 4:4+NUM_ITEMS],
-    all_obs[:, 0, 4:4+NUM_ITEMS]
-], axis=1)
-opt_repeat = option_controller.get_option_embeddings()
-pos_repeat = vec_env.pos.copy()
-
-vec_input = np.concatenate(
-    [pos_repeat, goal_emb, inv_repeat, opt_repeat], axis=2
-)
-\end{lstlisting}
-
 \subsubsection{One-Hot State Augmentation vs. Dense Embeddings}
 
-There is a fundamental mathematical distinction in representation learning between a sparse one-hot encoding and a dense continuous embedding. The \texttt{OptionController} maintains per-environment, per-agent option indices and produces a categorical one-hot representation via vectorised indexing:
-
-\begin{lstlisting}[style=code, language=Python, caption={One-hot state augmentation in \texttt{option\_controller.py}.}, label={lst:onehot_gen}]
-def get_option_embeddings(self):
-    """Returns [n_envs, 2, NUM_OPTIONS] one-hot encoding."""
-    embs = np.zeros((self.n_envs, 2, NUM_OPTIONS),
-                    dtype=np.float32)
-    env_idx = np.arange(self.n_envs)
-    
-    # The variable is named 'embs' for codebase brevity, 
-    # but it strictly generates a sparse one-hot vector.
-    embs[env_idx, 0, self._active_options_a0] = 1.0
-    embs[env_idx, 1, self._active_options_a1] = 1.0
-    return embs
-\end{lstlisting}
+There is a fundamental mathematical distinction in representation learning between a sparse one-hot encoding and a dense continuous embedding. The \texttt{OptionController} maintains per-environment, per-agent option indices and produces a categorical one-hot representation via vectorised indexing.
 
 In deep reinforcement learning, appending a one-hot vector $\mathbf{e}_o$ to the agent's physical observation state $s_t$ effectively acts as an index lookup. 
 When the augmented state $s_t' = [s_t \parallel \mathbf{e}_{o}]$ is passed through the first linear layer of the MAPPO network, the matrix multiplication mathematically isolates a specific set of weights corresponding to the active option.
@@ -376,28 +292,6 @@ This formulation is mathematically constructed to guarantee policy invariance wh
 
 The indicator function $\mathds{1}_{\{o^{(i)} \neq \texttt{IDLE}\}}$ serves as a critical coordination mask. In cooperative tasks, an agent assigned the \texttt{IDLE} option is intentionally waiting for its partner to satisfy a DAG dependency. If shaping rewards were applied during this state, the agent's policy gradient would be erroneously penalized for remaining stationary. The mask zeroes out the shaping gradient entirely, ensuring the agent learns to safely wait without introducing non-stationary noise into the value network.
 
-\begin{lstlisting}[style=code, language=Python, caption={Per-agent intrinsic shaping in \texttt{hrl\_train\_loop.py}.}, label={lst:hrl_intrinsic}]
-z0 = get_option_target_zone(a0_opt)
-idle_mask_0 = (z0 == -1)
-safe_z0 = np.where(idle_mask_0, 0, z0)
-
-dist0_prev = np.linalg.norm(
-    pos_prev[:, 0] - vec_env.zones[np.arange(n_envs), safe_z0],
-    axis=1)
-dist0_next = np.linalg.norm(
-    vec_env.pos[:, 0] - vec_env.zones[np.arange(n_envs), safe_z0],
-    axis=1)
-phi0_prev = MAX_DIST - dist0_prev
-phi0_next = MAX_DIST - dist0_next
-shaping0 = np.where(
-    idle_mask_0, 0.0,
-    (0.99 * phi0_next) - phi0_prev
-)
-intrinsic_r[:, 0] = np.where(
-    a0_success, 1.0, shaping0 * 0.05
-)
-\end{lstlisting}
-
 Second, when an agent completes its active option (the relevant inventory slot increases), the distance shaping is overridden, and it receives a flat intrinsic success bonus of $+1.0$:
 \begin{equation}
 \label{eq:success_bonus}
@@ -409,18 +303,7 @@ Second, when an agent completes its active option (the relevant inventory slot i
     \end{cases}
 \end{equation}
 
-Success is detected by comparing the inventory before and after the environment step:
-\begin{lstlisting}[style=code, language=Python, caption={Option success detection in \texttt{hrl\_train\_loop.py}.}, label={lst:success_check}]
-def check_option_success(opt_strs, inv_prev, inv_next):
-    for i in range(n_envs):
-        opt = opt_strs[i]
-        if opt == "COLLECT_WOOD":
-            success[i] = inv_next[i, 0] > inv_prev[i, 0]
-        elif opt == "CRAFT_PICKAXE":
-            success[i] = inv_next[i, 3] > inv_prev[i, 3]
-        # ... analogous for all options
-    return success
-\end{lstlisting}
+Success is detected by comparing the inventory before and after the environment step.
 
 \subsubsection{Composite Reward}
 
@@ -434,10 +317,6 @@ The total reward signal fed to the PPO algorithm is a weighted sum of the enviro
 }
 \end{equation}
 with $\alpha_{\text{intr}} = 0.5$. This coefficient was chosen to balance the dense intrinsic signal against the sparse environment milestones; too large a value causes the policy to over-optimise for intrinsic shaping at the expense of actual task completion.
-
-\begin{lstlisting}[style=code, language=Python, caption={Composite reward in \texttt{hrl\_train\_loop.py}.}, label={lst:composite_reward}]
-total_r = env_rewards + 0.5 * intrinsic_r
-\end{lstlisting}
 
 Note the key difference from the Mixing Board approach: here, no $\lambda$ decay schedule is applied. The intrinsic coefficient remains fixed because the LLM continuously updates the \emph{direction} (which option to pursue) rather than the magnitude of shaping.
 
@@ -473,22 +352,13 @@ The consequence is a tightly coupled learning loop: the Actor gradient explicitl
 
 \subsubsection{Staleness Detection}
 
-The \texttt{OptionController} acts as a watchdog, tracking the \emph{age} (number of steps) of each active option per environment. If an option exceeds $T_{\text{stale}}=150$ steps without termination, the environment is marked as stale and the Commander is re-queried:
-
-\begin{lstlisting}[style=code, language=Python, caption={Staleness detection in \texttt{option\_controller.py}.}, label={lst:stale_detect}]
-def get_stale_mask(self, threshold=150):
-    IDLE_IDX = OPTION_NAMES.index("IDLE")
-    age_exceeded = self.option_age >= threshold
-    not_idle = (self._active_options_a0 != IDLE_IDX) \
-             | (self._active_options_a1 != IDLE_IDX)
-    return age_exceeded & not_idle
-\end{lstlisting}
+The \texttt{OptionController} acts as a watchdog, tracking the \emph{age} (number of steps) of each active option per environment. If an option exceeds $T_{\text{stale}}=150$ steps without termination, the environment is marked as stale and the Commander is re-queried.
 
 Crucially, \texttt{IDLE} options are excluded from staleness triggers, because intentional waiting (e.g., the lumberjack waiting while the miner collects stone) is a valid strategy.
 
 \subsubsection{Counterfactual Reflection}
 
-When a staleness trigger fires, the LLM receives a reflection prompt instead of the standard assignment prompt. This forces the LLM to reason about \emph{why} the previous option failed—typically a missing DAG precondition—before proposing a corrected assignment. The prompt in question is shown in \cref{lst:reflection_prompt}.
+When a staleness trigger fires, the LLM receives a reflection prompt instead of the standard assignment prompt. This forces the LLM to reason about \emph{why} the previous option failed—typically a missing DAG precondition—before proposing a corrected assignment.
 
 This design addresses the observed failure mode where the LLM repeatedly assigned options whose preconditions were not met (e.g., \texttt{MINE\_IRON} without a pickaxe). The reflection mechanism leverages the LLM's zero-shot reasoning to debug its own prior hallucination. This synergizes reasoning and acting, a paradigm demonstrated by ReAct~\parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023}, and extends it into the realm of self-reflection and counterfactual critique~\parencite{Shinn_Cassano_Berman_Gopinath_Narasimhan_Yao_2023}.
 
@@ -496,16 +366,7 @@ This design addresses the observed failure mode where the LLM repeatedly assigne
 \subsection{Episode Lifecycle and Option Reset}
 \label{sec:episode_lifecycle}
 
-When an environment reaches a terminal state (gold mined, game over, or truncation at 800 steps), the \texttt{OptionController} hard-resets that environment to its initial options:
-
-\begin{lstlisting}[style=code, language=Python, caption={Episode reset in \texttt{option\_controller.py}.}, label={lst:option_reset}]
-def reset_options(self, env_indices):
-    self._active_options_a0[env_indices] = 0  # COLLECT_WOOD
-    self._active_options_a1[env_indices] = 1  # COLLECT_STONE
-    self.llm_pending[env_indices] = False
-    self.cooldown_counter[env_indices] = 0
-    self.option_age[env_indices] = 0
-\end{lstlisting}
+When an environment reaches a terminal state (gold mined, game over, or truncation at 800 steps), the \texttt{OptionController} hard-resets that environment to its initial options.
 
 The initial options (\texttt{COLLECT\_WOOD} for the lumberjack, \texttt{COLLECT\_STONE} for the miner) correspond to the first layer of the DAG, ensuring agents begin collecting resources immediately upon episode start.
 
@@ -521,16 +382,7 @@ During each PPO epoch, the approximate KL divergence between the old and new pol
     = \mathbb{E}\bigl[-\log \pi_{\theta_{\text{new}}}(a|s)
       + \log \pi_{\theta_{\text{old}}}(a|s)\bigr]
 \end{equation}
-If $D_{\text{KL}}^{\text{approx}} > 0.015$, the remaining PPO epochs are aborted for that update:
-
-\begin{lstlisting}[style=code, language=Python, caption={Target KL guard in \texttt{hrl\_train\_loop.py}.}, label={lst:target_kl}]
-with torch.no_grad():
-    approx_kl = (-logratio).mean().item()
-target_kl = 0.015
-if approx_kl > target_kl:
-    target_kl_reached = True
-    break
-\end{lstlisting}
+If $D_{\text{KL}}^{\text{approx}} > 0.015$, the remaining PPO epochs are aborted for that update.
 
 This guard prevents destructive policy updates when the intrinsic reward signal changes abruptly after an LLM option reassignment.
 

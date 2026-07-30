@@ -18,7 +18,8 @@
 % ==========================================
 \usepackage{setspace} 
 \setstretch{1.2}      % 1.2 line spacing (Standard HEG requirement)
-\usepackage{parskip}  
+\setlength{\parindent}{0pt} % No indentation at the start of paragraphs
+\setlength{\parskip}{6pt}   % A realistic gap between standard paragraphs 
 \usepackage{microtype} % Better typography
 
 \usepackage[a4paper, 
@@ -43,6 +44,9 @@
 
 % Remove the header line
 \renewcommand{\headrulewidth}{0pt} 
+
+\usepackage[hang]{footmisc}
+\setlength{\footnotemargin}{1.25cm}
 
 % ==========================================
 % Custom Heading Sizes (matching Word template)
@@ -122,6 +126,7 @@
 \usepackage{multirow}
 \usepackage{siunitx}
 \usepackage{enumitem}
+\setlist{itemsep=0pt, parsep=0pt, topsep=6pt, partopsep=0pt}
 \usepackage{csquotes}
 
 % Rename Table of Contents
@@ -204,11 +209,7 @@
         % 3. Submission Statement & Author
         \begingroup 
             \linespread{1.2} \selectfont
-            {\bfseries Master’s thesis submitted for the degree of\\
-            Master of Science HES-SO in Information Science\\
-            by}\\[0.5cm]
-            
-            % Author Name (Bold, no caps)
+            {\bfseries Master’s thesis by:}\\[0.5cm]
             {\bfseries #1} 
         \endgroup
 
@@ -243,3 +244,31 @@
 
 % Helper for the horizontal line
 \newcommand{\hrue}[1]{\rule{\linewidth}{#1}}
+
+\newenvironment{hegquote}
+  {\list{}{\leftmargin=0.5cm \rightmargin=0.5cm \topsep=6pt \parsep=0pt}
+   \item\relax\itshape\setstretch{1.0}}
+  {\endlist}
+
+% ==========================================
+% Table of Contents Formatting (tocloft)
+% ==========================================
+\usepackage{tocloft}
+
+% 1. Remove the extra vertical space before Level 1 titles (Sections)
+\setlength{\cftbeforesecskip}{0pt}
+
+% 2. Set Titles (Sections) to exactly 12pt (and keep them bold)
+\renewcommand{\cftsecfont}{\fontsize{12pt}{14.4pt}\selectfont\bfseries}
+\renewcommand{\cftsecpagefont}{\fontsize{12pt}{14.4pt}\selectfont\bfseries}
+
+% 3. Set Subtitles (Subsections) to exactly 11pt AND make them bold
+\renewcommand{\cftsubsecfont}{\fontsize{11pt}{13.2pt}\selectfont\bfseries}
+\renewcommand{\cftsubsecpagefont}{\fontsize{11pt}{13.2pt}\selectfont\bfseries}
+
+% 4. Set Sub-subtitles (Subsubsections) to exactly 11pt (normal weight)
+\renewcommand{\cftsubsubsecfont}{\fontsize{11pt}{13.2pt}\selectfont}
+\renewcommand{\cftsubsubsecpagefont}{\fontsize{11pt}{13.2pt}\selectfont}
+
+% 5. Add dotted leaders to Level 1 titles (Sections)
+\renewcommand{\cftsecdotsep}{\cftdotsep}

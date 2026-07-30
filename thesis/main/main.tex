@@ -6,6 +6,8 @@
 % Bibliography Configuration
 \usepackage[backend=biber, style=iso-authoryear]{biblatex}
 \addbibresource{../references.bib}
+\renewcommand*{\bibfont}{\normalsize\setstretch{1.0}} % Forces 11pt and single spacing
+\setlength{\bibitemsep}{12pt} % Sets the space between bibliography items
 
 % --- Metadata ---
 \newcommand{\authorname}{Dorian Thomé}
@@ -88,7 +90,10 @@ The empirical results demonstrate that the HRL architecture significantly outper
 
 \newpage
 
-% --- Table of Contents ---
+% --- Frontmatter Lists ---
+\begingroup
+\setlength{\parskip}{0pt} % Temporarily remove paragraph spacing
+
 \tableofcontents
 \newpage
 
@@ -97,6 +102,8 @@ The empirical results demonstrate that the HRL architecture significantly outper
 
 \listoffigures 
 \newpage
+
+\endgroup % Paragraph spacing returns to 6pt here
 
 \pagenumbering{arabic}
 \setcounter{page}{1} 
@@ -132,7 +139,7 @@ In the context of this work, the author states that he used artificial intellige
     Tous les calculs statistiques (dans la partie x de l'analyse\dots) ont été effectués à l'aide de\dots{} Mention des IA utilisées : Gemini 3.1 Pro
 \end{itemize}
 
-
-
+\newpage
+\input{appendices}
 
 \end{document}

@@ -1,0 +1,66 @@
+\newpage
+\section*{Appendix 1: Core Algorithm Implementations}
+\addcontentsline{toc}{section}{Appendix 1: Core Algorithm Implementations}
+
+\begin{lstlisting}[style=code, language=Python, caption={DAG guardrail enforcement in \texttt{orchestrator.py}.}, label={lst:dag_guardrail}]
+def apply_dag_guardrails(weights, metrics):
+    guarded = dict(weights)
+    # Iron requires Pickaxe
+    if metrics.get('pickaxe', 0.0) < 1.0:
+        guarded['w_iron'] = 0.0
+    # Enemy and Gold require Bridge+Sword+Armor
+    if (metrics.get('bridge', 0.0) < 1.0
+        or metrics.get('sword', 0.0) < 1.0
+        or metrics.get('armor', 0.0) < 1.0):
+        guarded['w_enemy'] = 0.0
+        guarded['w_gold'] = 0.0
+    return guarded
+\end{lstlisting}
+
+\begin{lstlisting}[style=code, language=Python, caption={Vectorised PBRS computation across all environments in \texttt{orchestrator.py}.}, label={lst:pbrs_code}]
+# Calculate L2 Norm distances for all agents simultaneously
+dist_next = np.linalg.norm(pos_next - goal_targets, axis=2)
+dist_prev = np.linalg.norm(pos_prev - goal_targets, axis=2)
+
+MAX_DIST = 85.0
+phi_next = MAX_DIST - dist_next
+phi_prev = MAX_DIST - dist_prev
+
+# Apply gamma discount, scaling, and the active mask
+F = (gamma * phi_next - phi_prev) * R_LLM_SCALE * goal_active
+\end{lstlisting}
+
+\begin{lstlisting}[style=code, language=Python, caption={Per-agent intrinsic shaping in \texttt{hrl\_train\_loop.py}.}, label={lst:hrl_intrinsic}]
+z0 = get_option_target_zone(a0_opt)
+idle_mask_0 = (z0 == -1)
+safe_z0 = np.where(idle_mask_0, 0, z0)
+
+dist0_prev = np.linalg.norm(
+    pos_prev[:, 0] - vec_env.zones[np.arange(n_envs), safe_z0],
+    axis=1)
+dist0_next = np.linalg.norm(
+    vec_env.pos[:, 0] - vec_env.zones[np.arange(n_envs), safe_z0],
+    axis=1)
+phi0_prev = MAX_DIST - dist0_prev
+phi0_next = MAX_DIST - dist0_next
+shaping0 = np.where(
+    idle_mask_0, 0.0,
+    (0.99 * phi0_next) - phi0_prev
+)
+intrinsic_r[:, 0] = np.where(
+    a0_success, 1.0, shaping0 * 0.05
+)
+\end{lstlisting}
+
+\begin{lstlisting}[style=code, language=Python, caption={Composite reward in \texttt{hrl\_train\_loop.py}.}, label={lst:composite_reward}]
+total_r = env_rewards + 0.5 * intrinsic_r
+\end{lstlisting}
+
+\begin{lstlisting}[style=code, language=Python, caption={Target KL guard in \texttt{hrl\_train\_loop.py}.}, label={lst:target_kl}]
+with torch.no_grad():
+    approx_kl = (-logratio).mean().item()
+target_kl = 0.015
+if approx_kl > target_kl:
+    target_kl_reached = True
+    break
+\end{lstlisting}

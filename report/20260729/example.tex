@@ -1,0 +1,55 @@
+\documentclass{article}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{caption}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{code}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+
+\begin{document}
+
+\section{Option Definitions}
+\label{sec:option_defs}
+
+In the dynamic shaping approach, the LLM merely influenced a hard-coded planner. In this Hierarchical Reinforcement Learning (HRL) architecture, the LLM completely replaces the planner. It selects from a finite set of explicit macro-actions, or \emph{Options}, and directly commands the low-level MAPPO agents.
+
+An Option $o\in\mathcal{O}$ is mathematically defined by the triple $\langle \mathcal{I}_o, \pi_o, \beta_o \rangle$: an initiation set, an intra-option policy, and a termination condition.
+In our framework, the option set $\mathcal{O}$ is derived directly from the dependency DAG, providing 10 discrete macro-actions.
+
+Rather than building 10 separate neural networks, the intra-option policy $\pi_o$ is executed by the single, shared MAPPO network, which conditions its kinetic movements based on the active option.
+
+Crucially, the termination condition ($\beta_o$) is not based on spatial coordinates, but on semantic success. For example, if the Commander radios the \texttt{COLLECT\_WOOD} Option to the lumberjack, that Option only terminates when the system registers an increase in the wood inventory:
+
+\begin{lstlisting}[style=code, language=Python, caption={Termination check (excerpt from \texttt{options.py}).}, label={lst:option_term}]
+def is_terminated(option, inventory):
+    if option == Option.COLLECT_WOOD:
+        return inventory[:, I_WOOD] >= 1
+    elif option == Option.CRAFT_PICKAXE:
+        return inventory[:, I_PICKAXE] >= 1
+    # ... analogous for all other options
+    elif option == Option.IDLE:
+        return np.zeros(n, dtype=bool)  # IDLE never terminates naturally
+\end{lstlisting}
+
+\end{document}

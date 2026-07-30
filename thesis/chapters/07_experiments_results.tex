@@ -313,17 +313,7 @@ In \Cref{sec:ema_smoothing}, we posited that feeding raw, discrete priority logi
     \label{fig:ema_ablation_subtasks}
 \end{figure}
 
-As shown in Figure~\ref{fig:ema_ablation_td}, removing the EMA filter results in a noticeable spike in TD-error variance. The ablation itself was executed by passing a \texttt{skip\_ema=True} flag to the \texttt{LLMOrchestrator}, which bypassed the exponential smoothing step entirely:
-
-\begin{lstlisting}[style=code, language=Python, caption={EMA Ablation implementation in \texttt{llm/orchestrator.py}.}, label={lst:ema_ablation}]
-# EMA Smoothing (alpha = 0.2) -- skipped in ablation mode
-if self.skip_ema:
-    self.active_weights = parsed_weights
-else:
-    alpha = 0.2
-    for k in self.active_weights:
-        self.active_weights[k] = alpha * parsed_weights[k] + (1 - alpha) * self.active_weights[k]
-\end{lstlisting}
+As shown in Figure~\ref{fig:ema_ablation_td}, removing the EMA filter results in a noticeable spike in TD-error variance. The ablation itself was executed by passing a \texttt{skip\_ema=True} flag to the \texttt{LLMOrchestrator}, which bypassed the exponential smoothing step entirely.
 
 The Critic network struggles to track a reward objective that shifts instantaneously. Crucially, Figure~\ref{fig:ema_ablation_subtasks} illustrates the behavioral consequence: the non-stationarity leads to suboptimal optimization, causing the workers to exhibit slight regressions in their \texttt{Iron} and \texttt{Sword} completion rates during the mid-stages of training. However, it is worth noting that the No-EMA workers do eventually recover and climb back to a 100\% success rate on these tasks. Thus, while the workers can mathematically overcome the noise, this proves that the EMA smoothing equation is highly helpful for bridging discrete LLM outputs with continuous RL gradients, enabling faster convergence and preventing such regressions.
 
@@ -373,18 +363,7 @@ Beyond pure execution speed, the financial and energy footprints of these archit
 
 A fundamental critique of using LLMs in MARL is whether they rely on genuine semantic world-models or merely overfit to node names. To test this, the environment was silently modified at Update 500: the `Workbench` zone was renamed to `Furnace` in the Commander's prompt space. A secondary control run replaced `Workbench` with a nonsense string, `Zylorg`.
 
-This shift was executed by dynamically injecting an alias mapping into the \texttt{LLMOrchestrator} mid-training, forcing the Commander to output weights for the alias rather than the canonical node name, which the orchestrator then reversed and fed to the PPO workers:
-
-\begin{lstlisting}[style=code, language=Python, caption={Dynamic semantic shift implementation in \texttt{llm/orchestrator.py}.}, label={lst:env_shift_code}]
-# Build reverse alias map: e.g. "w_furnace" -> "w_workbench"
-alias_reverse = {}
-for canonical, alias in self.zone_aliases.items():
-    alias_reverse[f"w_{alias.lower()}"] = f"w_{canonical.lower()}"
-
-# Extract weights: try canonical key first, then fallback to aliased key
-alias_k = next((ak for ak, ck in alias_reverse.items() if ck == k), None)
-val = raw.get(k, raw.get(alias_k))
-\end{lstlisting}
+This shift was executed by dynamically injecting an alias mapping into the \texttt{LLMOrchestrator} mid-training, forcing the Commander to output weights for the alias rather than the canonical node name, which the orchestrator then reversed and fed to the PPO workers.
 
 The initial hypothesis assumed the Commander would cleanly map "Furnace" to crafting success, while failing on "Zylorg". However, empirical results revealed a counter-intuitive phenomenon: \textbf{semantic over-confidence induced severe reward hacking, while semantic ignorance acted as a natural regularizer.}
 
@@ -404,26 +383,28 @@ The initial hypothesis assumed the Commander would cleanly map "Furnace" to craf
     \label{fig:shift_all_subtasks}
 \end{figure}
 
-As seen in Figures~\ref{fig:semantic_shift_subtasks} and~\ref{fig:shift_all_subtasks}, the `Zylorg` control unexpectedly succeeded across almost all subtasks, achieving near-parity with the baseline's extrinsic reward. When the Commander encountered "Zylorg", it lacked a semantic prior. Consequently, it assigned it a balanced priority weight alongside other nodes, focusing its reasoning on recognizable end-goals like enemies. 
+As seen in Figures~\ref{fig:semantic_shift_subtasks} and~\ref{fig:shift_all_subtasks}, the `Zylorg` control unexpectedly succeeded across almost all subtasks, achieving near-parity with the baseline's extrinsic reward. When the Commander encountered "Zylorg", it lacked a semantic prior. Consequently, it assigned it a balanced priority weight alongside other nodes, focusing its reasoning on recognizable end-goals like enemies.
 
-\begin{lstlisting}[style=llmprompt, caption={Actual JSONL log excerpt during the 'Zylorg' environment shift.}, label={lst:zylorg_log}]
-"reasoning": "Enemy defeat is the current bottleneck with no progress.",
-"w_wood": 0.8,
-"w_stone": 0.8,
-"w_zylorg": 0.9,
-"w_iron": 0.9,
-"w_enemy": 1.2
-\end{lstlisting}
+\begin{hegquote}
+\ttfamily
+"reasoning": "Enemy defeat is the current bottleneck with no progress.",\\
+"w\_wood": 0.8,\\
+"w\_stone": 0.8,\\
+"w\_zylorg": 0.9,\\
+"w\_iron": 0.9,\\
+"w\_enemy": 1.2
+\end{hegquote}
 
 Because \texttt{w\_zylorg} was not artificially inflated, the MAPPO workers, driven by the baseline extrinsic rewards for crafting a Sword, naturally explored the environment, discovered the `Zylorg` station was the required prerequisite, and solved the bottleneck via standard PPO exploration. The Commander's ignorance prevented it from interfering with the RL algorithm's foundational mechanics.
 
-Conversely, the `Furnace` shift failed catastrophically on advanced tasks (`Iron`, `Sword`) due to reward hacking. The Commander correctly deduced zero-shot that a Furnace serves an identical semantic purpose to a crafting bench. It demonstrated this reasoning in the raw intervention logs:
+Conversely, the `Furnace` shift failed catastrophically on advanced tasks (`Iron`, `Sword`) due to reward hacking. The Commander correctly deduced zero-shot that a Furnace serves an identical semantic purpose to a crafting bench, as demonstrated in its reasoning logs:
 
-\begin{lstlisting}[style=llmprompt, caption={Actual JSONL log excerpt during the 'Furnace' environment shift.}, label={lst:furnace_log}]
-"reasoning": "Agents are not crafting Pickaxe or Sword, indicating a bottleneck at the Workbench.",
-"w_furnace": 0.4,
-"w_iron": 0.2
-\end{lstlisting}
+\begin{hegquote}
+\ttfamily
+"reasoning": "Agents are not crafting Pickaxe or Sword, indicating a bottleneck at the Workbench.",\\
+"w\_furnace": 0.4,\\
+"w\_iron": 0.2
+\end{hegquote}
 
 However, by mapping the Furnace to the crafting bottleneck, the Commander heavily skewed the Potential-Based Reward Shaping (PBRS) landscape. The MAPPO workers successfully crafted the Pickaxe (Figure~\ref{fig:shift_all_subtasks}), but subsequently discovered they could accumulate massive intrinsic returns simply by navigating back to the Furnace and idling there. They optimized for the dense shaping signal at the expense of the sparse extrinsic reward, halting all exploration for `Iron` and `Sword`. 
 

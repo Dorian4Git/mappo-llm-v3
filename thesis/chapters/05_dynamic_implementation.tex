@@ -103,57 +103,15 @@ The agent then greedily selects the subtask with the highest resulting score to 
 
 Crucially, while the planner only selects the single maximum value to dictate the agent's immediate target, the remaining weights are not permanently discarded. Because the system employs time-smoothing (detailed in \cref{sec:ema_smoothing}), a lower-ranked weight might continuously rise across subsequent timesteps until it ultimately overtakes the current leader, ensuring smooth and stable goal transitions.
 
-In practice, evaluating this logic across 128 parallel training environments requires strict vectorisation. \Cref{lst:greedy_planner} demonstrates how the Python backend computes these conditional scores dynamically for Agent 0:
-
-\begin{lstlisting}[style=code, language=Python, caption={Greedy score computation for Agent~0 in \texttt{orchestrator.py}.}, label={lst:greedy_planner}]
-# Agent 0 (Lumberjack) valid tasks
-a0_scores = {}
-if w < 2:
-    a0_scores["Wood"] = R_WOOD * w_wood
-needs_wb_a0 = (p == 0) or (sw == 0) or (a == 0)
-if needs_wb_a0:
-    a0_scores["Workbench"] = R_WORKBENCH * w_workbench
-if b == 0:
-    a0_scores["Bridge"] = R_BRIDGE * w_bridge
-if e == 0:
-    a0_scores["Enemy"] = R_ENEMY * w_enemy
-
-a0_target = max(a0_scores.items(),
-                key=lambda x: x[1])[0] \
-            if a0_scores else "None"
-\end{lstlisting}
+In practice, evaluating this logic across 128 parallel training environments requires strict vectorisation. This is handled by the Python backend which computes these conditional scores dynamically for each agent.
 
 \subsubsection{Cooperative Coupling Guardrail}
 
-Because the environment is fully cooperative, certain tasks require synchronized presence. If either agent selects a cooperative bottleneck task (such as returning to the Workbench or building the Bridge), the planner overrides individual greedy selections and magnetically pulls the partner agent to the same target, ensuring they co-locate to trigger the interaction:
-
-\begin{lstlisting}[style=code, language=Python, caption={Cooperative coupling in \texttt{orchestrator.py}.}, label={lst:coop_coupling}]
-if a0_target == "Workbench" and needs_wb_a1:
-    a1_target = "Workbench"
-elif a1_target == "Workbench" and needs_wb_a0:
-    a0_target = "Workbench"
-elif a0_target == "Bridge" and "Bridge" in a1_scores:
-    a1_target = "Bridge"
-\end{lstlisting}
+Because the environment is fully cooperative, certain tasks require synchronized presence. If either agent selects a cooperative bottleneck task (such as returning to the Workbench or building the Bridge), the planner overrides individual greedy selections and magnetically pulls the partner agent to the same target, ensuring they co-locate to trigger the interaction.
 
 \subsubsection{DAG Guardrails}
 
-Finally, before the Commander's weight vector is even allowed to touch the planner, it must pass through a hard programmatic filter (\texttt{apply\_dag\_guardrails}). While LLMs are powerful semantic reasoners, they are prone to hallucinations. If the LLM assigns a high priority to mining Iron ($w_{\text{iron}} > 0$) when no pickaxe exists, it would inject catastrophic noise into the PPO value network. This programmatic guardrail acts as an absolute constraint layer, zeroing out hallucinated weights and overriding the LLM output to maintain mathematical stability:
-
-\begin{lstlisting}[style=code, language=Python, caption={DAG guardrail enforcement in \texttt{orchestrator.py}.}, label={lst:dag_guardrail}]
-def apply_dag_guardrails(weights, metrics):
-    guarded = dict(weights)
-    # Iron requires Pickaxe
-    if metrics.get('pickaxe', 0.0) < 1.0:
-        guarded['w_iron'] = 0.0
-    # Enemy and Gold require Bridge+Sword+Armor
-    if (metrics.get('bridge', 0.0) < 1.0
-        or metrics.get('sword', 0.0) < 1.0
-        or metrics.get('armor', 0.0) < 1.0):
-        guarded['w_enemy'] = 0.0
-        guarded['w_gold'] = 0.0
-    return guarded
-\end{lstlisting}
+Finally, before the Commander's weight vector is even allowed to touch the planner, it must pass through a hard programmatic filter (\texttt{apply\_dag\_guardrails}). While LLMs are powerful semantic reasoners, they are prone to hallucinations. If the LLM assigns a high priority to mining Iron ($w_{\text{iron}} > 0$) when no pickaxe exists, it would inject catastrophic noise into the PPO value network. This programmatic guardrail acts as an absolute constraint layer, zeroing out hallucinated weights and overriding the LLM output to maintain mathematical stability.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Two-Stage Critic Trigger}
@@ -234,7 +192,9 @@ This design leverages the synergy between reasoning and acting~\parencite{Yao_Zh
 Furthermore, although the planner ultimately selects a single target goal (\cref{eq:greedy_select}), outputting these continuous logit values is essential for mathematical stability. If we forced the LLM to output binary $0/1$ weights, the planner would instantly snap to a new goal like flipping a light switch. This violent shift would disrupt the Critic's value predictions and risk catastrophic forgetting. By using continuous logits, the system can blend the weights over time, transitioning the agents smoothly toward the new objective.
 
 The LLM responds with a standardized JSON object containing its reasoning and the raw logits for each subtask:
-\begin{lstlisting}[style=code, language=Python, caption={Schema of the LLM response.}, label={lst:llm_response}]
+
+\begin{hegquote}
+\begin{verbatim}
 {
   "reasoning": "<1-2 sentences>",
   "w_wood":      <float, logit>,
@@ -245,7 +205,8 @@ The LLM responds with a standardized JSON object containing its reasoning and th
   "w_enemy":     <float, logit>,
   "w_gold":      <float, logit>
 }
-\end{lstlisting}
+\end{verbatim}
+\end{hegquote}
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Softmax Attention Budget}
@@ -275,14 +236,6 @@ where $K=|\mathcal{W}|=7$ is the number of subtask weights and $\tau=0.5$ is the
     \item \emph{Sharpening via temperature}: The exponentiation ($e^x$) forces the unconstrained logits into strictly positive values, creating a probability budget. The temperature $\tau$ acts as a "decisiveness" dial. As $\tau \to \infty$, the weights become perfectly uniform (ignoring the LLM). As $\tau \to 0$, the entire budget concentrates on the top choice, creating harsh transitions. A temperature of $\tau=0.5$ amplifies the Commander's priority differences while maintaining a continuous landscape suitable for time-smoothing.
     \item \emph{Numerical stability}: To prevent overflow errors during exponentiation, the implementation shifts the logits by subtracting the maximum value before applying the softmax.
 \end{itemize}
-
-\begin{lstlisting}[style=code, language=Python, caption={Softmax attention budget in \texttt{reward\_injector.py}.}, label={lst:softmax_code}]
-logits = np.array([clipped[k] for k in keys])
-logits_shifted = logits - np.max(logits)        # stability
-exp_logits = np.exp(logits_shifted / self.softmax_temperature)
-softmax_probs = exp_logits / np.sum(exp_logits)
-scaled = softmax_probs * len(keys)              # budget = K
-\end{lstlisting}
 
 \subsubsection{EMA Smoothing}
 \label{sec:ema_smoothing}
@@ -390,20 +343,7 @@ The scale factor ($\lambda_{\text{scale}} = 0.05$) acts as a volume knob. If an 
 
 Additionally, the indicator $\mathds{1}[g \text{ active}]$ acts as a mask. If the agent completes its portion of the DAG and is idling while waiting for its partner, this mask zeroes out the shaping reward entirely, preventing the agent from being incorrectly penalized for remaining stationary.
 
-To execute this equation simultaneously across 128 parallel environments without crushing the CPU, the shaping logic relies entirely on vectorized NumPy tensor operations, bypassing standard Python loops:
-
-\begin{lstlisting}[style=code, language=Python, caption={Vectorised PBRS computation across all environments in \texttt{orchestrator.py}.}, label={lst:pbrs_code}]
-# Calculate L2 Norm distances for all agents simultaneously
-dist_next = np.linalg.norm(pos_next - goal_targets, axis=2)
-dist_prev = np.linalg.norm(pos_prev - goal_targets, axis=2)
-
-MAX_DIST = 85.0
-phi_next = MAX_DIST - dist_next
-phi_prev = MAX_DIST - dist_prev
-
-# Apply gamma discount, scaling, and the active mask
-F = (gamma * phi_next - phi_prev) * R_LLM_SCALE * goal_active
-\end{lstlisting}
+To execute this equation simultaneously across 128 parallel environments without crushing the CPU, the shaping logic relies entirely on vectorized NumPy tensor operations, bypassing standard Python loops.
 
 \subsubsection{Design Decision: Isolating Strategy from Force}
 \label{sec:no_f_scaling}
