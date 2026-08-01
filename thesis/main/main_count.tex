@@ -1,0 +1,35 @@
+\documentclass[11pt, a4paper]{article}
+
+% Load custom definitions and packages
+\input{../tm.mydef.tex}
+
+% Bibliography Configuration
+\usepackage[backend=biber, style=iso-authoryear]{biblatex}
+\addbibresource{../references.bib}
+\renewcommand*{\bibfont}{\normalsize\setstretch{1.0}} % Forces 11pt and single spacing
+\setlength{\bibitemsep}{12pt} % Sets the space between bibliography items
+
+% --- Metadata ---
+\newcommand{\authorname}{Dorian Thomé}
+\newcommand{\shortauthors}{D. Thomé}
+\newcommand{\fulltitle}{Integrating LLMs with Multi-Agent Reinforcement Learning}
+\newcommand{\shorttitle}{LLM-MARL Integration}
+\newcommand{\place}{Geneva}
+\newcommand{\keywords}[1]{\par \vspace{.01em}\noindent{\small\bfseries \keywordsname:} #1\par}
+\def\keywordsname{Keywords}
+
+\title{\fulltitle}
+\author{\authorname}
+\date{\today}
+
+\begin{document}
+\pagestyle{empty}
+\input{../chapters/01_introduction}
+\input{../chapters/02_background_marl}
+\input{../chapters/03_background_llm}
+\input{../chapters/04_the_environment}
+\input{../chapters/05_dynamic_implementation}
+\input{../chapters/06_hrl_architecture}
+\input{../chapters/07_experiments_results}
+\input{../chapters/08_conclusion}
+\end{document}

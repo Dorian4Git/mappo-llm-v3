@@ -11,7 +11,7 @@ We begin by formalizing single-agent Markovian decision processes and policy opt
 \subsection{Fundamentals of Reinforcement Learning}
 \label{sec:rl_fundamentals}
 
-Reinforcement learning (RL) formalizes sequential decision-making under uncertainty, where an autonomous agent learns to optimize its behavior through interaction with a dynamic environment\parencite{Sutton_Barto_2020}. Imagine an agent dropped into a complex grid-world, tasked with navigating a forest to collect wood. At each step, it observes its surroundings, chooses a direction, and receives a numerical reward if it successfully harvests the resource.
+Reinforcement learning (RL) formalizes sequential decision-making under uncertainty, where an autonomous agent learns to optimize its behavior through interaction with a dynamic environment\parencite{Sutton_Barto_2018}. Imagine an agent dropped into a complex grid-world, tasked with navigating a forest to collect wood. At each step, it observes its surroundings, chooses a direction, and receives a numerical reward if it successfully harvests the resource.
 
 \subsubsection{Markov Decision Processes (MDPs)}
 \label{subsec:mdp}
@@ -60,24 +60,24 @@ We can map each of these mathematical variables directly to our wood-collecting 
     \item $\gamma \in [0, 1)$ is the discount factor. This is a mathematical trick (e.g., 0.99) that makes immediate rewards slightly more valuable than future rewards, forcing the agent to collect the wood efficiently rather than wandering the grid forever.
 \end{itemize}
 
-To navigate this world, the agent needs a strategy, known as a \emph{policy}. Rather than a rigid set of if/then rules, modern RL utilizes a stochastic (probabilistic) policy, denoted mathematically as $\pi(a \mid s) = \mathbb{P}[A_t = a \mid S_t = s]$~\parencite{Sutton_Barto_2020}.
+To navigate this world, the agent needs a strategy, known as a \emph{policy}. Rather than a rigid set of if/then rules, modern RL utilizes a stochastic (probabilistic) policy, denoted mathematically as $\pi(a \mid s) = \mathbb{P}[A_t = a \mid S_t = s]$~\parencite{Sutton_Barto_2018}.
 Intuitively, this means that given a specific state $s$, the policy outputs a probability distribution over all possible actions. For instance, if the agent is standing directly next to a tree, its policy $\pi$ might assign a 95\% probability to the 'Chop' action, and a 5\% probability to 'Move South' to encourage a slight amount of random exploration.
 
-The ultimate goal of the agent is to optimize this policy to maximize its \emph{expected discounted return}, denoted as $G_t$~\parencite{Sutton_Barto_2020}.
+The ultimate goal of the agent is to optimize this policy to maximize its \emph{expected discounted return}, denoted as $G_t$~\parencite{Sutton_Barto_2018}.
 While the notation $G_t = \sum_{k=0}^{\infty} \gamma^k R_{t+k+1}$ may appear intimidating, it simply represents the agent's "total lifetime score."
 It is the sum of every reward the agent expects to collect from the current moment $t$ until the end of the episode, with future rewards multiplied by the discount factor $\gamma$ so they carry slightly less weight than immediate victories.
 
 \subsubsection{Policy Optimization and Proximal Policy Optimization (PPO)}
 \label{subsec:ppo}
 
-To train our wood-collecting agent, we must optimize its policy. Instead of memorizing a rigid table of every possible grid coordinate, modern reinforcement learning parameterizes the policy using a neural network, denoted as $\pi_\theta(a \mid s)$ with trainable weights $\theta \in \mathbb{R}^d$~\parencite{Sutton_Barto_2020}. This network is commonly referred to as the \emph{Actor}.
+To train our wood-collecting agent, we must optimize its policy. Instead of memorizing a rigid table of every possible grid coordinate, modern reinforcement learning parameterizes the policy using a neural network, denoted as $\pi_\theta(a \mid s)$ with trainable weights $\theta \in \mathbb{R}^d$~\parencite{Sutton_Barto_2018}. This network is commonly referred to as the \emph{Actor}.
 
 To help the Actor learn, we introduce a second neural network called the \emph{Critic}, parameterized by weights $\phi$. The Critic learns the \emph{Value function}, $V_\phi(s)$, which is its estimate of the total expected return from a given state. Conceptually, this is the agent's "gut feeling" about a location. If the agent stands next to a forest, the Critic outputs a high value; if it stands next to a hazard, it outputs a low value. 
 
 \subsubsection{The Temporal Difference (TD) Error}
 \label{subsec:td_error}
 
-Because the Critic's Value function is a prediction, it requires a mathematical mechanism to measure when its predictions are wrong. This is achieved via the \emph{Temporal Difference Error} (TD-Error), denoted as $\delta_t$~\parencite{Sutton_Barto_2020}. 
+Because the Critic's Value function is a prediction, it requires a mathematical mechanism to measure when its predictions are wrong. This is achieved via the \emph{Temporal Difference Error} (TD-Error), denoted as $\delta_t$~\parencite{Sutton_Barto_2018}. 
 
 To build intuition, consider our lumberjack agent. Suppose the Critic predicts that from its current state $s_t$, it expects to gather 50 future points ($V_\phi(s_t) = 50$). The agent then executes an action, immediately receives a small reward of $5$ from the environment ($r_t = 5$), and lands in a new state $s_{t+1}$. The Critic evaluates this new state and predicts 45 future points ($V_\phi(s_{t+1}) = 45$). 
 
@@ -163,11 +163,11 @@ As illustrated in Figure~\ref{fig:actor_critic}, this architecture creates a con
 
 Mathematically, the objective is to maximize the performance function $J(\theta) = \mathbb{E}_{\pi_\theta}[G_0]$ via gradient ascent. (In this standard notation, the subscript $\theta$ refers to the network's trainable weights, while a superscript, as in $Q^{\pi_\theta}$, denotes an evaluation assuming the agent strictly follows that policy). 
 
-By the Policy Gradient Theorem~\parencite{Sutton_Barto_2020}, this update direction is analytically expressed as:
+By the Policy Gradient Theorem~\parencite{Sutton_Barto_2018}, this update direction is analytically expressed as:
 \begin{equation}
     \nabla_\theta J(\theta) = \mathbb{E}_{s \sim \rho^{\pi_\theta}, a \sim \pi_\theta} \left[ \nabla_\theta \log \pi_\theta(a \mid s) A^{\pi_\theta}(s, a) \right]
 \end{equation}
-where the Advantage function is formally defined as the difference between the action-value and the state-value: $A^{\pi_\theta}(s, a) = Q^{\pi_\theta}(s, a) - V^{\pi_\theta}(s)$~\parencite{Sutton_Barto_2020}. 
+where the Advantage function is formally defined as the difference between the action-value and the state-value: $A^{\pi_\theta}(s, a) = Q^{\pi_\theta}(s, a) - V^{\pi_\theta}(s)$~\parencite{Sutton_Barto_2018}. 
 
 To understand this intuitively, $V^{\pi_\theta}(s)$ evaluates how good it is to simply \emph{be} in a state, representing the baseline expectation. Conversely, the action-value $Q^{\pi_\theta}(s, a)$ evaluates the return of taking a \emph{specific action} in that state before resuming the regular policy. Therefore, subtracting $V$ from $Q$ isolates the unique Advantage of that specific action over the baseline.
 
@@ -313,7 +313,7 @@ To formalize this mathematically, we extend our previous MDP into the Dec-POMDP 
 
 This structure introduces a critical mathematical consequence. Because an individual agent $i$ cannot perceive the full state $s_t$, a single observation $o_t^{(i)} \in \Omega_i$ instantly breaks the Markov property we established in Section 2.1. The agent cannot rely solely on the present moment, because its present observation is incomplete. 
 
-To restore temporal context, agent $i$ must rely on its memory. It maintains an action-observation history $\tau_t^{(i)} = (o_1^{(i)}, a_1^{(i)}, \dots, o_t^{(i)})$, and parameterizes its decentralized policy as $\pi_i(a_i \mid \tau_i)$. In modern deep learning, this memory is typically implemented using recurrent neural network layers, such as GRUs or LSTMs, allowing the agent to stitch together a continuous understanding of the world from fragmented snapshots~\parencite{Hausknecht_Stone_2017}.
+To restore temporal context, agent $i$ must rely on its memory. It maintains an action-observation history $\tau_t^{(i)} = (o_1^{(i)}, a_1^{(i)}, \dots, o_t^{(i)})$, and parameterizes its decentralized policy as $\pi_i(a_i \mid \tau_i)$. In modern deep learning, this memory is typically implemented using recurrent neural network layers, such as GRUs or LSTMs, allowing the agent to stitch together a continuous understanding of the world from fragmented snapshots~\parencite{Hausknecht_Stone_2015}.
 
 \subsubsection{Centralized Training with Decentralized Execution (CTDE)}
 \label{subsec:ctde}

@@ -146,7 +146,7 @@ Just because production has stalled does not mean the agents need new orders; th
 
 As established in \cref{subsec:td_error}, the TD-Error (Temporal Difference Error) measures the ``surprise gap'' of the Critic network—the mathematical difference between its prior prediction and the newly observed reality. A high \emph{mean} TD-error is not necessarily alarming; it merely indicates that the environment has a large reward scale. 
 
-However, a spike in TD-error \emph{variance} is a critical failure metric. It means the Critic is fundamentally confused: it is seeing wildly different returns for the exact same states (e.g., sometimes observing a massive reward, and sometimes a penalty for identical actions). This variance spike occurs when agents get stuck at a bottleneck, thrash between uncoordinated goals, or experience severe non-stationarity~\parencite{Foerster_Nardelli_Farquhar_Afouras_Torr_Kohli_Whiteson_2018}. Therefore, variance acts as the mathematical SOS flare of a confused agent. Once the plateau gate is open, the system checks whether the Critic's TD-error variance has spiked beyond $\sigma$ standard deviations from its running mean:
+However, a spike in TD-error \emph{variance} is a critical failure metric. It means the Critic is fundamentally confused: it is seeing wildly different returns for the exact same states (e.g., sometimes observing a massive reward, and sometimes a penalty for identical actions). This variance spike occurs when agents get stuck at a bottleneck, thrash between uncoordinated goals, or experience severe non-stationarity~\parencite{Foerster_Nardelli_Farquhar_Afouras_Torr_Kohli_Whiteson_2017}. Therefore, variance acts as the mathematical SOS flare of a confused agent. Once the plateau gate is open, the system checks whether the Critic's TD-error variance has spiked beyond $\sigma$ standard deviations from its running mean:
 
 \begin{equation}
 \label{eq:zscore_trigger}
@@ -214,7 +214,7 @@ The LLM responds with a standardized JSON object containing its reasoning and th
 
 When the Commander responds to the SOS flare, the raw logits $\boldsymbol{c}=(c_1,\dots,c_K)$ it returns are unconstrained real numbers (e.g., they can be wildly positive or negative). If we applied these raw values directly to the reward function, the Commander could accidentally inflate or deflate the entire "economy" of the grid-world, completely destabilizing the PPO Critic's value estimations.
 
-To prevent this, the raw logits are converted into a \emph{budget-preserving} weight vector via a temperature-scaled softmax, analogous to Boltzmann action selection~\parencite{Sutton_Barto_2020}:
+To prevent this, the raw logits are converted into a \emph{budget-preserving} weight vector via a temperature-scaled softmax, analogous to Boltzmann action selection~\parencite{Sutton_Barto_2018}:
 \begin{equation}
 \label{eq:softmax_budget}
 \boxed{

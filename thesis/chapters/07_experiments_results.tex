@@ -209,7 +209,7 @@ During the optimization epochs, we continuously monitor the approximate KL diver
     D_{\text{KL}}^{\text{approx}} = \mathbb{E}\left[ -\log \left( \frac{\pi_{\theta}(a|s, o)}{\pi_{\theta_{\text{old}}}(a|s, o)} \right) \right]
 \end{equation}
 
-If $D_{\text{KL}}^{\text{approx}}$ exceeds the predefined trust region threshold ($\delta = 0.015$), the gradient updates for the current batch are immediately aborted.
+If $D_{\text{KL}}^{\text{approx}}$ exceeds the predefined trust region threshold ($\delta = 0.015$, implemented as \texttt{target\_kl}), the gradient updates for the current batch are immediately aborted.
 
 \begin{figure}[H]
     \centering
@@ -401,7 +401,8 @@ Conversely, the `Furnace` shift failed catastrophically on advanced tasks (`Iron
 
 \begin{hegquote}
 \ttfamily
-"reasoning": "Agents are not crafting Pickaxe or Sword, indicating a bottleneck at the Workbench.",\\
+"reasoning": "Agents are not crafting Pickaxe or Sword, indicating a \\
+bottleneck at the Workbench.",\\
 "w\_furnace": 0.4,\\
 "w\_iron": 0.2
 \end{hegquote}
