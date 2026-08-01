@@ -1,4 +1,4 @@
-\section{Experiments and Results}
+\section{Empirical Results: Breaking the Exploration Bottleneck}
 \label{ch:experiments}
 
 This chapter presents the experimental setup, the environments used for evaluation, and the results obtained. We specifically focus on validating the hypothesis that a Meta-Controller LLM can effectively resolve exploration bottlenecks in a sparse Multi-Agent Reinforcement Learning (MARL) environment through dynamic reward shaping, and subsequently, how Hierarchical Reinforcement Learning (HRL) further improves these capabilities.
@@ -245,7 +245,7 @@ Critically, the QLoRA with Reflection run accumulates \textbf{2.3$\times$ more s
 
 The No-Reflection run follows the opposite pattern: \emph{infrequent, large, guarded} transitions. The Commander commits to long-horizon Options and rarely switches. When it does (for example, transitioning from \texttt{CRAFT\_SWORD} to \texttt{DEFEAT\_ENEMY}), the policy shift is dramatic (peak KL = 0.107, or $7\times$ the threshold). The guardrail catches these large transitions and aborts the gradient update. Over subsequent updates, the policy absorbs the new objective gradually. This pattern of rare but controlled disruptions produces the lowest mean TD error (0.048) among the three runs.
 
-\subsubsection{The Reflection Contradiction}
+\subsubsection{The Paradox of Reflection}
 \label{sec:reflection_ablation}
 
 The staleness data (\Cref{tab:kl_stats}) provides the mechanistic explanation for the delay caused by reflection. The With-Reflection run dispatches essentially the same number of LLM queries as the other runs ($\sim$12{,}800), yet accumulates \textbf{3.1$\times$ more staleness resets} than the No-LoRA base (88{,}711 vs.\ 28{,}927) and \textbf{2.3$\times$ more} than the No-Reflection run (88{,}711 vs.\ 39{,}137). Each reflection-triggered query thus produces a worse Option, an Option that expires faster and triggers yet another staleness event.

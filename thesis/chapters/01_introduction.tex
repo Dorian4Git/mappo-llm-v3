@@ -8,7 +8,7 @@ The ability to model, simulate, and optimize the behavior of multiple interactin
 
 To solve these tasks, the Centralized Training with Decentralized Execution (CTDE) paradigm has emerged as the standard architecture. Under this paradigm, algorithms such as Multi-Agent Proximal Policy Optimization (MAPPO) have demonstrated surprising effectiveness in cooperative settings. By utilizing a centralized critic that has access to the global state during training, agents can learn robust decentralized execution policies that rely solely on local observations.
 
-\subsection{Problem Statement: Sparse Rewards and the Exploration Bottleneck}
+\subsection{The Exploration Bottleneck in Sparse-Reward Worlds}
 \label{sec:problem_statement}
 
 Despite the success of algorithms like MAPPO, pure deep reinforcement learning struggles catastrophically in environments characterized by long-horizon, sparse-reward structures. In complex RPG-style environments, progress is often gated behind strict dependency graphs (e.g., agents must jointly collect wood and stone, navigate to a workbench, craft a pickaxe, and then coordinate to mine iron). 

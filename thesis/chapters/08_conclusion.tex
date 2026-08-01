@@ -1,7 +1,7 @@
 % ==========================================================================
 % Chapter 8 — Conclusion
 % ==========================================================================
-\section{Conclusion}
+\section{Conclusion: The Future of Neuro-Symbolic Control}
 \label{ch:conclusion}
 
 This thesis investigated the integration of Large Language Models (LLMs) with Multi-Agent Reinforcement Learning (MARL) to overcome the severe exploration bottlenecks inherent in sparse-reward environments. By structuring the environment as a strict Directed Acyclic Graph (DAG) of dependencies, we evaluated two distinct neuro-symbolic architectures: continuous Dynamic Reward Shaping (the ``Mixing Board'' approach) and discrete Hierarchical Reinforcement Learning (the ``Meta-Controller'' approach). 
@@ -18,8 +18,8 @@ The transition to a Hierarchical Reinforcement Learning (HRL) architecture repre
 Despite these successes, our experiments revealed critical vulnerabilities in neuro-symbolic MARL paradigms, highlighting a fundamental misalignment between an LLM's semantic priors and kinetic reality. We isolated two major failure modes:
 
 \begin{enumerate}
-    \item \textbf{The Paradox of Semantic Over-Confidence:} We discovered that when an LLM possesses strong zero-shot knowledge of a concept (such as mapping a "Furnace" to crafting), it confidently warps the shaping signal and inadvertently traps the agents in a local optimum via reward hacking. Conversely, when presented with nonsense strings ("Zylorg"), its semantic ignorance acted as a natural regularizer, allowing the underlying PPO exploration mechanics to organically solve the bottleneck.
-    \item \textbf{The Reflection Contradiction:} Endowing the LLM with counterfactual reflection generated $2.3\times$ more staleness resets and actively delayed convergence. Because the LLM was fine-tuned on synthetic data where timeouts implied logical failures, it learned to doubt its own correct reasoning when faced with purely kinetic delays. This resulted in rapid, contradictory option switching that destabilized the PPO Critic, proving that reactive self-debugging is highly detrimental if the model cannot distinguish between a logical error and physical friction.
+    \item We discovered that when an LLM possesses strong zero-shot knowledge of a concept (such as mapping a "Furnace" to crafting), it confidently warps the shaping signal and inadvertently traps the agents in a local optimum via reward hacking. Conversely, when presented with nonsense strings ("Zylorg"), its semantic ignorance acted as a natural regularizer, allowing the underlying PPO exploration mechanics to organically solve the bottleneck.
+    \item Endowing the LLM with counterfactual reflection generated $2.3\times$ more staleness resets and actively delayed convergence. Because the LLM was fine-tuned on synthetic data where timeouts implied logical failures, it learned to doubt its own correct reasoning when faced with purely kinetic delays. This resulted in rapid, contradictory option switching that destabilized the PPO Critic, proving that reactive self-debugging is highly detrimental if the model cannot distinguish between a logical error and physical friction.
 \end{enumerate}
 
 Finally, the computational overhead of running an LLM in the training loop remains a significant limitation, severely bounding the scalability of this architecture for high-frequency control tasks despite the use of quantized, localized models.

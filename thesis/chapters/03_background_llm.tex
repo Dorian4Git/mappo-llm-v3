@@ -1,7 +1,7 @@
 % ==========================================================================
 % Chapter 3 — Background: Large Language Models
 % ==========================================================================
-\section{Background: Large Language Models}
+\section{The Semantic Engine: Large Language Models}
 \label{ch:background_llm}
 
 In the previous chapter, we established how the Options framework allows our lumberjack and miner to execute discrete macro-actions, such as \texttt{COLLECT\_WOOD} or \texttt{BUILD\_BRIDGE}. However, MARL agents cannot inherently deduce the logical sequence of these macro-actions. This chapter introduces the theoretical foundations of Large Language Models (LLMs) and their optimization mechanisms. It establishes how these autoregressive models can act as a high-level "Commander," parsing the semantic state of the grid-world and issuing the correct strategic sequence to the agents below.
@@ -146,6 +146,8 @@ Mathematically, instead of updating the full pre-trained weight matrix $W_0 \in 
     \draw[arrow, dashed, draw=green!70!black] (grad_a) -- (matrix_a.east);
 
 \end{tikzpicture}
+\vspace{1ex}
+{\raggedleft \footnotesize Adapted from \parencite{Hu_Shen_Wallis_Allen-Zhu_Li_Wang_Wang_Chen_2021} \par}
 \caption{The Low-Rank Adaptation (LoRA) architecture.}
 \label{fig:lora_architecture}
 \end{figure}
@@ -229,6 +231,8 @@ However, the low-level agents may sometimes fail to achieve the assigned goal. T
     \draw[arrow] (action) -- node[left=0.1cm, font=\footnotesize, align=center] {Execution} (env);
 
 \end{tikzpicture}
+\vspace{1ex}
+{\raggedleft \footnotesize Adapted from \parencite{Shinn_Cassano_Berman_Gopinath_Narasimhan_Yao_2023} \par}
 \caption{The Verbal Reflection mechanism.}
 \label{fig:verbal_reflection}
 \end{figure}
