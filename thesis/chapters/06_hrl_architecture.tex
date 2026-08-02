@@ -104,7 +104,7 @@ In our framework, the option set $\mathcal{O}$ is derived directly from the depe
 
 Rather than building 10 separate neural networks, the intra-option policy $\pi_o$ is executed by the single, shared MAPPO network, which conditions its kinetic movements based on the active option (detailed in Section~\ref{sec:onehot_aug}).
 
-Crucially, the termination condition ($\beta_o$) is not based on spatial coordinates, but on semantic success. For example, if the Commander radios the \texttt{COLLECT\_WOOD} Option to the lumberjack, that Option only terminates when the system registers an increase in the wood inventory.
+The termination condition ($\beta_o$) is not based on spatial coordinates, but on semantic success. For example, if the Commander radios the \texttt{COLLECT\_WOOD} Option to the lumberjack, that Option only terminates when the system registers an increase in the wood inventory.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Discrete Option Selection by the LLM}
@@ -204,7 +204,7 @@ Once the Commander has selected a discrete Option, that command must be physical
 
 \subsubsection{Dynamic Enemy State}
 
-Unlike the Mixing Board approach, which used the base \texttt{BatchCraftingEnvV2} environment, the HRL architecture operates on a custom extended environment (\texttt{HRLCraftingEnv}) that introduces a \emph{dynamic enemy}. In this variant, the enemy is no longer a static zone interaction. Instead, the enemy tracks the agents' positions and actively chases any agent that crosses the river, creating a real-time pursuit challenge. Crucially, the combat system rewards coordination: if both agents attack the enemy simultaneously, they deal 50~HP of damage per step, compared to only 10~HP for a solo attack. This 5$\times$ coordination multiplier makes the \texttt{FIGHT\_ENEMY} option inherently cooperative.
+Unlike the Mixing Board approach, which used the base \texttt{BatchCraftingEnvV2} environment, the HRL architecture operates on a custom extended environment (\texttt{HRLCraftingEnv}) that introduces a \emph{dynamic enemy}. In this variant, the enemy is no longer a static zone interaction. Instead, the enemy tracks the agents' positions and actively chases any agent that crosses the river, creating a real-time pursuit challenge. The combat system rewards coordination: if both agents attack the enemy simultaneously, they deal 50~HP of damage per step, compared to only 10~HP for a solo attack. This 5$\times$ coordination multiplier makes the \texttt{FIGHT\_ENEMY} option inherently cooperative.
 
 To give the agents spatial awareness of this dynamic threat, the three dimensions that were occupied by the goal embedding in the Mixing Board approach (indices 2--4) are repurposed to carry the enemy's real-time state: its $(x, y)$ position and its normalized health $h/100$.
 
@@ -290,7 +290,7 @@ where $z_o$ is the target zone of option~$o$ (\cref{tab:option_props}), $\Phi$ i
 
 This formulation is mathematically constructed to guarantee policy invariance while ensuring multi-agent coordination stability. The canonical difference form $\gamma\,\Phi(s_{t+1}) - \Phi(s_t)$ prevents the agent from exploiting the dense reward signal. Without the discount factor $\gamma$, an agent could theoretically accumulate infinite positive reward by stepping back and forth between two adjacent states. By decaying the future potential, any such cycle yields a net negative shaping reward~\parencite{Ng_Harada_Russell_1999}.
 
-The indicator function $\mathds{1}_{\{o^{(i)} \neq \texttt{IDLE}\}}$ serves as a critical coordination mask. In cooperative tasks, an agent assigned the \texttt{IDLE} option is intentionally waiting for its partner to satisfy a DAG dependency. If shaping rewards were applied during this state, the agent's policy gradient would be erroneously penalized for remaining stationary. The mask zeroes out the shaping gradient entirely, ensuring the agent learns to safely wait without introducing non-stationary noise into the value network.
+The indicator function $\mathds{1}_{\{o^{(i)} \neq \texttt{IDLE}\}}$ serves as a key coordination mask. In cooperative tasks, an agent assigned the \texttt{IDLE} option is intentionally waiting for its partner to satisfy a DAG dependency. If shaping rewards were applied during this state, the agent's policy gradient would be erroneously penalized for remaining stationary. The mask zeroes out the shaping gradient entirely, ensuring the agent learns to safely wait without introducing non-stationary noise into the value network.
 
 Second, when an agent completes its active option (the relevant inventory slot increases), the distance shaping is overridden, and it receives a flat intrinsic success bonus of $+1.0$:
 \begin{equation}
@@ -354,7 +354,7 @@ The consequence is a tightly coupled learning loop: the Actor gradient explicitl
 
 The \texttt{OptionController} acts as a watchdog, tracking the \emph{age} (number of steps) of each active option per environment. If an option exceeds $T_{\text{stale}}=150$ steps without termination, the environment is marked as stale and the Commander is re-queried.
 
-Crucially, \texttt{IDLE} options are excluded from staleness triggers, because intentional waiting (e.g., the lumberjack waiting while the miner collects stone) is a valid strategy.
+The \texttt{IDLE} options are excluded from staleness triggers, because intentional waiting (e.g., the lumberjack waiting while the miner collects stone) is a valid strategy.
 
 \subsubsection{Counterfactual Reflection}
 
@@ -495,7 +495,7 @@ Fine-tuning was performed on the local workstation's NVIDIA RTX 5070 GPU (12GB V
     \end{tabular}
 \end{table}
 
-A critical engineering detail is the use of a custom \texttt{DataCollatorForCompletionOnlyLM}. During standard supervised fine-tuning, the causal language modeling loss is computed over all tokens in the sequence, including the system prompt and user message. This wastes gradient signal on tokens that the model should never generate at inference time. Our custom collator scans each tokenized sequence for the ChatML response delimiter (\texttt{<|im\_start|>assistant\textbackslash n}) and masks all preceding tokens by setting their labels to $-100$. Consequently, the cross-entropy loss is computed exclusively over the Commander's actual decision output (the JSON response), ensuring that every gradient update directly improves the quality of option selection rather than memorizing prompt boilerplate.
+A critical engineering detail is the use of a custom \texttt{DataCollatorForCompletionOnlyLM}. During standard supervised fine-tuning, the causal language modeling loss is computed over all tokens in the sequence, including the system prompt and user message. This wastes gradient signal on tokens that the model should never generate at inference time. Our custom collator scans each tokenized sequence for the ChatML response delimiter (\texttt{<|im\_start|>assistant\textbackslash n}) and masks all preceding tokens by setting their labels to $-100$. As a result, the cross-entropy loss is computed exclusively over the Commander's actual decision output (the JSON response), ensuring that every gradient update directly improves the quality of option selection rather than memorizing prompt boilerplate.
 
 \subsubsection{Training Results and Adapter Deployment}
 
@@ -522,7 +522,7 @@ The resulting LoRA adapter weighs only \textbf{154~MB}, approximately 1\% of the
 The Meta-Controller approach creates a clean separation of concerns: the Commander reasons about \emph{what to do} (strategic option selection via one-hot augmentation), while the MAPPO policy learns \emph{how to do it} (low-level navigation and interaction). 
 The one-hot conditioning allows a single network to exhibit option-dependent behaviour, and the bipartite reward structure ensures that the policy receives both a consistent dense gradient from intrinsic shaping and a grounding signal from the true environment rewards.
 
-Furthermore, this architecture effectively acts as an automated curriculum generator (contrasting with the manual Curriculum Learning discussed in Section~\ref{sec:curriculum_learning}). While traditional curriculum learning requires a human engineer to laboriously design and schedule environments of increasing difficulty, our LLM Meta-Controller dynamically orchestrates a skill curriculum on the fly, seamlessly guiding the agents from simple resource gathering to complex combat coordination within a single, static environment.
+This architecture also effectively acts as an automated curriculum generator (contrasting with the manual Curriculum Learning discussed in Section~\ref{sec:curriculum_learning}). While traditional curriculum learning requires a human engineer to laboriously design and schedule environments of increasing difficulty, our LLM Meta-Controller dynamically orchestrates a skill curriculum on the fly, seamlessly guiding the agents from simple resource gathering to complex combat coordination within a single, static environment.
 
 \begin{table}[H]
 \centering

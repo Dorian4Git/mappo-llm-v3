@@ -81,7 +81,7 @@ Before the LLM's weights can be applied, we must ensure the Commander cannot ass
 
 For each parallel environment, the planner acts as a logical filter. It inspects the agents' current shared inventory vector $\mathbf{x}\in\mathbb{Z}^{10}$ and builds a set of \emph{feasible} subtasks, denoted as $\mathcal{F}^{(i)}(\mathbf{x})$.
 For example, Agent~0 (the Lumberjack) might be restricted to targeting \{Wood, Workbench, Bridge, Enemy\}, while Agent~1 (the Miner) might target \{Stone, Workbench, Iron, Enemy, Gold\}.
-Crucially, a subtask only enters this feasible set if its DAG preconditions are met; if the agents have not yet crafted a Pickaxe ($\mathbf{x}_{\text{pickaxe}} = 0$), then mining Iron is mathematically masked out of the options~\parencite{Albrecht_Christianos_Schäfer_2024}.
+A subtask only enters this feasible set if its DAG preconditions are met; if the agents have not yet crafted a Pickaxe ($\mathbf{x}_{\text{pickaxe}} = 0$), then mining Iron is mathematically masked out of the options~\parencite{Albrecht_Christianos_Schäfer_2024}.
 
 Once the impossible tasks are pruned, the planner must decide which of the valid tasks to pursue. It does this by calculating a \emph{score} $s_j$ for each feasible subtask $j$:
 \begin{equation}
@@ -101,7 +101,7 @@ The agent then greedily selects the subtask with the highest resulting score to 
               R_j^{\text{base}} \cdot w_j
 \end{equation}
 
-Crucially, while the planner only selects the single maximum value to dictate the agent's immediate target, the remaining weights are not permanently discarded. Because the system employs time-smoothing (detailed in \cref{sec:ema_smoothing}), a lower-ranked weight might continuously rise across subsequent timesteps until it ultimately overtakes the current leader, ensuring smooth and stable goal transitions.
+While the planner only selects the single maximum value to dictate the agent's immediate target, the remaining weights are not permanently discarded. Because the system employs time-smoothing (detailed in \cref{sec:ema_smoothing}), a lower-ranked weight might continuously rise across subsequent timesteps until it ultimately overtakes the current leader, ensuring smooth and stable goal transitions.
 
 In practice, evaluating this logic across 128 parallel training environments requires strict vectorisation. This is handled by the Python backend which computes these conditional scores dynamically for each agent.
 
@@ -111,7 +111,7 @@ Because the environment is fully cooperative, certain tasks require synchronized
 
 \subsubsection{DAG Guardrails}
 
-Finally, before the Commander's weight vector is even allowed to touch the planner, it must pass through a hard programmatic filter (\texttt{apply\_dag\_guardrails}). While LLMs are powerful semantic reasoners, they are prone to hallucinations. If the LLM assigns a high priority to mining Iron ($w_{\text{iron}} > 0$) when no pickaxe exists, it would inject catastrophic noise into the PPO value network. This programmatic guardrail acts as an absolute constraint layer, zeroing out hallucinated weights and overriding the LLM output to maintain mathematical stability.
+Finally, before the Commander's weight vector is even allowed to touch the planner, it must pass through a hard programmatic filter (\texttt{apply\_dag\_guardrails}). While LLMs are powerful semantic reasoners, they are prone to hallucinations. If the LLM assigns a high priority to mining Iron ($w_{\text{iron}} > 0$) when no pickaxe exists, it would inject severe noise into the PPO value network. This programmatic guardrail acts as an absolute constraint layer, zeroing out hallucinated weights and overriding the LLM output to maintain mathematical stability.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Two-Stage Critic Trigger}
@@ -177,7 +177,7 @@ When the SOS flare fires, the \texttt{PromptBuilder} constructs a structured sit
     \item An episodic memory buffer of the last 3 interventions and their resulting TD-error deltas.
 \end{enumerate}
 
-Crucially, the prompt explicitly instructs the LLM to output \emph{unnormalized log-probabilities (logits)}, rather than final strict weights:
+The prompt explicitly instructs the LLM to output \emph{unnormalized log-probabilities (logits)}, rather than final strict weights:
 
 \begin{quote}
 \small\sffamily
@@ -189,7 +189,7 @@ Focus on the RELATIVE MAGNITUDE and PRIORITY RANKING of subtasks.''
 
 This design leverages the synergy between reasoning and acting~\parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023}. It intentionally decouples the LLM from absolute mathematical calibration, allowing it to act purely as a meta-supervisor~\parencite{Sun_Huang_Pompili_2024}. The Commander is free to express priority differences via wide "feelings" of importance (e.g., scoring a critical bottleneck at 8.0 and a completed task at 0.5), knowing the downstream math will safely normalize this into a stable reward budget.
 
-Furthermore, although the planner ultimately selects a single target goal (\cref{eq:greedy_select}), outputting these continuous logit values is essential for mathematical stability. If we forced the LLM to output binary $0/1$ weights, the planner would instantly snap to a new goal like flipping a light switch. This violent shift would disrupt the Critic's value predictions and risk catastrophic forgetting. By using continuous logits, the system can blend the weights over time, transitioning the agents smoothly toward the new objective.
+Although the planner ultimately selects a single target goal (\cref{eq:greedy_select}), outputting these continuous logit values is essential for mathematical stability. If we forced the LLM to output binary $0/1$ weights, the planner would instantly snap to a new goal like flipping a light switch. This violent shift would disrupt the Critic's value predictions and risk catastrophic forgetting. By using continuous logits, the system can blend the weights over time, transitioning the agents smoothly toward the new objective.
 
 The LLM responds with a standardized JSON object containing its reasoning and the raw logits for each subtask:
 
@@ -368,7 +368,7 @@ This augmented reward is fed directly into the MAPPO Advantage calculation:
     A_t^{(i)} = r_t^{\text{total}, (i)} + \gamma V_\phi(s_{t+1}) - V_\phi(s_t)
 \end{equation}
 
-Consequently, the Centralized Critic network $V_\phi(s_t)$ adjusts its value estimations to predict this newly dense, goal-oriented reward landscape. The Actor simply follows the updated Advantage gradient $A_t^{(i)}$. The LLM acts strictly as an invisible architect, magnetically pulling the MAPPO policy toward specific regions of the state space without interfering with the neural network's architecture.
+As a result, the Centralized Critic network $V_\phi(s_t)$ adjusts its value estimations to predict this newly dense, goal-oriented reward landscape. The Actor simply follows the updated Advantage gradient $A_t^{(i)}$. The LLM acts strictly as an invisible architect, magnetically pulling the MAPPO policy toward specific regions of the state space without interfering with the neural network's architecture.
 
 \subsubsection{Shaping Decay ($\lambda_t$)}
 To ensure the agents eventually learn to act independently, the blending coefficient $\lambda_t$ from Equation~\ref{eq:total_reward} forces the shaping signal to fade out over time. 
@@ -391,7 +391,7 @@ The asynchronous dataflow executes as follows:
     \item \textbf{Seamless Injection:} On completion, the callback parses the JSON, passes it to the \texttt{RewardInjector}, and stores it as ``pending weights.'' At the \emph{next} training update, the \texttt{CriticTrigger.on\_update\_end} detects the pending weights, applies the EMA smoothing, and updates the magnetic pull for the next rollout.
 \end{enumerate}
 
-This design guarantees that the high-frequency PPO update is never blocked by network latency. Crucially, this delay does not destabilize the agents because the Commander is only shifting the \emph{macro-strategy} (the reward gravity), rather than controlling their direct micro-actions. The LLM bridge also maintains a thread-safe response cache to avoid redundant queries for identical prompts, and utilizes an exponential backoff retry logic ($2^k$ seconds for attempt~$k$, up to 3~retries) to handle API timeouts safely.
+This design guarantees that the high-frequency PPO update is never blocked by network latency. This delay does not destabilize the agents because the Commander is only shifting the \emph{macro-strategy} (the reward gravity), rather than controlling their direct micro-actions. The LLM bridge also maintains a thread-safe response cache to avoid redundant queries for identical prompts, and utilizes an exponential backoff retry logic ($2^k$ seconds for attempt~$k$, up to 3~retries) to handle API timeouts safely.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Summary}

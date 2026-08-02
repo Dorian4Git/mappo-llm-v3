@@ -30,7 +30,7 @@ All runs were executed with identical MAPPO hyperparameters (clipping $\epsilon=
 \subsection{Part 1: Dynamic Reward Shaping}
 \label{sec:exp_dynamic}
 
-The most crucial metric validating the LLM Dynamic architecture is the progression through the environment's strict dependency Directed Acyclic Graph (DAG). 
+The key metric validating the LLM Dynamic architecture is the progression through the environment's strict dependency Directed Acyclic Graph (DAG). 
 
 \begin{figure}[H]
     \centering
@@ -182,7 +182,7 @@ Finally, at the Gold milestone, QLoRA without Reflection is the fastest (6.29M),
     \label{fig:hrl_all_subtasks}
 \end{figure}
 
-Crucially, \Cref{fig:hrl_all_subtasks} reveals that \textbf{all three configurations ultimately solve the complete DAG}, reaching 100\% completion on every subtask including Gold. This is a qualitative leap over the Dynamic Shaping architecture (Part~1), which never reached Enemy or Gold. The key differentiator between configurations is not whether they succeed, but \emph{how quickly}: QLoRA with Reflection reaches 100\% on Gold by $\sim$10M steps, QLoRA without Reflection by $\sim$8M steps, while the No-LoRA base requires $\sim$35M steps, consuming more than half the training budget before the workers first collect Gold.
+\Cref{fig:hrl_all_subtasks} reveals that \textbf{all three configurations ultimately solve the complete DAG}, reaching 100\% completion on every subtask including Gold. This is a qualitative leap over the Dynamic Shaping architecture (Part~1), which never reached Enemy or Gold. The key differentiator between configurations is not whether they succeed, but \emph{how quickly}: QLoRA with Reflection reaches 100\% on Gold by $\sim$10M steps, QLoRA without Reflection by $\sim$8M steps, while the No-LoRA base requires $\sim$35M steps, consuming more than half the training budget before the workers first collect Gold.
 
 Interestingly, the QLoRA with Reflection run's subtask curves exhibit a distinctive ``staircase'' pattern (\Cref{fig:hrl_all_subtasks}, Bridge and Enemy panels): early plateaus near 0\% are followed by abrupt jumps to 100\%. This indicates that the rapid option cycling caused by the reflection mechanism prevents workers from making incremental progress; instead, the completion rate stays near zero until the PPO policy forces a breakthrough, after which it saturates instantly. By contrast, the QLoRA without Reflection run shows a much smoother, gradual learning ramp (taking roughly 4$\times$ as many updates to transition from 0\% to 90\% on the Enemy subtask compared to No-LoRA). This smooth monotonic ramp is evidence of deliberate, stable option sequencing by the fine-tuned Meta-Controller. The No-LoRA base falls in between, showing delayed but relatively fast transitions once it eventually stumbles upon the correct behavior.
 
@@ -241,7 +241,7 @@ Mean TD error (all updates)      & 0.046  & 0.060  & 0.048 \\
 
 These aggressive policy shifts and high KL guard triggers in the QLoRA with Reflection run also directly manifest as increased fluctuations in its average extrinsic reward trajectory (\Cref{fig:hrl_rewards}). The constant disruption of the objective function prevents the PPO workers from smoothly optimizing their kinetic behaviors.
 
-Critically, the QLoRA with Reflection run accumulates \textbf{2.3$\times$ more staleness resets} than the No-Reflection run (88{,}711 vs.\ 39{,}137), despite dispatching nearly the same number of LLM queries (12{,}791 vs.\ 13{,}710). This means each reflection-triggered re-query produces an Option that \emph{fails faster}---the Commander actively generates worse plans when told its previous plan failed. The rapid cycling of short-lived Options produces a high frequency of small policy shifts: each individual shift is small enough to avoid the KL guardrail, but the cumulative effect prevents the Critic from converging on a stable value estimate. We term this pattern \emph{death by a thousand cuts}: individually invisible perturbations that collectively devastate sample efficiency.
+The QLoRA with Reflection run accumulates \textbf{2.3$\times$ more staleness resets} than the No-Reflection run (88{,}711 vs.\ 39{,}137), despite dispatching nearly the same number of LLM queries (12{,}791 vs.\ 13{,}710). This means each reflection-triggered re-query produces an Option that \emph{fails faster}---the Commander actively generates worse plans when told its previous plan failed. The rapid cycling of short-lived Options produces a high frequency of small policy shifts: each individual shift is small enough to avoid the KL guardrail, but the cumulative effect prevents the Critic from converging on a stable value estimate. We term this pattern \emph{death by a thousand cuts}: individually invisible perturbations that collectively devastate sample efficiency.
 
 The No-Reflection run follows the opposite pattern: \emph{infrequent, large, guarded} transitions. The Commander commits to long-horizon Options and rarely switches. When it does (for example, transitioning from \texttt{CRAFT\_SWORD} to \texttt{DEFEAT\_ENEMY}), the policy shift is dramatic (peak KL = 0.107, or $7\times$ the threshold). The guardrail catches these large transitions and aborts the gradient update. Over subsequent updates, the policy absorbs the new objective gradually. This pattern of rare but controlled disruptions produces the lowest mean TD error (0.048) among the three runs.
 
@@ -250,7 +250,7 @@ The No-Reflection run follows the opposite pattern: \emph{infrequent, large, gua
 
 The staleness data (\Cref{tab:kl_stats}) provides the mechanistic explanation for the delay caused by reflection. The With-Reflection run dispatches essentially the same number of LLM queries as the other runs ($\sim$12{,}800), yet accumulates \textbf{3.1$\times$ more staleness resets} than the No-LoRA base (88{,}711 vs.\ 28{,}927) and \textbf{2.3$\times$ more} than the No-Reflection run (88{,}711 vs.\ 39{,}137). Each reflection-triggered query thus produces a worse Option, an Option that expires faster and triggers yet another staleness event.
 
-The root cause lies in how the instruction-tuning dataset was constructed. During QLoRA fine-tuning, the dataset synthetically injected counterfactual failures: the training prompt stated \emph{``You previously chose [Incorrect Option]. It failed.''} The model then learned to output the correct Option. Consequently, the Commander associated the reflection trigger with a strong prior: \textbf{my previous choice was logically wrong, and I must switch to a different option.}
+The root cause lies in how the instruction-tuning dataset was constructed. During QLoRA fine-tuning, the dataset synthetically injected counterfactual failures: the training prompt stated \emph{``You previously chose [Incorrect Option]. It failed.''} The model then learned to output the correct Option. As a result, the Commander associated the reflection trigger with a strong prior: \textbf{my previous choice was logically wrong, and I must switch to a different option.}
 
 During inference, however, option staleness is frequently triggered not by a logical error by the Commander, but by kinetic delays on the ground: the lumberjack navigating around the river terrain, the miner queuing at resource nodes, or simply needing more steps to execute a fundamentally correct plan. When the orchestrator fires the reflection prompt, the Commander, conditioned by its training data, assumes it made a reasoning error. It abandons the correct long-horizon option and switches to an alternative, derailing the workers' execution.
 
@@ -300,7 +300,7 @@ In \Cref{sec:ema_smoothing}, we posited that feeding raw, discrete priority logi
     \includegraphics[width=0.48\textwidth]{../../plots/llm_dynamic_ablations_and_shifts/ablation_rewards.png}
     \hfill
     \includegraphics[width=0.48\textwidth]{../../plots/llm_dynamic_ablations_and_shifts/ablation_td_error.png}
-    \caption{Comparison of training stability with and without EMA smoothing ($\alpha=0.2$). Disabling smoothing induces a catastrophic spike in Temporal Difference (TD) error variance (right).}
+    \caption{Comparison of training stability with and without EMA smoothing ($\alpha=0.2$). Disabling smoothing induces a severe spike in Temporal Difference (TD) error variance (right).}
     \label{fig:ema_ablation_td}
 \end{figure}
 
@@ -315,7 +315,7 @@ In \Cref{sec:ema_smoothing}, we posited that feeding raw, discrete priority logi
 
 As shown in Figure~\ref{fig:ema_ablation_td}, removing the EMA filter results in a noticeable spike in TD-error variance. The ablation itself was executed by passing a \texttt{skip\_ema=True} flag to the \texttt{LLMOrchestrator}, which bypassed the exponential smoothing step entirely.
 
-The Critic network struggles to track a reward objective that shifts instantaneously. Crucially, Figure~\ref{fig:ema_ablation_subtasks} illustrates the behavioral consequence: the non-stationarity leads to suboptimal optimization, causing the workers to exhibit slight regressions in their \texttt{Iron} and \texttt{Sword} completion rates during the mid-stages of training. However, it is worth noting that the No-EMA workers do eventually recover and climb back to a 100\% success rate on these tasks. Thus, while the workers can mathematically overcome the noise, this proves that the EMA smoothing equation is highly helpful for bridging discrete LLM outputs with continuous RL gradients, enabling faster convergence and preventing such regressions.
+The Critic network struggles to track a reward objective that shifts instantaneously. Figure~\ref{fig:ema_ablation_subtasks} illustrates the behavioral consequence: the non-stationarity leads to suboptimal optimization, causing the workers to exhibit slight regressions in their \texttt{Iron} and \texttt{Sword} completion rates during the mid-stages of training. However, it is worth noting that the No-EMA workers do eventually recover and climb back to a 100\% success rate on these tasks. Thus, while the workers can mathematically overcome the noise, this proves that the EMA smoothing equation is highly helpful for bridging discrete LLM outputs with continuous RL gradients, enabling faster convergence and preventing such regressions.
 
 To quantify the optimization efficiency provided by the EMA filter, Table~\ref{tab:ema_convergence_speed} details the number of environment steps required to reliably learn (i.e., achieve a $\ge 90\%$ success rate) the advanced subtasks.
 
@@ -350,13 +350,13 @@ To quantify the optimization efficiency provided by the EMA filter, Table~\ref{t
 \subsubsection{Computational, Financial, and Energy Overheads}
 \label{sec:computational_overhead}
 
-A critical practical consideration when integrating LLMs tightly into the RL training loop is the wall-clock time overhead. Because the meta-controller queries the LLM dynamically throughout the episode, relying on external or cloud-based APIs introduces severe network latency and rate-limiting bottlenecks. 
+A practical consideration when integrating LLMs tightly into the RL training loop is the wall-clock time overhead. Because the meta-controller queries the LLM dynamically throughout the episode, relying on external or cloud-based APIs introduces severe network latency and rate-limiting bottlenecks. 
 
 Analyzing the total execution times for a complete 128-update training run reveals this stark reality. The \textbf{Standard HRL Baseline} (which uses a traditional static meta-controller without LLM queries) completed training in \textbf{8.30 hours}. When deploying an external cloud model (Gemini 2.5 Flash-Lite) for the LLM Dynamic run, the training time ballooned to \textbf{12.27 hours}---a roughly 48\% increase purely due to API latency, despite querying a highly optimized "lite" model. Using a heavier state-of-the-art online model (such as GPT-4) was entirely infeasible for our full training comparisons due to strict API rate limits and prohibitive latency over thousands of calls.
 
 In contrast, our optimized \textbf{LLM Dynamic (LoRA)} implementation, running a locally fine-tuned Qwen2.5-7B model, completed the identical training run in just \textbf{7.78 hours}. By keeping inference entirely local, batching requests, and avoiding network overhead, the LLM-guided approach achieved execution speeds completely on par with (and in this instance, marginally faster than) the standard HRL baseline. This proves that dynamic LLM orchestration is not just theoretically advantageous, but computationally viable when deployed efficiently at the edge.
 
-Beyond pure execution speed, the financial and energy footprints of these architectures are critical factors for independent researchers. Relying on commercial online APIs for the meta-controller generates a staggering volume of requests; simulating 128 parallel environments over millions of steps yields millions of input and output tokens per training run. Relying on paid APIs for this volume of queries would render the approach financially prohibitive. Furthermore, reinforcement learning is highly hardware-intensive. A standard local workstation drawing approximately 750W continuously over a 12.27-hour API-bound run---or a 13.5-hour unoptimized local run---results in substantial electricity consumption, which becomes especially burdensome when multiplied by dozens of iterations, failed experiments, and hyperparameter sweeps. In regions with high energy costs such as Switzerland, the ability of the optimized local LoRA implementation to slash training time down to 7.78 hours provides a compounded benefit: it completely eliminates API token costs while simultaneously reducing the electrical footprint and associated utility costs by nearly 40\% per run.
+Beyond pure execution speed, the financial and energy footprints of these architectures are critical factors for independent researchers. Relying on commercial online APIs for the meta-controller generates a staggering volume of requests; simulating 128 parallel environments over millions of steps yields millions of input and output tokens per training run. Relying on paid APIs for this volume of queries would render the approach financially prohibitive. Additionally, reinforcement learning is highly hardware-intensive. A standard local workstation drawing approximately 750W continuously over a 12.27-hour API-bound run---or a 13.5-hour unoptimized local run---results in substantial electricity consumption, which becomes especially burdensome when multiplied by dozens of iterations, failed experiments, and hyperparameter sweeps. In regions with high energy costs such as Switzerland, the ability of the optimized local LoRA implementation to slash training time down to 7.78 hours provides a compounded benefit: it completely eliminates API token costs while simultaneously reducing the electrical footprint and associated utility costs by nearly 40\% per run.
 
 \subsubsection{Environment Shift: The Paradox of Semantic Over-Confidence}
 \label{sec:semantic_adaptation}
@@ -383,7 +383,7 @@ The initial hypothesis assumed the Commander would cleanly map "Furnace" to craf
     \label{fig:shift_all_subtasks}
 \end{figure}
 
-As seen in Figures~\ref{fig:semantic_shift_subtasks} and~\ref{fig:shift_all_subtasks}, the `Zylorg` control unexpectedly succeeded across almost all subtasks, achieving near-parity with the baseline's extrinsic reward. When the Commander encountered "Zylorg", it lacked a semantic prior. Consequently, it assigned it a balanced priority weight alongside other nodes, focusing its reasoning on recognizable end-goals like enemies.
+As seen in Figures~\ref{fig:semantic_shift_subtasks} and~\ref{fig:shift_all_subtasks}, the `Zylorg` control unexpectedly succeeded across almost all subtasks, achieving near-parity with the baseline's extrinsic reward. When the Commander encountered "Zylorg", it lacked a semantic prior. As a result, it assigned it a balanced priority weight alongside other nodes, focusing its reasoning on recognizable end-goals like enemies.
 
 \begin{hegquote}
 \ttfamily
@@ -397,7 +397,7 @@ As seen in Figures~\ref{fig:semantic_shift_subtasks} and~\ref{fig:shift_all_subt
 
 Because \texttt{w\_zylorg} was not artificially inflated, the MAPPO workers, driven by the baseline extrinsic rewards for crafting a Sword, naturally explored the environment, discovered the `Zylorg` station was the required prerequisite, and solved the bottleneck via standard PPO exploration. The Commander's ignorance prevented it from interfering with the RL algorithm's foundational mechanics.
 
-Conversely, the `Furnace` shift failed catastrophically on advanced tasks (`Iron`, `Sword`) due to reward hacking. The Commander correctly deduced zero-shot that a Furnace serves an identical semantic purpose to a crafting bench, as demonstrated in its reasoning logs:
+Conversely, the `Furnace` shift failed severely on advanced tasks (`Iron`, `Sword`) due to reward hacking. The Commander correctly deduced zero-shot that a Furnace serves an identical semantic purpose to a crafting bench, as demonstrated in its reasoning logs:
 
 \begin{hegquote}
 \ttfamily
@@ -409,4 +409,4 @@ bottleneck at the Workbench.",\\
 
 However, by mapping the Furnace to the crafting bottleneck, the Commander heavily skewed the Potential-Based Reward Shaping (PBRS) landscape. The MAPPO workers successfully crafted the Pickaxe (Figure~\ref{fig:shift_all_subtasks}), but subsequently discovered they could accumulate massive intrinsic returns simply by navigating back to the Furnace and idling there. They optimized for the dense shaping signal at the expense of the sparse extrinsic reward, halting all exploration for `Iron` and `Sword`. 
 
-This finding highlights a critical vulnerability in neuro-symbolic MARL architectures: while LLMs possess exceptional zero-shot semantic mapping, coupling high-confidence oracle weights with dense gradient shaping can inadvertently trap low-level workers in local optima.
+This finding highlights a key vulnerability in neuro-symbolic MARL architectures: while LLMs possess exceptional zero-shot semantic mapping, coupling high-confidence oracle weights with dense gradient shaping can inadvertently trap low-level workers in local optima.

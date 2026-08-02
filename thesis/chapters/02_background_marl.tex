@@ -116,7 +116,7 @@ However, if the agent unexpectedly finds a hidden cache of wood and receives an 
 \label{fig:td_error_visual}
 \end{figure}
 
-Building upon this concept, when the agent takes an action, we calculate the \emph{Advantage}, denoted as $A(s, a)$. Modern Actor-Critic algorithms typically estimate this Advantage using a discounted sum of TD-Errors (Generalized Advantage Estimation). Ultimately, the Advantage directly utilizes this "surprise factor" to measure how much better (or worse) the chosen action was compared to what the Critic originally expected.
+Building upon this concept, when the agent takes an action, we calculate the \emph{Advantage}, denoted as $A(s, a)$. Modern Actor-Critic algorithms typically estimate this Advantage using a discounted sum of TD-Errors (Generalized Advantage Estimation). The Advantage directly utilizes this "surprise factor" to measure how much better (or worse) the chosen action was compared to what the Critic originally expected.
 
 As illustrated in Figure~\ref{fig:actor_critic}, this architecture creates a continuous feedback loop. The Critic computes the Advantage to evaluate the Actor's choice, and this signal dictates the direction of the Actor's policy gradient update ($\nabla_\theta$), pushing it to favor successful actions in the future. Simultaneously, the Critic updates its own weights ($\nabla_\phi$) to improve its future predictions.
 
@@ -171,7 +171,7 @@ where the Advantage function is formally defined as the difference between the a
 
 To understand this intuitively, $V^{\pi_\theta}(s)$ evaluates how good it is to simply \emph{be} in a state, representing the baseline expectation. Conversely, the action-value $Q^{\pi_\theta}(s, a)$ evaluates the return of taking a \emph{specific action} in that state before resuming the regular policy. Therefore, subtracting $V$ from $Q$ isolates the unique Advantage of that specific action over the baseline.
 
-While this formulation is mathematically sound, standard policy gradient estimation is highly fragile. If our agent randomly executes a perfect sequence of actions and finds a massive cache of wood, the calculated Advantage will be enormous. Standard gradient ascent would react by drastically altering the network's weights to favor that exact sequence again. This aggressive update frequently causes the network to "fall off a cliff," catastrophically forgetting previously learned fundamental rules (such as avoiding boundaries).
+While this formulation is mathematically sound, standard policy gradient estimation is highly fragile. If our agent randomly executes a perfect sequence of actions and finds a massive cache of wood, the calculated Advantage will be enormous. Standard gradient ascent would react by drastically altering the network's weights to favor that exact sequence again. This aggressive update frequently causes the network to "fall off a cliff," severely forgetting previously learned fundamental rules (such as avoiding boundaries).
 
 Proximal Policy Optimization (PPO) resolves this fragility by enforcing a strict mathematical guardrail, known as a clipped surrogate objective~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}:
 \begin{equation}
@@ -259,7 +259,7 @@ Imagine our wood-collecting agent is no longer alone. We now introduce a second 
 \subsubsection{Decentralized Partially Observable MDPs (Dec-POMDPs)}
 \label{subsec:dec_pomdp}
 
-Furthermore, in complex multi-agent domains, an individual agent rarely possesses a god's-eye view of the entire grid. They suffer from local sensory limitations, perceiving only a cropped window of their immediate surroundings. 
+In complex multi-agent domains, an individual agent rarely possesses a god's-eye view of the entire grid. They suffer from local sensory limitations, perceiving only a cropped window of their immediate surroundings. 
 
 As illustrated in Figure~\ref{fig:dec_pomdp}, this scenario is formally modeled as a Decentralized Partially Observable Markov Decision Process (Dec-POMDP)~\parencite{Oliehoek_Amato_2016}. The diagram demonstrates how the true global environment state is hidden behind an "observation emission filter," essentially creating a fog of war that forces each agent to act strictly on fragmented, local information.
 
@@ -454,4 +454,4 @@ This Option is defined by the triple $\langle \mathcal{I}_o, \pi_o, \beta_o \ran
 
 When an option $o$ is selected, the intra-option policy $\pi_o$ controls primitive actions until the termination condition $\beta_o$ triggers, transforming the underlying decision process into a Semi-Markov Decision Process (SMDP) operating over variable temporal steps~\parencite{Sutton_Precup_Singh_1999}.
 
-Crucially, by abstracting the kinetic physics of the grid into discrete semantic tasks, the Options framework sets the stage for a high-level cognitive controller. As explored in the next chapter, this architecture allows Large Language Models to act as strategic orchestrators, entirely bypassing the random exploration bottleneck.
+By abstracting the kinetic physics of the grid into discrete semantic tasks, the Options framework sets the stage for a high-level cognitive controller. As explored in the next chapter, this architecture allows Large Language Models to act as strategic orchestrators, entirely bypassing the random exploration bottleneck.
