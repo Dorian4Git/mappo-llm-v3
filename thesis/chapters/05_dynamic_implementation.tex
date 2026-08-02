@@ -370,8 +370,8 @@ This augmented reward is fed directly into the MAPPO Advantage calculation:
 
 As a result, the Centralized Critic network $V_\phi(s_t)$ adjusts its value estimations to predict this newly dense, goal-oriented reward landscape. The Actor simply follows the updated Advantage gradient $A_t^{(i)}$. The LLM acts strictly as an invisible architect, magnetically pulling the MAPPO policy toward specific regions of the state space without interfering with the neural network's architecture.
 
-\subsubsection{Shaping Decay ($\lambda_t$)}
-To ensure the agents eventually learn to act independently, the blending coefficient $\lambda_t$ from Equation~\ref{eq:total_reward} forces the shaping signal to fade out over time. 
+\subsubsection{Shaping Decay}
+To ensure the agents eventually learn to act independently, the blending coefficient $\lambda_t$ (Shaping Decay) from Equation~\ref{eq:total_reward} forces the shaping signal to fade out over time. 
 The decay $\lambda_t$ begins at 1.0 and anneals linearly to 0.01 over 500 updates, but only \emph{after} the agents achieve a 40\% success rate on the critical "Bridge" bottleneck. This schedule ensures the agents have dense "training wheels" early in the learning process, and gracefully transitions them to the sparse environment reality once they prove they understand the map's topology.
 
 % ──────────────────────────────────────────────────────────────────────────
