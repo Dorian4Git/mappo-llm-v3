@@ -4,8 +4,7 @@
 \section{The Kinetic Baseline: Multi-Agent Reinforcement Learning}
 \label{ch:background}
 
-This chapter establishes the theoretical foundations required to contextualize the neuro-symbolic multi-agent architectures presented in this thesis.
-We begin by formalizing single-agent Markovian decision processes and policy optimization. We then extend these concepts to multi-agent environments under partial observability, detailing the Centralized Training with Decentralized Execution (CTDE) paradigm and Multi-Agent Proximal Policy Optimization (MAPPO). Finally, we examine temporal abstraction frameworks—specifically Potential-Based Reward Shaping (PBRS) and the Options framework—before reviewing modern integrations of Large Language Models (LLMs) as cognitive controllers.
+This chapter establishes the theoretical foundations required to contextualize the neuro-symbolic multi-agent architectures presented in this thesis. We begin by formalizing single-agent Markovian decision processes and policy optimization. We then extend these concepts to multi-agent environments under partial observability, detailing the Centralized Training with Decentralized Execution (CTDE) paradigm and Multi-Agent Proximal Policy Optimization (MAPPO). Finally, we examine temporal abstraction frameworks, specifically Potential-Based Reward Shaping (PBRS) and the Options framework, before reviewing modern integrations of Large Language Models (LLMs) as cognitive controllers.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Fundamentals of Reinforcement Learning}
@@ -64,61 +63,26 @@ To navigate this world, the agent needs a strategy, known as a \emph{policy}. Ra
 Intuitively, this means that given a specific state $s$, the policy outputs a probability distribution over all possible actions. For instance, if the agent is standing directly next to a tree, its policy $\pi$ might assign a 95\% probability to the 'Chop' action, and a 5\% probability to 'Move South' to encourage a slight amount of random exploration.
 
 The ultimate goal of the agent is to optimize this policy to maximize its \emph{expected discounted return}, denoted as $G_t$~\parencite{Sutton_Barto_2018}.
-While the notation $G_t = \sum_{k=0}^{\infty} \gamma^k R_{t+k+1}$ may appear intimidating, it simply represents the agent's "total lifetime score."
+$G_t = \sum_{k=0}^{\infty} \gamma^k R_{t+k+1}$ represents the agent's "total lifetime score."
 It is the sum of every reward the agent expects to collect from the current moment $t$ until the end of the episode, with future rewards multiplied by the discount factor $\gamma$ so they carry slightly less weight than immediate victories.
 
-\subsubsection{Policy Optimization and Proximal Policy Optimization (PPO)}
-\label{subsec:ppo}
+\subsubsection{The Actor-Critic Architecture: Two Neural Networks}
+\label{subsec:actor_critic}
 
-To train our wood-collecting agent, we must optimize its policy. Instead of memorizing a rigid table of every possible grid coordinate, modern reinforcement learning parameterizes the policy using a neural network, denoted as $\pi_\theta(a \mid s)$ with trainable weights $\theta \in \mathbb{R}^d$~\parencite{Sutton_Barto_2018}. This network is commonly referred to as the \emph{Actor}.
+To train our wood-collecting agent, we must optimize its policy. Instead of memorizing a rigid table of every possible grid coordinate, modern reinforcement learning parameterizes the policy using a neural network. This network, commonly referred to as the \emph{Actor}, is denoted as $\pi_\theta(a \mid s)$. It outputs a probability distribution over available actions $a$ given the current state $s$, utilizing its trainable weights $\theta \in \mathbb{R}^d$~\parencite{Sutton_Barto_2018}.
 
-To help the Actor learn, we introduce a second neural network called the \emph{Critic}, parameterized by weights $\phi$. The Critic learns the \emph{Value function}, $V_\phi(s)$, which is its estimate of the total expected return from a given state. Conceptually, this is the agent's "gut feeling" about a location. If the agent stands next to a forest, the Critic outputs a high value; if it stands next to a hazard, it outputs a low value. 
+To help the Actor learn, we introduce a second neural network called the \emph{Critic}, parameterized by an entirely separate set of weights $\phi$. The Critic learns the \emph{Value function}, $V_\phi(s)$, which is its estimate of the total expected return from a given state. Conceptually, this is the agent's "gut feeling" about a location. If the agent stands next to a forest, the Critic outputs a high value; if it stands next to a hazard, it outputs a low value.
 
-\subsubsection{The Temporal Difference (TD) Error}
-\label{subsec:td_error}
-
-Because the Critic's Value function is a prediction, it requires a mathematical mechanism to measure when its predictions are wrong. This is achieved via the \emph{Temporal Difference Error} (TD-Error), denoted as $\delta_t$~\parencite{Sutton_Barto_2018}. 
-
-To build intuition, consider our lumberjack agent. Suppose the Critic predicts that from its current state $s_t$, it expects to gather 50 future points ($V_\phi(s_t) = 50$). The agent then executes an action, immediately receives a small reward of $5$ from the environment ($r_t = 5$), and lands in a new state $s_{t+1}$. The Critic evaluates this new state and predicts 45 future points ($V_\phi(s_{t+1}) = 45$). 
-
-The total updated estimate is the immediate reward plus the discounted future prediction: $r_t + \gamma V_\phi(s_{t+1})$. If we assume $\gamma=1$ for simplicity, the new estimate is $5 + 45 = 50$. Because the new estimate perfectly matches the old prediction ($50 = 50$), the TD-Error is exactly 0. The Critic was perfectly accurate. 
-
-However, if the agent unexpectedly finds a hidden cache of wood and receives an immediate reward of $20$, the new estimate becomes $20 + 45 = 65$. The TD-Error is the gap between reality and expectation: $\delta_t = 65 - 50 = +15$. This positive "surprise" signal forces the Critic to update its weights to make better predictions in the future. Formally, the TD-Error is defined as:
+Because we have two distinct networks, they have two distinct mathematical objectives during optimization:
+\begin{itemize}[nosep]
+    \item \textbf{The Actor} aims to maximize its expected performance score, denoted as $J(\theta)$. Therefore, it updates its weights $\theta$ via \emph{gradient ascent} ($\nabla_\theta$). Shown later in \Cref{eq:policy_gradient}. 
+    \item \textbf{The Critic} aims to minimize its prediction errors. Its objective is a loss function $L(\phi)$, typically defined as the Mean Squared Error between its predicted value and the actual target return $\hat{R}_t$. Therefore, it updates its weights $\phi$ via \emph{gradient descent} ($\nabla_\phi$):
+\end{itemize}
 \begin{equation}
-\label{eq:td_error}
-    \delta_t = r_t + \gamma V_\phi(s_{t+1}) - V_\phi(s_t)
+    L(\phi) = \hat{\mathbb{E}}_t \left[ \frac{1}{2} \left( V_\phi(s_t) - \hat{R}_t \right)^2 \right]
 \end{equation}
 
-\begin{figure}[H]
-\centering
-\begin{tikzpicture}[
-    >=stealth,
-    brace/.style={decoration={brace, amplitude=6pt, mirror}, decorate, thick}
-]
-    % Base line
-    \draw[thick] (-2, 0) -- (8, 0);
-
-    % Old Prediction Bar
-    \filldraw[fill=blue!10, draw=black!80, thick] (0, 0) rectangle (3, 4) node[pos=0.5, align=center, font=\small\sffamily] {\textbf{Old Prediction}\\ $V_\phi(s_t)$};
-    
-    % New Reality Bars (Stacked)
-    \filldraw[fill=green!10, draw=black!80, thick] (4, 0) rectangle (7, 3.5) node[pos=0.5, align=center, font=\small\sffamily] {\textbf{Future Value}\\ $\gamma V_\phi(s_{t+1})$};
-    \filldraw[fill=yellow!20, draw=black!80, thick] (4, 3.5) rectangle (7, 5.5) node[pos=0.5, align=center, font=\small\sffamily] {\textbf{Reward}\\ $r_t$};
-    
-    % Dotted line for comparison
-    \draw[dashed, thick, draw=red!80] (0, 4) -- (8.5, 4);
-    
-    % Brace for TD Error
-    \draw[brace, draw=red!80] (7.2, 5.5) -- (7.2, 4.0) node[midway, right=0.3cm, font=\small\sffamily\bfseries, text=red!80, align=left] {TD-Error $\delta_t$\\ (Surprise Gap)};
-    
-\end{tikzpicture}
-\caption{Visualizing the Temporal Difference (TD) Error as the mathematical gap between the Critic's prior prediction and the newly observed reality.}
-\label{fig:td_error_visual}
-\end{figure}
-
-Building upon this concept, when the agent takes an action, we calculate the \emph{Advantage}, denoted as $A(s, a)$. Modern Actor-Critic algorithms typically estimate this Advantage using a discounted sum of TD-Errors (Generalized Advantage Estimation). The Advantage directly utilizes this "surprise factor" to measure how much better (or worse) the chosen action was compared to what the Critic originally expected.
-
-As illustrated in Figure~\ref{fig:actor_critic}, this architecture creates a continuous feedback loop. The Critic computes the Advantage to evaluate the Actor's choice, and this signal dictates the direction of the Actor's policy gradient update ($\nabla_\theta$), pushing it to favor successful actions in the future. Simultaneously, the Critic updates its own weights ($\nabla_\phi$) to improve its future predictions.
+As illustrated in Figure~\ref{fig:actor_critic}, this dual-network architecture creates a continuous feedback loop. The Critic evaluates the Actor's choice by generating an Advantage signal ($\hat{A}_t$), which dictates the direction of the Actor's policy gradient update, pushing it to favor successful actions in the future.
 
 \begin{figure}[H]
 \centering
@@ -157,45 +121,102 @@ As illustrated in Figure~\ref{fig:actor_critic}, this architecture creates a con
     \draw[arrow, dashed, draw=purple!80] (critic_grad.north) -- (critic.south);
 
 \end{tikzpicture}
-\caption{The Actor-Critic architecture with Gradient Flow.}
+\caption{The Actor-Critic architecture. The Actor maximizes its performance via gradient ascent, while the Critic minimizes its prediction error via gradient descent.}
 \label{fig:actor_critic}
 \end{figure}
 
-Mathematically, the objective is to maximize the performance function $J(\theta) = \mathbb{E}_{\pi_\theta}[G_0]$ via gradient ascent. (In this standard notation, the subscript $\theta$ refers to the network's trainable weights, while a superscript, as in $Q^{\pi_\theta}$, denotes an evaluation assuming the agent strictly follows that policy). 
+\subsubsection{The Critic's Evaluation: TD-Error and Advantage}
+\label{subsec:td_error}
 
-By the Policy Gradient Theorem~\parencite{Sutton_Barto_2018}, this update direction is analytically expressed as:
+Because the Critic's Value function is a prediction, it requires a mathematical mechanism to measure when it is wrong. This is achieved via the \emph{Temporal Difference Error} (TD-Error), denoted as $\delta_t$~\parencite{Sutton_Barto_2018}.
+
+Let's consider our lumberjack agent. Suppose the Critic predicts that from its current state $s_t$, it expects to gather 50 future points ($V_\phi(s_t) = 50$). The agent then executes an action, immediately receives a small reward of $5$ from the environment ($r_t = 5$), and lands in a new state $s_{t+1}$. The Critic evaluates this new state and predicts 45 future points ($V_\phi(s_{t+1}) = 45$).
+
+The total updated estimate is the immediate reward plus the discounted future prediction: $r_t + \gamma V_\phi(s_{t+1})$. If we assume $\gamma=1$ for simplicity, the new estimate is $5 + 45 = 50$. Because the new estimate perfectly matches the old prediction ($50 = 50$), the TD-Error is exactly 0. The Critic was perfectly accurate.
+
+However, if the agent unexpectedly finds a hidden cache of wood and receives an immediate reward of $20$, the new estimate becomes $20 + 45 = 65$. The TD-Error is the gap between reality and expectation: $\delta_t = 65 - 50 = +15$. This positive "surprise" signal forces the Critic to update its weights $\phi$ to make better predictions in the future. We can visualize this mismatch in Figure \ref{fig:td_error_visual}. Formally, the TD-Error is defined as:
+\begin{equation}
+\label{eq:td_error}
+    \delta_t = r_t + \gamma V_\phi(s_{t+1}) - V_\phi(s_t)
+\end{equation}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+    >=stealth,
+    brace/.style={decoration={brace, amplitude=6pt, mirror}, decorate, thick}
+]
+    % Base line
+    \draw[thick] (-2, 0) -- (8, 0);
+
+    % Old Prediction Bar
+    \filldraw[fill=blue!10, draw=black!80, thick] (0, 0) rectangle (3, 4) node[pos=0.5, align=center, font=\small\sffamily] {\textbf{Old Prediction}\\ $V_\phi(s_t)$};
+    
+    % New Reality Bars (Stacked)
+    \filldraw[fill=green!10, draw=black!80, thick] (4, 0) rectangle (7, 3.5) node[pos=0.5, align=center, font=\small\sffamily] {\textbf{Future Value}\\ $\gamma V_\phi(s_{t+1})$};
+    \filldraw[fill=yellow!20, draw=black!80, thick] (4, 3.5) rectangle (7, 5.5) node[pos=0.5, align=center, font=\small\sffamily] {\textbf{Reward}\\ $r_t$};
+    
+    % Dotted line for comparison
+    \draw[dashed, thick, draw=red!80] (0, 4) -- (8.5, 4);
+    
+    % Brace for TD Error
+    \draw[brace, draw=red!80] (7.2, 5.5) -- (7.2, 4.0) node[midway, right=0.3cm, font=\small\sffamily\bfseries, text=red!80, align=left] {TD-Error $\delta_t$\\ (Surprise Gap)};
+    
+\end{tikzpicture}
+\caption{Visualizing the Temporal Difference (TD) Error as the mathematical gap between the Critic's prior prediction and the newly observed reality.}
+\label{fig:td_error_visual}
+\end{figure}
+
+Building upon this, we must evaluate the specific action the Actor chose. We define the state-value $V^{\pi_\theta}(s)$ as the baseline expectation of simply \emph{being} in a state. Conversely, we define the action-value $Q^{\pi_\theta}(s, a)$ as the expected return of taking a \emph{specific action} in that state before resuming the regular policy.
+
+The \emph{Advantage} function, $A^{\pi_\theta}(s, a)$, isolates the unique benefit of that specific action by subtracting the baseline from the action-value: $A^{\pi_\theta}(s, a) = Q^{\pi_\theta}(s, a) - V^{\pi_\theta}(s)$~\parencite{Sutton_Barto_2018}. Modern algorithms estimate this Advantage using a discounted sum of the TD-Errors we just calculated.
+
+\subsubsection{The Actor's Update and Proximal Policy Optimization (PPO)}
+\label{subsec:ppo}
+
+With the Advantage calculated by the Critic (\Cref{fig:actor_critic}), the Actor knows whether its chosen action was better or worse than expected. Classically, by the Policy Gradient Theorem~\parencite{Sutton_Barto_2018}, the Actor updates its weights $\theta$ to maximize its performance via the following gradient:
 \begin{equation}
     \nabla_\theta J(\theta) = \mathbb{E}_{s \sim \rho^{\pi_\theta}, a \sim \pi_\theta} \left[ \nabla_\theta \log \pi_\theta(a \mid s) A^{\pi_\theta}(s, a) \right]
+    \label{eq:policy_gradient}
 \end{equation}
-where the Advantage function is formally defined as the difference between the action-value and the state-value: $A^{\pi_\theta}(s, a) = Q^{\pi_\theta}(s, a) - V^{\pi_\theta}(s)$~\parencite{Sutton_Barto_2018}. 
 
-To understand this intuitively, $V^{\pi_\theta}(s)$ evaluates how good it is to simply \emph{be} in a state, representing the baseline expectation. Conversely, the action-value $Q^{\pi_\theta}(s, a)$ evaluates the return of taking a \emph{specific action} in that state before resuming the regular policy. Therefore, subtracting $V$ from $Q$ isolates the unique Advantage of that specific action over the baseline.
+In other words, we take the expectation (essentially, an average) of the product of the log probability of the specific action that was just taken and the Advantage signal from the Critic, calculated over a large batch of state $s$ the agent visited and action $a$ it took. In plain English, Equation~\ref{eq:policy_gradient} tells the neural network: \emph{"On average across all your recent experiences, if an action was surprisingly good (positive Advantage), push your weights in a direction that makes that action more likely in the future. If it was bad, make it less likely."}
 
-While this formulation is mathematically sound, standard policy gradient estimation is highly fragile. If our agent randomly executes a perfect sequence of actions and finds a massive cache of wood, the calculated Advantage will be enormous. Standard gradient ascent would react by drastically altering the network's weights to favor that exact sequence again. This aggressive update frequently causes the network to "fall off a cliff," severely forgetting previously learned fundamental rules (such as avoiding boundaries).
+We can see why it could be fragile in practice. Suppose our lumberjack agent accidentally executes a random sequence of movements and luckily discovers a massive, hidden cache of wood. The Critic will calculate an enormous positive Advantage. Standard gradient ascent will blindly follow the math, reacting by violently dragging the Actor's weights in that specific direction to favor that exact sequence again. 
 
-Proximal Policy Optimization (PPO) resolves this fragility by enforcing a strict mathematical guardrail, known as a clipped surrogate objective~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}:
+This aggressive update frequently causes the network to "fall off a cliff." By violently altering its internal structure for one lucky event, the agent effectively destroys its own brain, catastrophically forgetting fundamental survival rules it had previously learned (such as avoiding hazards or map boundaries).
+
+Proximal Policy Optimization (PPO) resolves this fragility. It abandons the classical gradient calculation and instead enforces a strict mathematical guardrail, establishing a clipped surrogate objective specifically for the Actor, denoted as $L^{\text{CLIP}}(\theta)$~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}:
 \begin{equation}
 \label{eq:ppo_clip}
     L^{\text{CLIP}}(\theta) = \hat{\mathbb{E}}_t \left[ \min\left( r_t(\theta)\hat{A}_t, \; \text{clip}\bigl(r_t(\theta), 1-\epsilon, 1+\epsilon\bigr)\hat{A}_t \right) \right]
 \end{equation}
 
-To understand this equation efficiently, we can break it into two parts. First, $r_t(\theta) = \frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_{\text{old}}}(a_t \mid s_t)}$ is the probability ratio: if it is greater than 1, the action is more likely to be chosen now than it was before the update. Second, the $\epsilon$ hyperparameter (typically $0.2$, as established by \textcite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}) acts as a hard speed limit. 
+To fully understand this equation, we can break down its notation:
+\begin{itemize}[nosep]
+    \item $\hat{\mathbb{E}}_t$ means we are averaging over a finite batch of real data collected at time steps $t$, rather than computing a perfect theoretical expectation. $\hat{A}_t$ is the estimated Advantage provided by the Critic.
+    \item $r_t(\theta)$ is the probability ratio, defined as $\frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_{\text{old}}}(a_t \mid s_t)}$, which measures how much more (or less) likely the agent is to take the action now compared to before the update.
+    \item $\epsilon$ acts as a hard boundary or a speed limit for the updates (typically $0.2$, as established by \textcite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}).
+\end{itemize}
 
-If an action yields a massive positive Advantage, the network will naturally try to increase the ratio $r_t(\theta)$ exponentially. However, the $\text{clip}$ function truncates this ratio at $1 + \epsilon$ (i.e., $1.2$). The $\min$ operator then forces the optimizer to use this truncated version, completely ignoring any further gradient once the probability of that action has increased by 20\%. By mathematically ignoring overly enthusiastic updates, PPO ensures the agent learns smoothly and stably without destructive variance spikes.
+If an action yields a massive positive Advantage, the network will naturally try to increase the ratio $r_t(\theta)$ exponentially. However, the $\text{clip}$ function truncates this ratio at $1 + \epsilon$ (i.e., $1.2$). The $\min$ operator then forces the optimizer to use this truncated version, completely ignoring any further gradient once the probability of that action has increased by 20\%. By mathematically ignoring overly enthusiastic updates, PPO ensures the Actor learns smoothly and stably without destructive variance spikes.
 
 \subsubsection{Kullback-Leibler (KL) Divergence and Early Stopping}
 \label{subsec:kl_divergence}
 
-While the clipping mechanism described in Equation~\ref{eq:ppo_clip} acts as a per-action speed limit, PPO implementations frequently employ an additional, broader safety net known as \emph{early stopping} based on Kullback-Leibler (KL) divergence~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}. 
+While the clipping mechanism described in Equation~\ref{eq:ppo_clip} acts as a strict per-action speed limit---ensuring the probability of taking one specific action doesn't spike too drastically---PPO implementations frequently employ an additional, broader safety net. This is known as \emph{early stopping} based on Kullback-Leibler (KL) divergence~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}.
 
-KL divergence is a fundamental concept in information theory and statistics that measures how much one probability distribution diverges from a second, reference probability distribution. In the context of reinforcement learning, we use it to measure the ``distance'' between the agent's new updated policy $\pi_{\theta_{\text{new}}}$ and its old policy $\pi_{\theta_{\text{old}}}$ before the current optimization step began. For discrete action spaces, the KL divergence is defined as:
+To understand why this is necessary, consider our lumberjack once more. The clipping function works perfectly for isolating and limiting a single enthusiastic update (like chopping a tree). However, if the agent updates thousands of small, unclipped actions simultaneously across a large batch of data, the \emph{cumulative} effect might still fundamentally alter the agent's overall behavior. 
+
+KL divergence is a concept from information theory that measures exactly this: how much one probability distribution diverges from a reference distribution. In our case, it measures the mathematical "distance" between the agent's new updated policy $\pi_{\theta_{\text{new}}}$ and its old policy $\pi_{\theta_{\text{old}}}$ before the current optimization step began. For discrete action spaces, it is defined as:
 \begin{equation}
 \label{eq:kl_div}
     D_{\text{KL}}(\pi_{\theta_{\text{old}}} \parallel \pi_{\theta_{\text{new}}}) = \sum_{a \in \mathcal{A}} \pi_{\theta_{\text{old}}}(a \mid s) \log\left(\frac{\pi_{\theta_{\text{old}}}(a \mid s)}{\pi_{\theta_{\text{new}}}(a \mid s)}\right)
 \end{equation}
-Importantly, KL divergence is asymmetric (i.e., $D_{\text{KL}}(P \parallel Q) \neq D_{\text{KL}}(Q \parallel P)$), meaning it specifically measures the information lost when the new policy is used to approximate the old policy's distribution. It is always non-negative and equals exactly zero only when the two distributions are identical.
 
-To build intuition, consider an agent standing next to a tree. Under the old policy, it might have a 90\% probability of choosing to `Chop' and a 10\% probability of choosing to `Move'. If a single update drastically shifts these probabilities to 10\% `Chop' and 90\% `Move', the KL divergence between the two policies will spike. As illustrated in Figure~\ref{fig:kl_divergence}, a massive spike indicates that the optimizer has aggressively destroyed the previously learned behavior, potentially causing the agent to forget fundamental skills.
+Importantly, KL divergence is asymmetric (i.e., $D_{\text{KL}}(P \parallel Q) \neq D_{\text{KL}}(Q \parallel P)$), meaning it specifically measures the information lost when the new policy is used to approximate the old policy's distribution. It is always non-negative and equals exactly zero only when the two policies are identical.
+
+Let us consider the lumberjack standing next to a tree. Under the old policy, it might have a 90\% probability of choosing to `Chop' and a 10\% probability of choosing to `Move'. If a single update drastically shifts these probabilities to 10\% `Chop' and 90\% `Move', the KL divergence between the two policies will spike. As illustrated in Figure~\ref{fig:kl_divergence}, a massive spike indicates that the optimizer has aggressively destroyed the previously learned behavior, potentially causing the agent to forget fundamental skills.
 
 \begin{figure}[H]
 \centering
@@ -248,7 +269,7 @@ To build intuition, consider an agent standing next to a tree. Under the old pol
 \label{fig:kl_divergence}
 \end{figure}
 
-To prevent this, PPO implementations often calculate an approximation of the KL divergence during the training loop. If this calculated divergence crosses a strict, predefined threshold (the Target KL, typically around $0.01$ to $0.015$), the optimizer immediately aborts any remaining training epochs for that batch of data~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}. This \emph{early stopping} acts as an emergency brake, ensuring that even if an extraordinarily large Advantage signal slips past the clipping mechanism, the policy is physically blocked from mutating too violently in a single step.
+To prevent this catastrophic forgetting, PPO calculates an approximation of the KL divergence during the training loop. If this calculated distance crosses a strict, predefined threshold (the Target KL, typically around $0.01$ to $0.015$), the optimizer acts as an emergency brake. It immediately aborts any remaining training epochs for that batch of data~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}. This ensures that even if a wave of subtle updates slips past the cruise-control of the per-action clipping mechanism, the agent's "brain" is physically blocked from mutating too violently in a single step.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Cooperative Multi-Agent Reinforcement Learning}
