@@ -332,14 +332,18 @@ To formalize this mathematically, we extend our previous MDP into the Dec-POMDP 
     \item $\mathcal{R}: \mathcal{S} \times \boldsymbol{\mathcal{A}} \rightarrow \mathbb{R}$ is the globally shared reward signal. If the agents successfully cooperate to build a tool, this single scalar reward is emitted to all agents equally.
 \end{itemize}
 
-This structure introduces a critical mathematical consequence. Because an individual agent $i$ cannot perceive the full state $s_t$, a single observation $o_t^{(i)} \in \Omega_i$ instantly breaks the Markov property we established in Section 2.1. The agent cannot rely solely on the present moment, because its present observation is incomplete. 
+This structure introduces a critical mathematical consequence. Because an individual agent $i$ cannot perceive the full state $s_t$, a single observation $o_t^{(i)} \in \Omega_i$ instantly breaks the Markov property we established in Section~\ref{subsec:mdp}. The agent cannot rely solely on the present moment, because its present observation is incomplete. 
 
-To restore temporal context, agent $i$ must rely on its memory. It maintains an action-observation history $\tau_t^{(i)} = (o_1^{(i)}, a_1^{(i)}, \dots, o_t^{(i)})$, and parameterizes its decentralized policy as $\pi_i(a_i \mid \tau_i)$. In modern deep learning, this memory is typically implemented using recurrent neural network layers, such as GRUs or LSTMs, allowing the agent to stitch together a continuous understanding of the world from fragmented snapshots~\parencite{Hausknecht_Stone_2015}.
+To restore temporal context, agent $i$ must rely on its memory. It maintains an action-observation history $\tau_t^{(i)} = (o_1^{(i)}, a_1^{(i)}, \dots, o_t^{(i)})$, and parameterizes its decentralized policy as $\pi_i(a_i \mid \tau_i)$. While standard feed-forward or Convolutional Neural Networks (CNNs) \parencite{Lecun_Bottou_Bengio_Haffner_1998} are highly effective at extracting spatial features from a single isolated observation, they inherently lack the capacity to remember past states. This is why modern architectures implement this memory using Recurrent Neural Networks (RNNs). Gated variants like Long Short-Term Memory (LSTM) \parencite{Hochreiter_Schmidhuber_1997} or Gated Recurrent Units (GRUs) \parencite{Chung_Gulcehre_Cho_Bengio_2014} are typically used to prevent the vanishing gradient problem. By maintaining stable learning signals over time, these networks allow the agent to build a continuous understanding of the environment from fragmented spatial snapshots \parencite{Hausknecht_Stone_2015}.
 
 \subsubsection{Centralized Training with Decentralized Execution (CTDE)}
 \label{subsec:ctde}
 
 To resolve the fog of war without violating the strict rules of the game, modern MARL algorithms adopt the Centralized Training with Decentralized Execution (CTDE) paradigm~\parencite{Albrecht_Christianos_Schäfer_2024}. 
+
+CTDE applies a dual-perspective philosophy to our grid-world. As shown in Figure~\ref{fig:ctde_mappo}, during the offline training phase, the algorithm acts as an omniscient supervisor. It utilizes a Centralized Critic that has privileged, god's-eye access to the global environment state $\mathbf{s}_t$. Because it knows the exact coordinates of both the lumberjack and the miner, it can accurately judge whether a joint action was truly beneficial. 
+
+However, during online deployment, this centralized structure is severed. The Critic is discarded, and the decentralized Actors are deployed to the grid. They must execute their policies independently, relying solely on their fragmented local action-observation histories ($\tau_i$) without knowing the exact status of their partner.
 
 \begin{figure}[H]
 \centering
@@ -396,14 +400,12 @@ To resolve the fog of war without violating the strict rules of the game, modern
 \label{fig:ctde_mappo}
 \end{figure}
 
-CTDE applies a dual-perspective philosophy to our grid-world. As shown in Figure~\ref{fig:ctde_mappo}, during the offline training phase, the algorithm acts as an omniscient supervisor. It utilizes a Centralized Critic that has privileged, god's-eye access to the global environment state $\mathbf{s}_t$. Because it knows the exact coordinates of both the lumberjack and the miner, it can accurately judge whether a joint action was truly beneficial. 
-
-However, during online deployment, this centralized structure is severed. The Critic is discarded, and the decentralized Actors are deployed to the grid. They must execute their policies independently, relying solely on their fragmented local action-observation histories ($\tau_i$) without knowing the exact status of their partner.
-
 \subsubsection{Multi-Agent Proximal Policy Optimization (MAPPO)}
 \label{subsec:mappo}
 
-Multi-Agent PPO (MAPPO) brings our grid-world to life by extending the single-agent PPO architecture directly into this CTDE paradigm~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022}. The elegance of MAPPO lies in its simplicity: the decentralized Actors remain mathematically identical to standard PPO, while only the Centralized Critic is modified to process the global environment state.
+Before the widespread adoption of Actor-Critic methods in multi-agent settings, the field heavily relied on value-decomposition techniques to solve the credit assignment problem. Algorithms like Value-Decomposition Networks (VDN)~\parencite{Sunehag_Lever_Gruslys_Czarnecki_Zambaldi_Jaderberg_Lanctot_Sonnerat_Leibo_Tuyls_et_al._2017} and QMIX~\parencite{Rashid_Samvelyan_Witt_Farquhar_Foerster_Whiteson_2018} became popular by factorizing a global reward into individual agent contributions. QMIX, for example, enforces a strict monotonic relationship between the global value and the local values of the agents. However, these structural constraints limit the types of cooperative tasks these algorithms can solve effectively~\parencite{Castellini_2022}.
+
+More recently, research has demonstrated that on-policy Actor-Critic methods can avoid these constraints altogether while matching or exceeding the performance of off-policy factorization methods. Multi-Agent PPO (MAPPO) brings our grid-world to life by extending the single-agent PPO architecture directly into the CTDE paradigm~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022}. The elegance of MAPPO lies in its simplicity: the decentralized Actors remain mathematically identical to standard PPO, while only the Centralized Critic is modified to process the global environment state.
 
 The Centralized Critic Network (Value), parameterized by $\phi$, learns the value function $V_\phi(\mathbf{s}_t)$. Crucially, $\mathbf{s}_t$ is the unclipped global joint state. In our RPG scenario, while the lumberjack only sees the trees immediately in front of them, the Critic sees the entire map, knowing exactly where both the lumberjack and the miner are located, and what resources they hold. By estimating baseline returns using this true reality of the board, the Critic stabilizes the variance in its Advantage calculations. It is optimized by minimizing the Mean Squared Error against the actual calculated returns $\hat{R}_t$~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022}:
 \begin{equation}
@@ -413,15 +415,20 @@ where $N$ represents the number of agents, and $B$ represents the batch size (th
 
 Simultaneously, the decentralized Actors (the lumberjack and the miner) learn their respective policies $\pi_{\theta_i}(a_i \mid \tau_i)$. Because they operate in the fog of war, their inputs are restricted strictly to their localized action-observation histories ($\tau_i$). Each Actor updates its weights using the exact same clipped surrogate objective from Equation~\ref{eq:ppo_clip}. 
 
-As mapped out in our visual architecture, the gradient flow is strictly separated: the error from the global state flows backward exclusively to update the Critic's weights ($\phi$), while the Advantage signal computed by the Critic is passed outward to the Actors. The lumberjack and miner use this Advantage to update their own neural weights ($\theta_i$). This distinct separation of information allows MAPPO to achieve state-of-the-art sample efficiency across complex cooperative benchmarks~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022}.
+As shown in Figure~\ref{fig:ctde_mappo}, the gradient flow is strictly separated. The global state error updates only the Critic's weights ($\phi$), while the Critic passes its computed Advantage signal to the Actors. The lumberjack and miner then use this Advantage to update their own weights ($\theta_i$). This clear separation enables MAPPO to achieve sample efficiency in complex cooperative benchmarks~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022}.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Curriculum Learning}
 \label{sec:curriculum_learning}
 
-When environments suffer from extremely sparse rewards, an alternative to altering the agent's internal architecture is to alter the environment itself. \textcite{Bengio_Louradour_Collobert_Weston_2009} formalized this concept as \emph{Curriculum Learning}, drawing inspiration from human education. Rather than training a model on the most difficult data (or the most complex RL environment) from the start, the agent is first exposed to simplified, easily solvable versions of the task. 
+Some environments suffer from extremely sparse rewards, meaning agents only receive feedback after completing a long sequence of actions. When this happens, an alternative to altering the agent's internal architecture is to alter the environment itself. \textcite{Bengio_Louradour_Collobert_Weston_2009} formalized this concept as \emph{Curriculum Learning}, drawing inspiration from human education. 
 
-As the agent masters these basic concepts, the environment's complexity is progressively increased. In reinforcement learning, this typically means a human designer must manually craft a sequence of environments---for example, starting the agent in a tiny grid with the target one step away, and gradually expanding the grid size and adding obstacles. While highly effective at bootstrapping learning, traditional curriculum learning suffers from scalability issues, as it requires extensive domain expertise and manual engineering to carefully design the difficulty schedule for each specific problem.
+Rather than training a model on the most difficult data (or the most complex RL environment) from the start, the agent is first exposed to simplified, easily solvable versions of the task. As the agent masters these basic concepts, the environment's complexity is progressively increased. In reinforcement learning, this typically means a human designer must manually craft a sequence of environments. For example, starting the agent in a tiny grid with the target one step away, and gradually expanding the grid size and adding obstacles. 
+
+Although effective, this traditional approach suffers from scalability issues due to its reliance on manual engineering. 
+To overcome this, the field shifted toward \emph{Automated Curriculum Learning} (ACL), where algorithms dynamically adjust the environment parameters~\parencite{Portelas_Colas_Weng_Hofmann_Oudeyer_2020}. 
+
+However, generating entirely new physical environments on the fly introduces significant computational overhead and non-stationarity. If the physical rules or map layouts constantly change, the agents struggle to stabilize their policies. Therefore, rather than altering the environment from the outside, a more stable solution is to alter the agent's cognitive abstractions from the inside. By shaping the internal rewards or providing discrete skill milestones, techniques explored in the following section, we can guide agents through complex dependencies without ever needing to rebuild the world around them.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Temporal Abstraction and Reward Shaping}
@@ -432,18 +439,16 @@ While MAPPO exhibits strong sample efficiency in dense tasks, it struggles catas
 \subsubsection{Potential-Based Reward Shaping (PBRS)}
 \label{subsec:pbrs}
 
-Reward shaping attempts to solve this by supplementing the sparse environmental reward $r^{\text{env}}$ with an auxiliary dense signal $F(s, s')$. 
-However, unconstrained reward additions frequently alter the underlying MDP, causing agents to discover local optima or engage in \emph{reward hacking} (e.g., farming points without completing the actual objective).
+Reward shaping attempts to solve this exploration problem by supplementing the sparse environmental reward $r^{\text{env}}$ with an auxiliary dense signal $F(s, s')$, gently guiding the agent toward the desired objective. However, unconstrained reward additions frequently alter the underlying MDP, causing agents to discover local optima or engage in reward hacking (e.g., farming points by repeating an action without actually progressing).
 
-To prevent policy distortion, Ng et al. (1999) proved that a shaping signal $F(s, s')$ preserves the optimal policy set $\pi^*$ if and only if it is expressed as the difference of a state potential function $\Phi(s)$~\parencite{Ng_Harada_Russell_1999}:
+To prevent this policy distortion, Ng et al. (1999) proved that a shaping signal $F(s, s')$ preserves the optimal policy set $\pi^*$ if and only if it is expressed as the difference of a state potential function $\Phi(s)$~\parencite{Ng_Harada_Russell_1999}:
 \begin{equation}
 \label{eq:pbrs_canonical}
     F(s, s') = \gamma \Phi(s') - \Phi(s)
 \end{equation}
-where $\Phi: \mathcal{S} \rightarrow \mathbb{R}$ maps any state to a scalar value.
-In our grid-world, think of $\Phi(s)$ as a hot-and-cold compass pointing the lumberjack toward the nearest tree. Adding $F(s, s')$ to the environment reward creates an augmented signal $r^{\text{total}}_t = r_t^{\text{env}} + F(s_t, s_{t+1})$.
+where the potential function $\Phi: \mathcal{S} \rightarrow \mathbb{R}$ evaluates any state and outputs a scalar score. In our grid-world, think of $\Phi(s)$ as a literal hot-and-cold compass pointing the lumberjack toward the nearest tree. Adding $F(s, s')$ to the environment reward creates an augmented, safe signal $r^{\text{total}}_t = r_t^{\text{env}} + F(s_t, s_{t+1})$.
 
-As demonstrated in Figure~\ref{fig:pbrs_loop}, the discount factor $\gamma$ is mathematically vital. It acts as a conservative vector field, ensuring that the agent is penalized for stepping backward more than it is rewarded for stepping forward. Because $\sum_{t=0}^\infty \gamma^t F(s_t, s_{t+1}) = -\Phi(s_0)$, this structural formulation guarantees policy invariance while providing dense guidance~\parencite{Ng_Harada_Russell_1999}.
+As demonstrated in Figure~\ref{fig:pbrs_loop}, the discount factor $\gamma$ is mathematically vital. It acts as a friction mechanism, taxing the agent's movement. When the agent steps forward to a higher potential state, the reward is slightly discounted. However, when it steps backward to a lower potential state, the penalty outweighs the previous gain. Because any cyclic loop yields a net negative return (e.g., $\sum_{t=0}^\infty \gamma^t F(s_t, s_{t+1}) = -\Phi(s_0)$), this formulation guarantees policy invariance while providing dense guidance~\parencite{Ng_Harada_Russell_1999}.
 
 \begin{figure}[H]
 \centering
@@ -464,15 +469,15 @@ As demonstrated in Figure~\ref{fig:pbrs_loop}, the discount factor $\gamma$ is m
 \subsubsection{The Options Framework for Hierarchical RL}
 \label{subsec:options_framework}
 
-Rather than modifying the reward landscape, Hierarchical Reinforcement Learning (HRL) achieves temporal abstraction by organizing low-level actions into high-level macro-structures. The \emph{Options Framework} formalizes these macro-actions over MDPs~\parencite{Sutton_Precup_Singh_1999}. Instead of deciding whether to step north or south, our agent can select a discrete Option $o \in \mathcal{O}$, such as \texttt{COLLECT\_WOOD}. 
+Rather than modifying the reward landscape, Hierarchical Reinforcement Learning (HRL) achieves temporal abstraction by organizing low-level actions into high-level macro-structures. The \emph{Options Framework} formalizes these macro-actions over MDPs~\parencite{Sutton_Precup_Singh_1999}. Rather than forcing a single policy to decide whether to step north or south at every millisecond, HRL introduces a higher-level cognitive hierarchy. A Meta-Controller can select a discrete Option $o \in \mathcal{O}$, such as \texttt{COLLECT\_WOOD}, which then dictates those low-level kinetic movements.
 
 This Option is defined by the triple $\langle \mathcal{I}_o, \pi_o, \beta_o \rangle$~\parencite{Sutton_Precup_Singh_1999}:
 \begin{itemize}[nosep]
     \item $\mathcal{I}_o \subseteq \mathcal{S}$ is the initiation set. The \texttt{COLLECT\_WOOD} Option can only be initiated if the lumberjack does not already have wood in its inventory.
-    \item $\pi_o(a \mid s)$ is the intra-option policy governing primitive execution while the option is active. This is the low-level MAPPO policy actually steering the agent to the tree and executing the 'Chop' command.
+    \item $\pi_o(a \mid s)$ is the intra-option policy governing primitive execution. This is the low-level MAPPO policy that actually steers the agent to the tree and executes the 'Chop' command.
     \item $\beta_o: \mathcal{S} \rightarrow [0, 1]$ is the stochastic termination condition, giving the probability $\beta_o(s)$ that option $o$ terminates in state $s$. For the lumberjack, this triggers at 100\% probability the moment the wood enters the inventory.
 \end{itemize}
 
-When an option $o$ is selected, the intra-option policy $\pi_o$ controls primitive actions until the termination condition $\beta_o$ triggers, transforming the underlying decision process into a Semi-Markov Decision Process (SMDP) operating over variable temporal steps~\parencite{Sutton_Precup_Singh_1999}.
+When an option $o$ is selected, the intra-option policy $\pi_o$ controls primitive actions until the termination condition $\beta_o$ triggers. This transforms the underlying decision process into a Semi-Markov Decision Process (SMDP) operating over variable temporal steps~\parencite{Sutton_Precup_Singh_1999}.
 
-By abstracting the kinetic physics of the grid into discrete semantic tasks, the Options framework sets the stage for a high-level cognitive controller. As explored in the next chapter, this architecture allows Large Language Models to act as strategic orchestrators, entirely bypassing the random exploration bottleneck.
+By abstracting the kinetic physics of the grid into discrete semantic tasks, the Options framework sets the stage for a high-level cognitive controller. As explored in the next chapter, this architecture allows Large Language Models to act as these strategic orchestrators, entirely bypassing the random exploration bottleneck.

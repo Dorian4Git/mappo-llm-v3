@@ -677,4 +677,59 @@
   year    = {2023},
   urldate = {2026-07-20}
 }
-
+ @article{Hochreiter_Schmidhuber_1997,
+  title        = {Long Short-Term Memory},
+  volume       = {9},
+  doi          = {10.1162/neco.1997.9.8.1735},
+  abstractnote = {Learning to store information over extended time intervals by recurrent backpropagation takes a very long time, mostly because of insufficient, decaying error backflow. We briefly review Hochreiter’s (1991) analysis of this problem, then address it by introducing a novel, efficient, gradient based method called long short-term memory (LSTM). Truncating the gradient where this does not do harm, LSTM can learn to bridge minimal time lags in excess of 1000 discrete-time steps by enforcing constant error flow through constant error carousels within special units. Multiplicative gate units learn to open and close access to the constant error flow. LSTM is local in space and time; its computational complexity per time step and weight is O. 1. Our experiments with artificial data involve local, distributed, real-valued, and noisy pattern representations. In comparisons with real-time recurrent learning, back propagation through time, recurrent cascade correlation, Elman nets, and neural sequence chunking, LSTM leads to many more successful runs, and learns much faster. LSTM also solves complex, artificial long-time-lag tasks that have never been solved by previous recurrent network algorithms.},
+  journal      = {Neural Computation},
+  author       = {Hochreiter, Sepp and Schmidhuber, Jürgen},
+  year         = {1997},
+  month        = nov,
+  pages        = {1735–1780}
+}
+ @article{Chung_Gulcehre_Cho_Bengio_2014,
+  title        = {Empirical Evaluation of Gated Recurrent Neural Networks on Sequence Modeling},
+  url          = {http://arxiv.org/abs/1412.3555},
+  doi          = {10.48550/arXiv.1412.3555},
+  abstractnote = {In this paper we compare different types of recurrent units in recurrent neural networks (RNNs). Especially, we focus on more sophisticated units that implement a gating mechanism, such as a long short-term memory (LSTM) unit and a recently proposed gated recurrent unit (GRU). We evaluate these recurrent units on the tasks of polyphonic music modeling and speech signal modeling. Our experiments revealed that these advanced recurrent units are indeed better than more traditional recurrent units such as tanh units. Also, we found GRU to be comparable to LSTM.},
+  note         = {arXiv:1412.3555 [cs.NE]},
+  number       = {arXiv:1412.3555},
+  publisher    = {arXiv},
+  author       = {Chung, Junyoung and Gulcehre, Caglar and Cho, KyungHyun and Bengio, Yoshua},
+  year         = {2014},
+  month        = dec
+}
+@inproceedings{Krizhevsky_Sutskever_Hinton_2012,
+  title     = {ImageNet Classification with Deep Convolutional Neural Networks},
+  author    = {Krizhevsky, Alex and Sutskever, Ilya and Hinton, Geoffrey E.},
+  booktitle = {Advances in Neural Information Processing Systems},
+  volume    = {25},
+  year      = {2012},
+  publisher = {Curran Associates, Inc.}
+}
+ @article{Lecun_Bottou_Bengio_Haffner_1998,
+  title        = {Gradient-based learning applied to document recognition},
+  volume       = {86},
+  issn         = {1558-2256},
+  doi          = {10.1109/5.726791},
+  abstractnote = {Multilayer neural networks trained with the back-propagation algorithm constitute the best example of a successful gradient based learning technique. Given an appropriate network architecture, gradient-based learning algorithms can be used to synthesize a complex decision surface that can classify high-dimensional patterns, such as handwritten characters, with minimal preprocessing. This paper reviews various methods applied to handwritten character recognition and compares them on a standard handwritten digit recognition task. Convolutional neural networks, which are specifically designed to deal with the variability of 2D shapes, are shown to outperform all other techniques. Real-life document recognition systems are composed of multiple modules including field extraction, segmentation recognition, and language modeling. A new learning paradigm, called graph transformer networks (GTN), allows such multimodule systems to be trained globally using gradient-based methods so as to minimize an overall performance measure. Two systems for online handwriting recognition are described. Experiments demonstrate the advantage of global training, and the flexibility of graph transformer networks. A graph transformer network for reading a bank cheque is also described. It uses convolutional neural network character recognizers combined with global training techniques to provide record accuracy on business and personal cheques. It is deployed commercially and reads several million cheques per day.},
+  number       = {11},
+  journal      = {Proceedings of the IEEE},
+  author       = {Lecun, Y. and Bottou, L. and Bengio, Y. and Haffner, P.},
+  year         = {1998},
+  month        = nov,
+  pages        = {2278–2324}
+}
+ @article{Portelas_Colas_Weng_Hofmann_Oudeyer_2020,
+  title        = {Automatic Curriculum Learning For Deep RL: A Short Survey},
+  url          = {http://arxiv.org/abs/2003.04664},
+  doi          = {10.48550/arXiv.2003.04664},
+  abstractnote = {Automatic Curriculum Learning (ACL) has become a cornerstone of recent successes in Deep Reinforcement Learning (DRL).These methods shape the learning trajectories of agents by challenging them with tasks adapted to their capacities. In recent years, they have been used to improve sample efficiency and asymptotic performance, to organize exploration, to encourage generalization or to solve sparse reward problems, among others. The ambition of this work is dual: 1) to present a compact and accessible introduction to the Automatic Curriculum Learning literature and 2) to draw a bigger picture of the current state of the art in ACL to encourage the cross-breeding of existing concepts and the emergence of new ideas.},
+  note         = {arXiv:2003.04664 [cs.LG]},
+  number       = {arXiv:2003.04664},
+  publisher    = {arXiv},
+  author       = {Portelas, Rémy and Colas, Cédric and Weng, Lilian and Hofmann, Katja and Oudeyer, Pierre-Yves},
+  year         = {2020},
+  month        = mar
+}
