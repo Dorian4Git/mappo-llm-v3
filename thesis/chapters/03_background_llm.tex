@@ -225,8 +225,8 @@ The optimizer then uses \emph{backpropagation} to send this error signal backwar
 Instead, the error signal flows down the new adapter pathway via the Chain Rule of calculus. Let $L$ represent the loss and $\frac{\partial L}{\partial h}$ represent the error signal arriving from the network's output. Because the forward pass computes $B(Ax)$, the backward pass encounters matrix $B$ first. As shown in Equation~\ref{eq:lora_backprop}, calculating the gradient for $B$ ($\nabla_B$) relies on the cached forward outputs of $A$. To calculate the gradient for $A$ ($\nabla_A$), the error signal must flow backward through the transpose of $B$ ($B^T$):
 \begin{align}
 \label{eq:lora_backprop}
-    \nabla_B &= \frac{\partial L}{\partial h} (Ax)^T \nonumber \\
-    \nabla_A &= B^T \frac{\partial L}{\partial h} x^T
+    \nabla_B &= \frac{\alpha}{r} \frac{\partial L}{\partial h} (Ax)^T \nonumber \\
+    \nabla_A &= \frac{\alpha}{r} B^T \frac{\partial L}{\partial h} x^T
 \end{align}
 This mathematical sequence proves why $\nabla_B$ can be calculated immediately using the forward activations, while calculating $\nabla_A$ explicitly requires the error signal to pass through $B^T$. 
 
@@ -235,22 +235,45 @@ Understanding this localized gradient flow is critical to the feasibility of thi
 Combined, this targeted gradient flow and aggressive 4-bit quantization reduce overall VRAM consumption by up to 75\% compared to full fine-tuning~\parencite{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023}. This ultimate computational efficiency is precisely what enables our Qwen Commander to learn its JSON-formatting rules locally, running seamlessly alongside the heavy MAPPO environment without exhausting the workstation's memory budget.
 
 % ──────────────────────────────────────────────────────────────────────────
-\subsection{The Qwen Architecture and Agentic Capabilities}
+\subsection{The Qwen Architecture and Model Selection}
 \label{sec:qwen_architecture}
 
-To serve as the cognitive controller in a MARL system, the chosen foundation model must possess advanced coding, reasoning, and instruction-following capabilities. This thesis leverages the Qwen model family, specifically utilizing the Qwen 2.5 7B parameters architecture, representing state-of-the-art open-weights performance~\parencite{Yang_Li_Yang_Zhang_Hui_Zheng_Yu_Gao_Huang_Lv_et_al._2025}.
+To serve as the cognitive controller in a MARL system, the chosen foundation model must possess spatial reasoning and reliable instruction-following capabilities. Because the model must run locally alongside the synchronous MAPPO tensor rollouts, parameter size and inference latency become the primary engineering constraints. A model that generates complex semantic plans but requires 30 seconds to output a response will stall the high-frequency reinforcement learning loop.
 
-A key innovation in the Qwen architecture is the inherent integration of a ``thinking mode'' for complex, multi-step reasoning alongside a non-thinking mode for rapid, context-driven responses~\parencite{Yang_Li_Yang_Zhang_Hui_Zheng_Yu_Gao_Huang_Lv_et_al._2025}. In the context of reinforcement learning, this duality is critical. The Commander model can rapidly parse structured JSON inputs representing the lumberjack's inventory, while simultaneously allocating internal computational resources to process multi-step dependency paths (e.g., verifying that a Pickaxe must be crafted before Iron can be mined). By coupling the Qwen architecture with QLoRA, the model can be locally fine-tuned to act as a highly specialized, latency-bound orchestrator.
+To identify a suitable Meta-Controller, several modern open-weights architectures were empirically evaluated via the Ollama inference framework. Ollama was selected for its native support of quantized models, which reduces the memory footprint of large language models while maintaining acceptable inference speeds. The candidate pool included models ranging from 2 billion to 27 billion parameters, specifically \texttt{llama3.2:latest} (2B), \texttt{qwen2.5:7b}, \texttt{llama3.1:8b}, \texttt{gemma2:9b}, and \texttt{gemma3:27b}.
+
+During preliminary testing, models at the extremes of this parameter spectrum proved unsuitable for the synchronous training loop. Lightweight models, such as \texttt{llama3.2} (2B), offered near-instantaneous inference but struggled to reliably respect the JSON schema required by the Python backend, frequently leading to parsing crashes. Conversely, larger models like \texttt{gemma3:27b} exhibited strong logic capabilities and consistent formatting but required approximately 17 GB of VRAM even with quantization. Given the target deployment hardware (a consumer-grade NVIDIA RTX 5070 with 12 GB of VRAM), the 27B model exceeded the physical memory budget entirely, causing immediate out-of-memory errors before the MAPPO environment could even be initialized.
+
+Among the mid-range models (\texttt{qwen2.5:7b}, \texttt{llama3.1:8b}, and \texttt{gemma2:9b}), differences in instruction following and context processing became apparent. While both LLaMA 3.1 and Gemma 2 fit within the memory envelope and performed adequately on general reasoning tasks, they occasionally hallucinated keys or deviated from the strict JSON hierarchy required for parsing environment commands. In contrast, \texttt{qwen2.5:7b} demonstrated more reliable capabilities for programmatic orchestration. Standard industry benchmarks support this empirical observation: as shown in Table~\ref{tab:model_benchmarks}, Qwen 2.5 7B Instruct outperforms its peers in both zero-shot coding and multi-step reasoning (measured by HumanEval and GSM8K, respectively)\footnote{HumanEval evaluates a model's ability to synthesize functional Python programs, while GSM8K (Grade School Math 8K) tests its capacity to solve multi-step logical problems.}~\parencite{Qwen_Yang_Yang_Zhang_Hui_Zheng_Yu_Li_Liu_Huang_et_al_2024}. 
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Model} & \textbf{HumanEval (\%)} & \textbf{GSM8K (\%)} \\
+\midrule
+Qwen 2.5 7B Instruct & \textbf{84.8} & \textbf{91.6} \\
+Llama 3.1 8B Instruct & 72.6 & 84.5 \\
+Gemma 2 9B & 40.2 & 68.6 \\
+\bottomrule
+\end{tabular}
+\caption{Comparison of zero-shot coding and multi-step reasoning performance among mid-range models.}
+\label{tab:model_benchmarks}
+\vspace{3mm}
+{\raggedleft \footnotesize Adapted from \parencite{Qwen_Yang_Yang_Zhang_Hui_Zheng_Yu_Li_Liu_Huang_et_al_2024} \par}
+\end{table} 
+
+Because the Meta-Controller must parse spatial data and output strict, unbroken JSON commands, this gap in coding and reasoning performance is a deciding factor. Ultimately, this thesis leverages the Qwen 2.5 7B architecture~\parencite{Qwen_Yang_Yang_Zhang_Hui_Zheng_Yu_Li_Liu_Huang_et_al_2024}. At roughly 4.7 GB of VRAM usage, it fits within the hardware constraints without interfering with concurrent PyTorch processes. Qwen 2.5 strikes a practical balance between speed and reasoning: it provides fast, latency-bound token generation while possessing the logical capacity required to navigate task dependency graphs (DAGs). The architecture's extensive pre-training on code and structured data translates well to the deterministic formatting needed for an RL controller. By coupling this efficient base model with QLoRA fine-tuning, the 7B parameters can be locally specialized to act as a reliable, low-latency orchestrator.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Neuro-Symbolic Orchestration and Verbal Reflection}
 \label{sec:llm_rl_integration}
 
-As established in section~\ref{sec:abstraction_shaping}, pure deep reinforcement learning struggles with severe exploration bottlenecks in sparse-reward environments. While the Options Framework offers a mathematical solution to temporal abstraction, designing the rules for when to trigger an Option traditionally demands extensive human engineering. 
+As established in Section~\ref{sec:abstraction_shaping}, pure deep reinforcement learning struggles with severe exploration bottlenecks in sparse-reward environments. While the Options Framework offers a mathematical solution to temporal abstraction, designing the rules for when to trigger an Option traditionally demands extensive human engineering. 
 
 Because LLMs develop powerful logic and reasoning skills during their initial pre-training, they can be deployed as \emph{zero-shot}\footnote{In machine learning, "zero-shot" refers to a model's ability to successfully perform a task it was not explicitly trained for, relying purely on generalized knowledge acquired during pre-training.} semantic orchestrators. This means the model can manage complex tasks right out of the box, completely bypassing the need for human engineers to write manual, hard-coded decision rules. Frameworks such as ReAct~\parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023} have shown that interleaving language reasoning with concrete actions allows models to solve multi-step problems autonomously. In reinforcement learning, systems like EUREKA~\parencite{ma2024eurekahumanlevelrewarddesign} and PRM4RL~\parencite{Zhang_Gao_Jiang_Chen_Pan_Zhang_Deng_2025} successfully use LLMs to automatically write and refine reward functions.
 
-As illustrated in Figure~\ref{fig:neuro_symbolic_hierarchy}, this thesis adopts a strict division of labor known as a Neuro-Symbolic Hierarchy. The high-level LLM Meta-Controller analyzes the environment and dictates strategic goals (e.g., "Craft a Pickaxe") by reasoning over a semantic Directed Acyclic Graph (DAG) of task dependencies. These text-based decisions are translated into discrete Options and passed down to the low-level MAPPO execution workers, which handle the high-frequency kinetic control (e.g., navigating the grid and avoiding obstacles).
+Rather than relying on a single pre-existing framework, this thesis synthesizes these disparate concepts into a unified, dual-tier architecture, building upon the principles of a Neuro-Symbolic Hierarchy~\parencite{Mitchener_2022}. As illustrated in Figure~\ref{fig:neuro_symbolic_hierarchy}, the high-level LLM Meta-Controller analyzes the environment and dictates strategic goals (e.g., "Craft a Pickaxe") by reasoning over a semantic Directed Acyclic Graph (DAG) of task dependencies. These text-based decisions are translated into discrete Options and passed down to the low-level MAPPO execution workers, which handle the high-frequency kinetic control (e.g., navigating the grid and avoiding obstacles).
 
 \begin{figure}[H]
 \centering
@@ -310,4 +333,4 @@ However, the low-level agents may sometimes fail to achieve the assigned goal. T
 \label{fig:verbal_reflection}
 \end{figure}
 
-Together, these mechanisms form a complete neuro-symbolic feedback loop: the LLM dictates the logical \emph{what}, and the MAPPO algorithm learns the spatial \emph{how}.
+Together, these assembled mechanisms form a complete neuro-symbolic feedback loop: the LLM dictates the logical \emph{what}, and the MAPPO algorithm learns the spatial \emph{how}. Having established the kinetic baseline of reinforcement learning and the semantic capabilities of large language models, the theoretical foundation of this thesis is now complete. The following chapters will demonstrate exactly how these components are engineered and deployed together, beginning with the design of the dependency-driven testbed.
