@@ -1,17 +1,17 @@
 \section{The Testbed: Engineering a Dependency-Driven World}
 \label{ch:the_environment}
 
-Before detailing the neuro-symbolic architectures developed in this thesis, it is crucial to establish the experimental testbed. The intersection of Large Language Models (LLMs) and Multi-Agent Reinforcement Learning (MARL) requires an environment that exhibits both kinetic complexity (movement, collision avoidance, spatial reasoning) and deep semantic dependencies (long horizon tasks gated by logical preconditions). To this end, a custom 2D multi-agent grid-world environment was engineered entirely from scratch.
+Before detailing the neuro-symbolic architectures developed in this thesis, this chapter establishes the experimental testbed. The intersection of Large Language Models (LLMs) and Multi-Agent Reinforcement Learning (MARL) requires an environment that exhibits both kinetic complexity (movement, collision avoidance, spatial reasoning) and semantic dependencies (long horizon tasks gated by logical preconditions). To this end, we have engineered a custom 2D multi-agent grid-world environment entirely from scratch.
 
 \subsection{Environment Design \& Mechanics}
 \label{sec:env_design}
 
-The environment operates as a cooperative spatial grid where multiple agents must jointly gather resources, craft tools, and defeat adversaries to achieve a final objective. Unlike standard dense-reward environments—where agents receive incremental gradient signals based on Euclidean distance to a target—this environment utilizes a logical sparse-reward formulation. The agents receive meaningful extrinsic rewards solely upon the completion of discrete logical milestones (subtasks).
+The environment operates as a cooperative spatial grid where multiple agents must jointly gather resources, craft tools, and defeat adversaries to achieve a final objective. Unlike standard dense-reward environments, where agents receive incremental gradient signals based on Euclidean distance to a target, this environment utilizes a logical sparse-reward formulation. The agents receive extrinsic rewards solely upon the completion of discrete logical milestones (subtasks).
 
 \subsubsection{The Dependency Graph (DAG)}
 \label{subsec:env_dag}
 
-The fundamental exploration challenge of the environment is formulated as a strict Directed Acyclic Graph (DAG) of dependencies. Agents cannot arbitrarily navigate to the final goal; they must coordinate to satisfy a rigid sequence of material and infrastructural preconditions. The required topological task progression is illustrated in Figure \ref{fig:env_dag}.
+The fundamental exploration challenge of the environment is formulated as a Directed Acyclic Graph (DAG) of dependencies. Agents cannot arbitrarily navigate to the final goal. They must coordinate to satisfy a rigid sequence of material and infrastructural preconditions. The required topological task progression is illustrated in Figure \ref{fig:env_dag}.
 
 \begin{figure}[H]
     \centering
@@ -74,16 +74,16 @@ The fundamental exploration challenge of the environment is formulated as a stri
     \label{fig:env_dag}
 \end{figure}
 
-As the topological depth of this chain increases, the probability of agents discovering the complete sequence through purely random, entropy-driven exploration decays exponentially. This rigid structure perfectly isolates the ``exploration bottleneck'' that our neuro-symbolic models are designed to circumvent.
+As the topological depth of this chain increases, the probability of agents discovering the complete sequence through purely random, entropy-driven exploration decays exponentially. This structure isolates the ``exploration bottleneck'' that our neuro-symbolic models are designed to solve.
 
 \subsubsection{Action and Observation Spaces}
 \label{subsec:env_spaces}
 
 The agents are trained under the Centralized Training with Decentralized Execution (CTDE) paradigm. During the decentralized execution phase, each agent perceives a 14-dimensional observation vector. Within this vector, the agents know exactly two things: \emph{where they are} (the absolute $(x,y)$ coordinates of the agents) and \emph{what they have} (the boolean status of the shared inventory). 
 
-However, they are completely blind to the map layout. The environment strictly enforces the Dec-POMDP partial observability (established in Section~\ref{subsec:dec_pomdp}) by completely hiding the coordinates of the target zones (resources, workbenches, enemies) from the state vector. Because the true mathematical state of the environment includes these target locations, hiding them creates a cognitive "fog of war." This forces the agents to physically explore the spatial grid to locate their objectives, rather than simply calculating a direct mathematical path to a known coordinate.
+However, they are completely blind to the map layout. The environment strictly enforces the Dec-POMDP partial observability (established in Section~\ref{subsec:dec_pomdp}) by completely hiding the coordinates of the target zones (resources, workbenches, enemies) from the state vector. Because the true mathematical state of the environment includes these target locations, hiding them creates a cognitive "fog of war". This forces the agents to physically explore the spatial grid to locate their objectives, rather than simply calculating a direct mathematical path to a known coordinate.
 
-The discrete action space consists of five parameters: four cardinal movement directions (Up, Down, Left, Right) and one semantic ``Interact'' action. The interaction mechanic is highly context-sensitive; for instance, triggering the action while adjacent to a forest tile chops wood, whereas executing it at a workbench (contingent upon possessing the requisite inventory) initiates tool crafting.
+The discrete action space consists of five parameters: four cardinal movement directions (Up, Down, Left, Right) and one semantic ``Interact'' action. The interaction mechanic is context-sensitive. For instance, triggering the action while adjacent to a forest tile chops wood, whereas executing it at a workbench (contingent upon possessing the requisite inventory) initiates tool crafting.
 
 \subsubsection{Visual Representation}
 \label{subsec:env_visual}
@@ -99,19 +99,19 @@ Figure~\ref{fig:env_screenshots} provides a visual representation of the discret
     \label{fig:env_screenshots}
 \end{figure}
 
-All visual assets utilized in this rendering engine, including the 2D pixel-art sprites representing the workers, terrain tiles, and interactive elements, were procedurally generated using the Gemini 1.5 Pro model via the Antigravity coding assistant platform.
+All visual assets utilized in this rendering engine, including the 2D pixel-art sprites representing the workers, and interactive elements, were procedurally generated using the Gemini 1.5 Pro model via the Antigravity coding assistant platform.
 
 \subsection{Architecture \& Technology Stack}
 \label{sec:env_tech}
 
-Engineering a custom MARL environment demands a rigorous assessment of the underlying technology stack, requiring a delicate balance between visual debugging capabilities and raw, parallelized simulation throughput.
+Engineering a custom MARL environment demands a careful selection of the underlying technology stack, requiring a balance between visual debugging capabilities and raw, parallelized simulation throughput.
 
 \subsubsection{The Necessity of Array-Native Execution over Game Engines}
 Initially, robust open-source game engines such as Godot~\parencite{godot} were considered for the simulation backbone. Godot provides a powerful visual editor, robust collision physics, and a mature node-based hierarchy, making it an optimal choice for traditional game development.
 
 However, modern on-policy deep reinforcement learning algorithms like MAPPO require simulating tens of millions of environment transitions to converge. Full-stack game engines introduce massive computational overhead for rendering pipelines, audio processing, and internal state management. Attempting to spawn hundreds of headless engine instances in parallel quickly bottlenecks system memory and CPU inter-process communication.
 
-As a result, the environment was engineered natively in Python utilizing \textbf{Pygame}~\parencite{pygame} and \textbf{NumPy}~\parencite{numpy}. This lower-level approach offers critical architectural advantages for reinforcement learning:
+As a result, the environment was engineered natively in Python utilizing Pygame~\parencite{pygame} and NumPy~\parencite{numpy}. This lower-level approach offers critical architectural advantages for reinforcement learning:
 \begin{itemize}
     \item \textbf{Headless Vectorization:} The environment logic (kinematics, state transitions, collision detection) is mathematically decoupled from the rendering loop. During the training loop, the visual renderer is entirely disabled, allowing a vectorized wrapper to step thousands of environments simultaneously without graphical overhead.
     \item \textbf{Direct Tensor Integration:} The underlying grid and inventory states are natively represented as NumPy arrays. This bypasses the expensive serialization and deserialization bottlenecks typically encountered when passing state matrices between a Python-based RL training script and an external C++ game engine, mitigating Python's Global Interpreter Lock (GIL) limitations during rollout collection.
@@ -123,7 +123,7 @@ As a result, the environment was engineered natively in Python utilizing \textbf
 The codebase relies on a modern, standardized stack of Python libraries to seamlessly interface the custom environment with the deep neural networks and the large language models:
 
 \begin{itemize}
-    \item \textbf{MARL Interface:} The environment conforms to the PettingZoo API \parencite{Terry_Black_Grammel_Jayakumar_Hari_Sullivan_Santos_Perez_Horsch_Dieffendahl_et_al._2021}, which has established itself as the canonical standard for multi-agent RL (analogous to the Gymnasium API for single-agent RL). Utilizing the Parallel API variant ensures the environment integrates natively with synchronous MAPPO tensor rollouts.
+    \item \textbf{MARL Interface:} The environment conforms to the PettingZoo API \parencite{Terry_Black_Grammel_Jayakumar_Hari_Sullivan_Santos_Perez_Horsch_Dieffendahl_et_al._2021}, which has established itself as the standard for multi-agent RL (analogous to the Gymnasium API for single-agent RL). Utilizing the Parallel API variant ensures the environment integrates natively with synchronous MAPPO tensor rollouts.
     \item \textbf{Deep Learning Framework:} PyTorch \parencite{Paszke_Gross_Massa_Lerer_Bradbury_Chanan_Killeen_Lin_Gimelshein_Antiga_et_al_2019} serves as the computational backbone for designing, compiling, and optimizing the MAPPO Actor and Critic networks, leveraging GPU acceleration for Generalized Advantage Estimation (GAE) and gradient descent.
     \item \textbf{LLM Integration:} To interface with the semantic Meta-Controllers, the Transformers library by Hugging Face is deployed \parencite{Wolf_Debut_Sanh_Chaumond_Delangue_Moi_Cistac_Rault_Louf_Funtowicz_et_al._2020}. For the Hierarchical Reinforcement Learning phase (which necessitates rapid, localized inference), the language models are quantized using bitsandbytes (QLoRA) \parencite{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023} and served via highly optimized inference engines to strictly bound the latency introduced during the training loop.
 \end{itemize}
@@ -131,10 +131,10 @@ The codebase relies on a modern, standardized stack of Python libraries to seaml
 \subsection{Hardware and Inference Architecture}
 \label{sec:env_hardware}
 
-A critical bottleneck in neuro-symbolic MARL is the severe latency introduced by the LLM during the training loop. This thesis relies on two distinct inference paradigms—online cloud APIs and localized serving—dictated by the constraints of the specific algorithms.
+A critical bottleneck in neuro-symbolic MARL is the severe latency introduced by the LLM during the training loop. This thesis relies on two distinct inference paradigms, online cloud APIs and localized serving, dictated by the constraints of the specific algorithms.
 
 For the Dynamic Reward Shaping architecture, which requires infrequent, highly complex offline generation, this study leveraged the Gemini 2.5 Flash model hosted via Google AI Studio\footnote{https://aistudio.google.com/}. However, integrating cloud-based models directly into the high-frequency Hierarchical Reinforcement Learning (HRL) training loop proved intractable. The MAPPO environment requires thousands of synchronous environment steps per episode. Utilizing an online model for the HRL orchestrator generated an excessive volume of requests, rapidly exhausting API rate limits and introducing network latency that stalled the GPU-bound RL rollouts.
 
 To overcome this, the HRL training loop was executed entirely locally on a consumer-grade workstation equipped with an NVIDIA RTX 5070 GPU (12GB VRAM). Running a foundation model locally alongside the PyTorch MAPPO actor-critic tensors within a strict 12GB memory envelope necessitated specific architectural compromises. To address this, the Ollama framework\footnote{https://ollama.com/} was deployed to provide highly optimized, low-latency local inference.
 
-The Qwen 2.5 7B architecture was explicitly chosen as the local orchestrator over other open-weights alternatives (such as LLaMA 3 or Mistral) for two primary reasons. First, its parameter scale, when combined with 4-bit quantization, allowed it to fit comfortably within the VRAM constraints without displacing the MARL experience replay buffers. Second, its inherent dual architecture—combining a dedicated thinking mode for complex chain-of-thought routing with a non-thinking mode for rapid spatial reasoning—allowed the agent to process the strict dependency DAG effectively without necessitating a larger, memory-prohibitive parameter count.
+As detailed in Section~\ref{sec:qwen_architecture}, the Qwen 2.5 7B architecture was selected specifically to satisfy this strict 12GB memory envelope. When combined with 4-bit quantization via Ollama, it fits comfortably alongside the MARL experience replay buffers without displacing the PyTorch actor-critic tensors.
