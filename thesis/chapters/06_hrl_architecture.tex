@@ -4,7 +4,7 @@
 \section{The Meta-Controller: Discrete Neuro-Symbolic HRL}
 \label{ch:hrl_architecture}
 
-The previous section established the \emph{Mixing Board} architecture, representing a "soft integration" of Large Language Models into MARL. In that paradigm, the LLM acted as an environmental architect, manipulating the gravitational pull of potential-based rewards to gently guide the agents toward logical milestones. While this elegant separation preserves the underlying Markov properties, it restricts the LLM to an indirect role: it can only suggest a direction, not enforce a strategy. 
+The previous chapter established the \emph{Mixing Board} architecture, representing a "soft integration" of Large Language Models into MARL. In that paradigm, the LLM acted as an environmental architect, manipulating the gravitational pull of potential-based rewards to gently guide the agents toward logical milestones. While this separation preserves the underlying Markov properties, it restricts the LLM to an indirect role: it can only suggest a direction, not enforce a strategy. 
 
 To fully explore the spectrum of neuro-symbolic integration, we must ask: what happens when we grant the LLM direct semantic authority over the agents' cognitive state?
 
@@ -25,7 +25,7 @@ The exposition follows the implementation order:
 \subsection{System Overview}
 \label{sec:hrl_overview}
 
-\Cref{fig:hrl_system_flow} illustrates this two-level command architecture. The Meta-Controller (LLM) observes inventory transitions and assigns explicit Options to each agent asynchronously. Unlike the dynamic approach where the MAPPO policy remained blind to the LLM's existence, here, the low-level MAPPO policy receives the active option directly as part of its mathematical observation space. This creates a true, tightly coupled two-level decision hierarchy.
+\Cref{fig:hrl_system_flow} illustrates this two-level command architecture. The Meta-Controller (LLM) observes inventory transitions and assigns explicit Options to each agent asynchronously. Unlike the previous approach where the MAPPO policy remained blind to the LLM's existence, here, the low-level MAPPO policy receives the active option directly as part of its mathematical observation space. This creates a true, tightly coupled two-level decision hierarchy.
 
 \begin{figure}[H]
 \centering
@@ -115,6 +115,7 @@ Because the Meta-Controller issues explicit, discrete commands, it does not need
 \subsubsection{Trigger Conditions: Success and Staleness}
 
 Option selection is triggered dynamically under two specific conditions, evaluated per-environment:
+
 \begin{enumerate}[nosep]
     \item \textbf{Success:} The agent successfully acquired the item (the inventory slot changed), meaning the current Option has terminated and the agent awaits a new order.
     \item \textbf{Staleness:} The active option has been running for more than $T_{\text{stale}}=150$ steps without completion.
@@ -125,8 +126,8 @@ Environments that are already awaiting an LLM response (\texttt{llm\_pending}) o
 
 \subsubsection{Prompt Structure and Counterfactual Reflection}
 
-When a trigger fires, the \texttt{PromptBuilder} translates the grid-world's Python inventory state into a text-based JSON schema.
-For a standard \emph{Success} trigger, the Commander receives a Chain-of-Thought prompt detailing the current inventory and the DAG dependencies, requesting exactly one discrete Option per agent:
+When a trigger fires, the system translates the grid-world's physical inventory state into a text-based JSON schema.
+For a standard \emph{Success} trigger, the Commander receives a Chain-of-Thought prompt~\parencite{Wei_Wang_Schuurmans_Bosma_Ichter_Xia_Chi_Le_Zhou_2022} detailing the current inventory and the DAG dependencies, requesting exactly one discrete Option per agent:
 
 \begin{hegquote}
 \begin{verbatim}
@@ -177,24 +178,11 @@ Respond ONLY with JSON:
 \end{verbatim}
 \end{hegquote}
 
-\subsubsection{Batched Queries with Deduplication}
+\subsubsection{Asynchronous Query Management}
 
-Training MARL requires running 128 parallel copies of the grid-world simultaneously. If 40 parallel environments all trigger the LLM at the same time because the lumberjack just collected wood, querying the Commander 40 separate times for the exact same inventory state would waste massive computational resources.
+Training MARL across 128 parallel environments generates significant query volume. To optimize throughput, the system deduplicates queries by grouping environments with identical inventory states, sending a single prompt per unique state to the LLM, and broadcasting the response to all matching environments.
 
-To optimize throughput, the system employs a deduplication mechanism. It groups the parallel environments by their unique inventory vectors, sends only one prompt per unique state to the LLM, and broadcasts the single response back to all environments sharing that exact state.
-
-\subsubsection{Environment Freezing During Pending Queries}
-
-A critical challenge in asynchronous LLM-agent frameworks is \textbf{state drift} (latency-induced non-stationarity)~\parencite{Katsikopoulos_Engelbrecht_2003}.
-Querying the Commander takes several seconds. If the RL environment continues to run while awaiting the radio transmission, the lumberjack would execute random or stale actions. By the time the Commander's new Option arrives, the agent might have wandered to the opposite side of the map, rendering the LLM's decision irrelevant to the new physical reality.
-This problem is well-documented in LLM-agent systems: for instance,
-Ghost in the Minecraft~\parencite{Zhu_etal_2023}
-relies on pausing the simulation while the LLM reasons about its
-next action.
-
-To prevent this drift, any environment awaiting an LLM response is physically frozen.
-
-This ensures that the Commander's decision is applied to the exact physical state it observed, maintaining strict temporal alignment between strategy and execution.
+Additionally, because LLM inference takes several seconds, continuous environment execution would cause \textbf{state drift} (latency-induced non-stationarity)~\parencite{Katsikopoulos_Engelbrecht_2003}, rendering the LLM's eventual decision outdated. Following established LLM-agent practices~\parencite{Zhu_etal_2023}, any environment awaiting a response is paused. This ensures the Meta-Controller's decision is applied to the exact state it observed, maintaining strict temporal alignment between strategy and execution.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{One-Hot Observation Augmentation}
@@ -204,13 +192,13 @@ Once the Commander has selected a discrete Option, that command must be physical
 
 \subsubsection{Dynamic Enemy State}
 
-Unlike the Mixing Board approach, which used the base \texttt{BatchCraftingEnvV2} environment, the HRL architecture operates on a custom extended environment (\texttt{HRLCraftingEnv}) that introduces a \emph{dynamic enemy}. In this variant, the enemy is no longer a static zone interaction. Instead, the enemy tracks the agents' positions and actively chases any agent that crosses the river, creating a real-time pursuit challenge. The combat system rewards coordination: if both agents attack the enemy simultaneously, they deal 50~HP of damage per step, compared to only 10~HP for a solo attack. This 5$\times$ coordination multiplier makes the \texttt{FIGHT\_ENEMY} option inherently cooperative.
+Unlike the Mixing Board approach, which utilized the baseline static environment, the HRL architecture operates in an extended environment that introduces a \emph{dynamic enemy}. In this variant, the enemy is no longer a static zone interaction. Instead, the enemy tracks the agents' positions and actively chases any agent that crosses the river, creating a real-time pursuit challenge. The combat system rewards coordination: if both agents attack the enemy simultaneously, they deal 50~HP of damage per step, compared to only 10~HP for a solo attack. This 5$\times$ coordination multiplier makes the \texttt{FIGHT\_ENEMY} option inherently cooperative.
 
-To give the agents spatial awareness of this dynamic threat, the three dimensions that were occupied by the goal embedding in the Mixing Board approach (indices 2--4) are repurposed to carry the enemy's real-time state: its $(x, y)$ position and its normalized health $h/100$.
+To give the agents spatial awareness of this dynamic threat, the three dimensions that were occupied by the goal embedding in the Mixing Board approach (indices 2--4) are repurposed to carry the enemy's real-time state: its $(x, y)$ position and its normalized health $h/100$. Providing this state information is standard practice in fully observable Markov Decision Processes (MDPs); it simply represents the agents' physical line-of-sight, which is required for the low-level PPO policy to learn the kinetic micro-actions of pursuit and combat.
 
 \subsubsection{Observation Construction}
 
-The vector input to the MAPPO network in this HRL mode is expanded to 25 dimensions:
+The vector input to the MAPPO network in this HRL mode is expanded to a 25-dimensional vector:
 \begin{equation}
 \label{eq:hrl_obs}
     \mathbf{v}_t^{(i)}
@@ -228,52 +216,37 @@ The vector input to the MAPPO network in this HRL mode is expanded to 25 dimensi
 \end{equation}
 where $\mathbf{p}^{(i)}$ is the agent's spatial position, $\mathbf{d}^{\text{enemy}} = (x_{\text{enemy}},\, y_{\text{enemy}},\, h_{\text{enemy}}/100)$ is the dynamic enemy state vector, $\mathbf{x}$ is the shared inventory vector, and $\mathbf{e}_{o}\in\{0,1\}^{10}$ is the one-hot encoding of the active option.
 
+For example, if an agent is located at coordinates $(3, 4)$, the enemy is at $(5, 5)$ with 50\% health, the inventory contains exactly 1 wood, and the Commander has assigned the first option (e.g., \texttt{COLLECT\_WOOD}, index 0), the augmented vector is constructed as follows:
+\begin{equation}
+    \mathbf{v}_t^{(i)}
+    =
+    \left[
+        \underbrace{3,\; 4}_{\mathbf{p}^{(i)}}
+        \;\Big\|\;
+        \underbrace{5,\; 5,\; 0.5}_{\mathbf{d}^{\text{enemy}}}
+        \;\Big\|\;
+        \underbrace{1,\; 0,\dots, 0}_{\mathbf{x} \in \mathbb{R}^{10}}
+        \;\Big\|\;
+        \underbrace{1,\; 0,\dots, 0}_{\mathbf{e}_o \in \mathbb{R}^{10}}
+    \right]
+\end{equation}
+
 This design maintains the same $\mathbb{R}^{25}$ dimensionality as the Mixing Board approach, allowing the identical neural network architecture to be used across both experiments. The three dimensions previously occupied by the continuous goal embedding are simply repurposed to carry the enemy state, preventing any architecture mismatch when loading or comparing models between the two approaches.
 
-\subsubsection{One-Hot State Augmentation vs. Dense Embeddings}
-
-There is a fundamental mathematical distinction in representation learning between a sparse one-hot encoding and a dense continuous embedding. The \texttt{OptionController} maintains per-environment, per-agent option indices and produces a categorical one-hot representation via vectorised indexing.
-
-In deep reinforcement learning, appending a one-hot vector $\mathbf{e}_o$ to the agent's physical observation state $s_t$ effectively acts as an index lookup. 
-When the augmented state $s_t' = [s_t \parallel \mathbf{e}_{o}]$ is passed through the first linear layer of the MAPPO network, the matrix multiplication mathematically isolates a specific set of weights corresponding to the active option.
-
-This mechanism allows the single MAPPO network to learn \emph{option-conditional behaviour}. 
-We do not need to train 10 separate policy networks for 10 separate options; the singular policy $\pi_\theta(a \mid s, o)$ dynamically specializes its internal activations based on which one-hot "switch" the Commander has flipped.
+Furthermore, by appending the one-hot vector $\mathbf{e}_{o_t^{(i)}}$ directly to the observation space, the MAPPO network learns an \emph{option-conditional policy} $\pi_\theta(a \mid s, o)$. This one-hot encoding acts as a mathematical switch, allowing a single neural network to dynamically shift its behavior based on the Commander's active assignment, avoiding the need to train a separate policy network for each of the 10 distinct options.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Bipartite Reward Structure}
 \label{sec:bipartite_reward}
 
-In standard RL, the environment reward is the ground truth. However, in our sparse environment, relying solely on this is analogous to a university student only receiving feedback on graduation day (the diploma). To ensure the agents learn the day-to-day behaviors required to achieve that diploma, the HRL approach uses a \emph{bipartite} (two-part) composite reward: a sparse environment reward and a dense intrinsic reward.
+In standard RL, the environment reward is the ground truth. However, in our sparse environment, relying solely on this is analogous to a university student only receiving feedback on graduation day (the diploma). To ensure the agents learn the day-to-day behaviors required to achieve that diploma, the HRL approach uses a bipartite composite reward: a sparse environment reward and a dense intrinsic reward.
 
-\subsubsection{Environment Reward (Sparse)}
-The environment reward $r_t^{\text{env}}$ is the true, unmodified signal from the environment. It consists of a constant time-step penalty of $-0.01$ to encourage speed, plus massive milestone bonuses upon successfully completing a physical subtask:
-
-\begin{table}[H]
-\centering
-\caption{Environment reward structure from \texttt{crafting\_env.py}.}
-\label{tab:env_rewards}
-\begin{tabular}{@{}lc@{}}
-\toprule
-\textbf{Event} & \textbf{Reward (shared)} \\
-\midrule
-Step penalty      & $-0.01$ \\
-Collect Wood      & $+2.0$  \\
-Collect Stone     & $+2.0$  \\
-Craft Pickaxe     & $+3.0$  \\
-Mine Iron         & $+2.0$  \\
-Craft Sword/Armor & $+3.0$  \\
-Build Bridge      & $+3.0$  \\
-Defeat Enemy      & $+10.0$ \\
-Mine Gold (win)   & $+15.0$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsubsection{Intrinsic Reward (Dense)}
+\subsubsection{Extrinsic and Intrinsic Components}
 \label{sec:intrinsic_reward}
 
-The intrinsic (shaping) reward is a synthetic ``breadcrumb trail'' generated internally by the architecture to keep the agent motivated toward the Commander's assigned target. 
+As established in Section~\ref{sec:env_design}, the extrinsic environment reward $r_t^{\text{env}}$ is the true, unmodified sparse signal from the grid-world (refer to Table~\ref{tab:env_rewards}). It consists of a constant time-step penalty of $-0.01$ to encourage speed, plus massive milestone bonuses upon successfully completing a physical subtask.
+
+Conversely, the intrinsic (shaping) reward is a synthetic ``breadcrumb trail'' generated internally by the architecture to keep the agent motivated toward the Commander's assigned target. 
 It consists of two sub-components: a continuous distance-based shaping mechanism, and a discrete option success bonus.
 
 First, the continuous distance-based shaping reward toward the active option's target zone is computed identically to the PBRS framework~\parencite{Ng_Harada_Russell_1999} established in Section~\ref{subsec:pbrs}, but applied to the option's target rather than the planner's target:
@@ -290,7 +263,7 @@ where $z_o$ is the target zone of option~$o$ (\cref{tab:option_props}), $\Phi$ i
 
 This formulation is mathematically constructed to guarantee policy invariance while ensuring multi-agent coordination stability. The canonical difference form $\gamma\,\Phi(s_{t+1}) - \Phi(s_t)$ prevents the agent from exploiting the dense reward signal. Without the discount factor $\gamma$, an agent could theoretically accumulate infinite positive reward by stepping back and forth between two adjacent states. By decaying the future potential, any such cycle yields a net negative shaping reward~\parencite{Ng_Harada_Russell_1999}.
 
-The indicator function $\mathds{1}_{\{o^{(i)} \neq \texttt{IDLE}\}}$ serves as a key coordination mask. In cooperative tasks, an agent assigned the \texttt{IDLE} option is intentionally waiting for its partner to satisfy a DAG dependency. If shaping rewards were applied during this state, the agent's policy gradient would be erroneously penalized for remaining stationary. The mask zeroes out the shaping gradient entirely, ensuring the agent learns to safely wait without introducing non-stationary noise into the value network.
+The indicator function $\mathds{1}_{\{o^{(i)} \neq \texttt{IDLE}\}}$ acts as a coordination mask. An agent assigned the \texttt{IDLE} option is actively waiting for its partner to satisfy a dependency; applying distance-based shaping here would incorrectly penalize it for remaining stationary. The mask zeroes out this shaping signal, allowing the agent to safely wait without destabilizing the value network.
 
 Second, when an agent completes its active option (the relevant inventory slot increases), the distance shaping is overridden, and it receives a flat intrinsic success bonus of $+1.0$:
 \begin{equation}
@@ -347,48 +320,36 @@ Because the Value function $V_\phi$ now receives the globally augmented state $\
 The consequence is a tightly coupled learning loop: the Actor gradient explicitly links the local physical state $s_t^{(i)}$, the Commander's specific order $o_t^{(i)}$, and the intrinsic success of that command through $A_t^{(i)}$. The network learns distinct sub-policies for each option, not through separate networks, but through a single policy that conditions its behavior on which ``switch'' the LLM has flipped.
 
 % ──────────────────────────────────────────────────────────────────────────
-\subsection{Staleness Detection and Counterfactual Reflection}
-\label{sec:staleness}
+\subsection{Execution Lifecycle and Stability Guardrails}
+\label{sec:lifecycle_guardrails}
 
-\subsubsection{Staleness Detection}
+To ensure the HRL architecture remains robust over millions of training steps, several lifecycle management and stability mechanisms are integrated directly into the environment loop.
 
-The \texttt{OptionController} acts as a watchdog, tracking the \emph{age} (number of steps) of each active option per environment. If an option exceeds $T_{\text{stale}}=150$ steps without termination, the environment is marked as stale and the Commander is re-queried.
+\subsubsection{Episode Initialization and Reset}
+When an environment reaches a terminal state (gold mined, game over, or truncation at 800 steps), the environment is hard-reset. The agents are assigned initial options corresponding to the first layer of the DAG (\texttt{COLLECT\_WOOD} for the lumberjack, \texttt{COLLECT\_STONE} for the miner), ensuring they begin collecting resources immediately upon episode start without waiting for an initial LLM query.
 
-The \texttt{IDLE} options are excluded from staleness triggers, because intentional waiting (e.g., the lumberjack waiting while the miner collects stone) is a valid strategy.
+\subsubsection{Staleness Detection and Counterfactual Reflection}
+During execution, an internal watchdog tracks the age (number of steps) of each active option. If an option exceeds $T_{\text{stale}}=150$ steps without termination, the environment is marked as stale and the LLM is re-queried. The \texttt{IDLE} options are excluded from this trigger, as intentional waiting is a valid cooperative strategy.
 
-\subsubsection{Counterfactual Reflection}
+When a staleness trigger fires, the LLM receives a reflection prompt instead of the standard assignment prompt. This forces the LLM to reason about \emph{why} the previous option failed (e.g., a missing DAG precondition like \texttt{MINE\_IRON} without a pickaxe) before proposing a corrected assignment. This mechanism leverages the LLM's zero-shot reasoning to debug its own prior hallucinations, synergizing reasoning with counterfactual critique~\parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023, Shinn_Cassano_Berman_Gopinath_Narasimhan_Yao_2023}.
 
-When a staleness trigger fires, the LLM receives a reflection prompt instead of the standard assignment prompt. This forces the LLM to reason about \emph{why} the previous option failed—typically a missing DAG precondition—before proposing a corrected assignment.
-
-This design addresses the observed failure mode where the LLM repeatedly assigned options whose preconditions were not met (e.g., \texttt{MINE\_IRON} without a pickaxe). The reflection mechanism leverages the LLM's zero-shot reasoning to debug its own prior hallucination. This synergizes reasoning and acting, a paradigm demonstrated by ReAct~\parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023}, and extends it into the realm of self-reflection and counterfactual critique~\parencite{Shinn_Cassano_Berman_Gopinath_Narasimhan_Yao_2023}.
-
-% ──────────────────────────────────────────────────────────────────────────
-\subsection{Episode Lifecycle and Option Reset}
-\label{sec:episode_lifecycle}
-
-When an environment reaches a terminal state (gold mined, game over, or truncation at 800 steps), the \texttt{OptionController} hard-resets that environment to its initial options.
-
-The initial options (\texttt{COLLECT\_WOOD} for the lumberjack, \texttt{COLLECT\_STONE} for the miner) correspond to the first layer of the DAG, ensuring agents begin collecting resources immediately upon episode start.
-
-% ──────────────────────────────────────────────────────────────────────────
-\subsection{PPO Integration: Target KL Guard}
-\label{sec:target_kl}
-
-The HRL training loop adds a \emph{target KL divergence} early-stopping mechanism, a standard stability guardrail in Proximal Policy Optimization (as detailed in Section~\ref{subsec:kl_divergence})~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}.
-During each PPO epoch, the approximate KL divergence between the old and new policies is monitored:
+\subsubsection{Target KL Divergence Guard}
+To protect the policy network from destructive updates when intrinsic reward signals shift abruptly after an LLM reassignment, the training loop employs a target KL divergence early-stopping mechanism~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}. During each PPO epoch, the approximate KL divergence between the old and new policies is monitored:
 \begin{equation}
 \label{eq:approx_kl}
     D_{\text{KL}}^{\text{approx}}
-    = \mathbb{E}\bigl[-\log \pi_{\theta_{\text{new}}}(a|s)
-      + \log \pi_{\theta_{\text{old}}}(a|s)\bigr]
+    = \mathbb{E}\bigl[-\log \pi_{\theta_{\text{new}}}(a \mid s, o)
+      + \log \pi_{\theta_{\text{old}}}(a \mid s, o)\bigr]
 \end{equation}
-If $D_{\text{KL}}^{\text{approx}} > 0.015$, the remaining PPO epochs are aborted for that update.
-
-This guard prevents destructive policy updates when the intrinsic reward signal changes abruptly after an LLM option reassignment.
+If $D_{\text{KL}}^{\text{approx}} > 0.015$ (an empirical threshold widely adopted in standard PPO implementations), the remaining PPO epochs are aborted for that update, ensuring stable policy convergence.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Comparison with the Mixing Board Approach}
 \label{sec:hrl_vs_dyn}
+
+Before detailing the specific fine-tuning pipeline required for the Meta-Controller, it is instructive to contrast this architecture with the Dynamic Reward Shaping (Mixing Board) approach developed in Chapter 5. While both paradigms seek to integrate LLM reasoning into MARL, they operate at fundamentally different levels of abstraction. 
+
+The Mixing Board is a \emph{soft integration} strategy: the LLM gently nudges the priority of intrinsic rewards, but the MARL agents remain entirely responsible for discovering the physical behaviors. Conversely, the Meta-Controller represents a \emph{hard integration}: the LLM acts as a strict supervisor, dictating explicit macro-actions (options) that the agents must execute. This shift from continuous priority logits to discrete option assignments necessitates significant structural changes, particularly regarding LLM query frequency, observation augmentation, and safety mechanisms. Table~\ref{tab:approach_comparison} summarizes these core architectural distinctions.
 
 \begin{table}[H]
 \centering
@@ -435,16 +396,16 @@ While Section~\ref{sec:qlora} established the theoretical foundations of Quantiz
 
 \subsubsection{Oracle Dataset Generation}
 
-While the training data was ultimately generated synthetically to ensure exhaustive coverage of the environment's crafting DAG, the foundational state distributions were originally seeded by observations from early, successful exploratory RL trajectories. By grounding the generation process in these empirically observed states, a deterministic oracle function was developed to systematically enumerate all meaningful inventory combinations (\texttt{wood}, \texttt{stone}, \texttt{pickaxe}, \texttt{iron}, \texttt{sword}, \texttt{armor}, \texttt{bridge}, \texttt{enemy}, \texttt{gold}) and apply hardcoded DAG logic to determine the optimal \texttt{(agent\_0\_option, agent\_1\_option)} assignment for each state. This oracle encodes the optimal policy: for example, ``if no pickaxe and wood $\ge 1$ and stone $\ge 1$, then both agents should \texttt{CRAFT\_PICKAXE}.''
+The training dataset is generated synthetically to ensure exhaustive coverage of the crafting DAG. Exploratory successful runs from the agents helped build the dataset. A deterministic oracle systematically enumerates all meaningful inventory combinations and applies hardcoded logic to determine the optimal \texttt{(agent\_0\_option, agent\_1\_option)} assignment for each state. For example: ``if no pickaxe and wood $\ge 1$ and stone $\ge 1$, then both agents should \texttt{CRAFT\_PICKAXE}.''
 
-To ensure balanced training signal across all phases of the DAG progression, the raw states are grouped into six progression phases (early collection, pickaxe crafting, iron mining, gear crafting, bridge building, and endgame combat). Each phase is upsampled to contribute an equal share of the final dataset, preventing the model from over-indexing on trivially simple early-game states.
+To prevent the model from over-indexing on trivially simple early-game states, the generated states are grouped into six progression phases (e.g., early collection, iron mining, endgame combat). Each phase is upsampled equally to ensure a balanced training signal.
 
 Two augmentation techniques are applied to improve generalization:
 
 \begin{enumerate}[nosep]
-    \item \textbf{Stochastic Oracle Augmentation (SOA):} Drawing inspiration from Input Dropout and state perturbation techniques in robust RL (e.g., Domain Randomization), we introduce SOA to prevent overfitting to perfect state representations. With a 10\% probability, a randomly selected inventory field is zeroed before querying the oracle. For example, if the true state is \texttt{[wood: 1, stone: 1, pickaxe: 0]}, SOA might perturb it to \texttt{[wood: 0, stone: 1, pickaxe: 0]}. This teaches the model to produce reasonable, safe outputs even when the prompt contains slightly degraded or inconsistent state information---a common occurrence during live RL rollouts where discrete observations may briefly lag behind true kinetic state transitions.
+    \item \textbf{Stochastic Oracle Augmentation (SOA):} To prevent overfitting to perfect state representations, a randomly selected inventory field is zeroed out with a 10\% probability before querying the oracle. For example, a true state of \texttt{[wood: 1, stone: 1]} might be perturbed to \texttt{[wood: 0, stone: 1]}. This forces the model to produce safe outputs even when the prompt contains slightly degraded or delayed state information, which is common during live RL rollouts.
 
-    \item \textbf{Reflection Augmentation (40\% injection rate):} A synthetic hallucinated failure is prepended to the prompt: ``\emph{You previously chose [Incorrect Option]. It failed after [N] steps.}'' The model must then output the correct option despite this misleading prior. This augmentation was an intentional design decision to teach the Commander to recover from logical errors. However, as will be revealed in Section~\ref{sec:reflection_ablation}, this same training signal inadvertently caused the model to develop a strong prior that \emph{any} reported failure implies a logical mistake, even when the failure was purely kinetic (e.g., the agent simply had not walked far enough yet). This foreshadows the central ``Reflection Contradiction'' finding of the experimental evaluation.
+    \item \textbf{Reflection Augmentation (40\% injection rate):} A synthetic hallucinated failure is prepended to the prompt: ``\emph{You previously chose [Incorrect Option]. It failed after [N] steps.}'' The model must then output the correct option despite this misleading prior. While intended to teach the Commander to recover from logical errors, Section~\ref{sec:reflection_ablation} demonstrates that this training signal inadvertently caused the model to assume \emph{any} reported failure implies a logical mistake (the ``Reflection Contradiction'').
 \end{enumerate}
 
 The final raw dataset contains \textbf{1,200 balanced examples} spanning all DAG phases and agent status combinations.
@@ -488,14 +449,14 @@ Fine-tuning was performed on the local workstation's NVIDIA RTX 5070 GPU (12GB V
         & Max sequence length$^\dagger$ & 1,024 tokens \\
         & Gradient checkpointing$^\dagger$ & Enabled \\
         \midrule
-        Infrastructure & Library & HuggingFace TRL~\parencite{trl} (\texttt{SFTTrainer}) \\
+        Infrastructure & Library & HuggingFace TRL~\parencite{trl} \\
         & Adapter library & PEFT v0.19.1~\parencite{peft} \\
         & Logging & TensorBoard \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-A critical engineering detail is the use of a custom \texttt{DataCollatorForCompletionOnlyLM}. During standard supervised fine-tuning, the causal language modeling loss is computed over all tokens in the sequence, including the system prompt and user message. This wastes gradient signal on tokens that the model should never generate at inference time. Our custom collator scans each tokenized sequence for the ChatML response delimiter (\texttt{<|im\_start|>assistant\textbackslash n}) and masks all preceding tokens by setting their labels to $-100$. As a result, the cross-entropy loss is computed exclusively over the Commander's actual decision output (the JSON response), ensuring that every gradient update directly improves the quality of option selection rather than memorizing prompt boilerplate.
+A critical training detail is the application of \emph{response-only loss masking}, implemented via the TRL library~\parencite{trl}. By default, causal language models learn by predicting every subsequent word in a sequence, meaning they would normally compute an error gradient for the prompt itself. This wastes training capacity on memorizing instructions. To solve this, a custom data collator leverages PyTorch's native \texttt{ignore\_index} mechanic: it sets the target labels of all system and user prompt tokens to $-100$. Mathematically, the Cross-Entropy loss function ignores any token with a $-100$ label, computing zero gradient for it. For example, in the sequence \texttt{[User] State is X [Assistant] \{"opt": 1\}}, every token preceding the JSON response is assigned a $-100$ label, while only the JSON characters receive valid target IDs. As a result, the model is penalized exclusively on its final JSON output, ensuring that every weight update directly improves its strategic decision-making rather than memorizing boilerplate text.
 
 \subsubsection{Training Results and Adapter Deployment}
 
@@ -519,10 +480,9 @@ The resulting LoRA adapter weighs only \textbf{154~MB}, approximately 1\% of the
 \subsection{Summary}
 \label{sec:hrl_summary}
 
-The Meta-Controller approach creates a clean separation of concerns: the Commander reasons about \emph{what to do} (strategic option selection via one-hot augmentation), while the MAPPO policy learns \emph{how to do it} (low-level navigation and interaction). 
-The one-hot conditioning allows a single network to exhibit option-dependent behaviour, and the bipartite reward structure ensures that the policy receives both a consistent dense gradient from intrinsic shaping and a grounding signal from the true environment rewards.
+The Meta-Controller approach establishes a strict separation of concerns: the LLM Commander dictates \emph{what to do} (strategic option selection), while the MAPPO policy learns \emph{how to do it} (kinetic execution). By appending a one-hot option encoding to the state vector, a single policy network learns option-specific behaviors. Simultaneously, the bipartite reward structure ensures the policy receives both dense intrinsic guidance and sparse environmental grounding.
 
-This architecture also effectively acts as an automated curriculum generator (contrasting with the manual Curriculum Learning discussed in Section~\ref{sec:curriculum_learning}). While traditional curriculum learning requires a human engineer to laboriously design and schedule environments of increasing difficulty, our LLM Meta-Controller dynamically orchestrates a skill curriculum on the fly, seamlessly guiding the agents from simple resource gathering to complex combat coordination within a single, static environment.
+Crucially, this architecture functions as an automated curriculum generator. Unlike traditional Curriculum Learning (Section~\ref{sec:curriculum_learning}), which requires manually designing environments of escalating difficulty, the Meta-Controller orchestrates a skill curriculum dynamically. It guides agents from basic resource gathering to advanced combat coordination entirely within a single, static environment.
 
 \begin{table}[H]
 \centering

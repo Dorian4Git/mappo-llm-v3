@@ -13,26 +13,26 @@ The Commander (our mixing board) does not act directly inside the environment. I
     \item the magnitude of the gravitational pull (potential-based shaping signal) guiding the agents toward that goal.
 \end{enumerate}
 
-As established in \cref{sec:llm_rl_integration}, this paradigm draws foundational inspiration from recent frameworks that deploy LLMs as meta-level reward designers, such as EUREKA, PRM4RL, MEDS, and GLARE~\parencite{ma2024eurekahumanlevelrewarddesign, Zhang_Gao_Jiang_Chen_Pan_Zhang_Deng_2025, liu2026memoryenhanceddynamic, yan2026glare}. While these approaches provided the theoretical justification for using LLMs to structure sparse-reward environments, the present work pivots to address the practical constraints of a high-frequency execution loop.
+As established in Section~\ref{sec:llm_rl_integration}, this paradigm draws foundational inspiration from recent frameworks that deploy LLMs as meta-level reward designers, such as EUREKA, PRM4RL, MEDS, and GLARE~\parencite{ma2024eurekahumanlevelrewarddesign, Zhang_Gao_Jiang_Chen_Pan_Zhang_Deng_2025, liu2026memoryenhanceddynamic, yan2026glare}. While these approaches provided the theoretical justification for using LLMs to structure sparse-reward environments, the present work pivots to address the practical constraints of a high-frequency execution loop.
 
 Rather than requiring the LLM to write complex reward functions from scratch or compile logic formulas during the rollout phase, our Commander operates at a latency-bound granularity. It simply adjusts a vector of priority weights that steer goal selection within a pre-compiled, mathematically safe potential-based shaping framework.
 
 The exposition of this chapter follows the exact chronological dataflow of the implementation:
 \begin{enumerate}
-    \item \textbf{DAG-Conditional Planning} (\cref{sec:dag_planner}): The system prunes impossible tasks based on the agents' current inventory, preventing the Commander from issuing invalid orders.
-    \item \textbf{LLM Weight Query} (\cref{sec:llm_weight_query}): The Commander is queried to assign raw semantic priorities to the remaining valid subtasks.
-    \item \textbf{Softmax Budget Normalisation} (\cref{sec:softmax_budget}): The Commander's raw priorities are mathematically smoothed into a rigorously bounded probability distribution.
-    \item \textbf{Potential-Based Reward Shaping} (\cref{sec:pbrs}): The normalized budget is injected into the training loop as a dense, magnetic reward signal to guide the workers.
+    \item \textbf{DAG-Conditional Planning} (Section~\ref{sec:dag_planner}): The system prunes impossible tasks based on the agents' current inventory, preventing the Commander from issuing invalid orders.
+    \item \textbf{LLM Weight Query} (Section~\ref{sec:llm_weight_query}): The Commander is queried to assign raw semantic priorities to the remaining valid subtasks.
+    \item \textbf{Softmax Budget Normalisation} (Section~\ref{sec:softmax_budget}): The Commander's raw priorities are mathematically smoothed into a rigorously bounded probability distribution.
+    \item \textbf{Potential-Based Reward Shaping} (Section~\ref{sec:pbrs}): The normalized budget is injected into the training loop as a dense, magnetic reward signal to guide the workers.
 \end{enumerate}
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{System Overview}
 \label{sec:dyn_overview}
 
-\Cref{fig:dyn_system_flow} illustrates the end-to-end pipeline of the Mixing Board architecture.
+Figure~\ref{fig:dyn_system_flow} illustrates the end-to-end pipeline of the Mixing Board architecture.
 Conceptually, the system operates in a continuous loop. At every standard environment step, the agents update their inventory, the DAG Planner assigns them a valid target, and the PBRS module feeds them a shaped reward to guide their movement.
 
-However, at the end of every training update, a \emph{Critic Trigger} acts as a diagnostic monitor. It watches the agents' learning curves (TD-error and success rates). If the trigger detects that the lumberjack and miner are stuck at a learning plateau (spinning their wheels without making progress), it halts the system. It constructs a prompt detailing the failure, queries the LLM Commander for a new strategic direction, filters that new direction through a safety layer (\texttt{RewardInjector}), and updates the planner to pull the agents out of their rut.
+However, at the end of every training update, a \emph{Critic Trigger} acts as a diagnostic monitor. It watches the agents' learning curves (TD-error and success rates). If the trigger detects that the lumberjack and miner are stuck at a learning plateau (spinning their wheels without making progress), it halts the system. It constructs a prompt detailing the failure, queries the LLM Commander for a new strategic direction, filters that new direction through a safety layer, and updates the planner to pull the agents out of their rut.
 
 \begin{figure}[H]
 \centering
@@ -73,17 +73,17 @@ However, at the end of every training update, a \emph{Critic Trigger} acts as a 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{DAG-Conditional Planner}
 \label{sec:dag_planner}
-Before the LLM's weights can be applied, we must ensure the Commander cannot assign impossible tasks. The crafting environment enforces a strict dependency graph over subtasks, as established in \Cref{fig:env_dag}.
+Before the LLM's weights can be applied, we must ensure the Commander cannot assign impossible tasks. The crafting environment enforces a strict dependency graph over subtasks, as established in Figure~\ref{fig:env_dag}.
 
 \subsubsection{Step-by-Step Goal Selection}
 
 To understand how the Commander's high-level strategy physically steers the low-level actors, the process can be broken down into four concrete steps:
 
 \textbf{Step 1: Filtering Feasible Tasks.} 
-Before evaluating any LLM priorities, the planner acts as a hard programmatic filter (implemented in the codebase as \texttt{apply\_dag\_guardrails}). It inspects the agents' shared inventory to build a set of \emph{feasible} subtasks, masking out any tasks whose DAG preconditions are not met. Because LLMs are prone to hallucinations, they might occasionally assign a high priority to mining Iron even when no pickaxe exists. This step acts as an absolute constraint layer, zeroing out impossible goals to maintain mathematical stability.
+Before evaluating any LLM priorities, the planner acts as a hard programmatic filter. It inspects the agents' shared inventory to build a set of \emph{feasible} subtasks, masking out any tasks whose DAG preconditions are not met. Because LLMs are prone to hallucinations, they might occasionally assign a high priority to mining Iron even when no pickaxe exists. This step acts as an absolute constraint layer, zeroing out impossible goals to maintain mathematical stability.
 
 \textbf{Step 2 \& 3: Scoring and Greedily Picking the Target.} 
-For the remaining valid tasks, the planner calculates a selection score by multiplying the hand-crafted base reward ($R_j^{\text{base}}$) by the LLM's dynamic priority weight ($w_j$). The agent then greedily selects the single subtask with the maximum score to be its active goal $g^{(i)}$:
+For the remaining valid tasks, the planner calculates a selection score by multiplying the hand-crafted base reward ($R_j^{\text{base}}$, defined in Table~\ref{tab:env_rewards}) by the LLM's dynamic priority weight ($w_j$). The agent then greedily selects the single subtask with the maximum score to be its active goal $g^{(i)}$:
 \begin{equation}
 \label{eq:greedy_select}
     g^{(i)} = \arg\max_{j \in \mathcal{F}^{(i)}(\mathbf{x})}\; R_j^{\text{base}} \cdot w_j
@@ -93,9 +93,9 @@ The base reward $R_j^{\text{base}}$ provides a higher baseline value for tasks t
 \textbf{Step 4: Cooperative Override.} 
 Because the environment is fully cooperative, certain tasks require synchronized presence. If the highest-scoring goal for either agent is a cooperative bottleneck (such as returning to the Workbench or building the Bridge), the planner overrides individual greedy selections and magnetically pulls the partner agent to the same target, ensuring they co-locate to trigger the interaction.
 
-Finally, as visualized in \Cref{fig:goal_selection_bars}, the planner does not pass the raw scalar weight $w_j$ to the actors. Instead, it passes the \emph{identity} of this final chosen goal (e.g., ``target: Stone'') down to the Potential-Based Reward Shaping (PBRS) module. As detailed later in \cref{sec:pbrs}, the PBRS module acts as a GPS system: it uses that target identity to activate a specific potential function, which then rains dense, step-by-step rewards onto the actors. As the actors physically navigate the grid, they receive small positive rewards for moving closer to the chosen goal, directly training their policy networks. 
+Finally, as visualized in Figure~\ref{fig:goal_selection_bars}, the planner does not pass the raw scalar weight $w_j$ to the actors. Instead, it passes the \emph{identity} of this final chosen goal (e.g., ``target: Stone'') down to the Potential-Based Reward Shaping (PBRS) module. As detailed later in Section~\ref{sec:pbrs}, the PBRS module acts as a GPS system: it uses that target identity to activate a specific potential function, which then rains dense, step-by-step rewards onto the actors. As the actors physically navigate the grid, they receive small positive rewards for moving closer to the chosen goal, directly training their policy networks. 
 
-While the actors pursue only one goal at a time, the LLM weights for the unselected tasks are not discarded. They are smoothed over time (\cref{sec:ema_smoothing}), meaning a lower-ranked task can steadily rise in priority until it cleanly overtakes the current leader without causing erratic behavior.
+While the actors pursue only one goal at a time, the LLM weights for the unselected tasks are not discarded. They are smoothed over time (Section~\ref{sec:ema_smoothing}), meaning a lower-ranked task can steadily rise in priority until it cleanly overtakes the current leader without causing erratic behavior.
 
 \begin{figure}[H]
 \centering
@@ -163,7 +163,7 @@ For example, if the agents successfully mined Iron in 40\% of episodes 20 steps 
 
 Just because production has stalled does not mean the agents need new orders. They might simply be navigating a physically long path. To confirm they are actually stuck, the system looks at the Centralized Critic.
 
-As established in \cref{subsec:td_error}, the TD-Error (Temporal Difference Error) measures the ``surprise gap'' of the Critic network, i.e. the mathematical difference between its prior prediction and the newly observed reality. A high mean TD-error is not necessarily alarming. It merely indicates that the environment has a large reward scale.
+As established in Section~\ref{subsec:td_error}, the TD-Error (Temporal Difference Error) measures the ``surprise gap'' of the Critic network, i.e. the mathematical difference between its prior prediction and the newly observed reality. A high mean TD-error is not necessarily alarming. It merely indicates that the environment has a large reward scale.
 
 However, a spike in TD-error variance is a critical failure metric. It means the Critic is fundamentally confused: it is seeing wildly different returns for the exact same states (e.g., sometimes observing a massive reward, and sometimes a penalty for identical actions). This variance spike occurs when agents get stuck at a bottleneck, thrash between uncoordinated goals, or experience severe non-stationarity~\parencite{Foerster_Nardelli_Farquhar_Afouras_Torr_Kohli_Whiteson_2017}. Therefore, variance acts as the mathematical SOS flare of a confused agent. Once the plateau gate is open, the system checks whether the Critic's TD-error variance has spiked beyond $\sigma$ standard deviations from its running mean:
 
@@ -186,7 +186,7 @@ If the gate is open and the Z-score trigger fires, an LLM intervention is dispat
 \subsection{LLM Weight Query: Continuous Logit Output}
 \label{sec:llm_weight_query}
 
-When the SOS flare fires, the \texttt{PromptBuilder} constructs a structured situation report for the Commander. This prompt includes:
+When the SOS flare fires, the system constructs a structured situation report for the Commander. This prompt includes:
 
 \begin{enumerate}[nosep]
     \item The trigger reason (plateau description, z-score value).
@@ -206,7 +206,7 @@ scaled to maintain a constant total reward budget.
 Focus on the RELATIVE MAGNITUDE and PRIORITY RANKING of subtasks.''
 \end{quote}
 
-The prompt explicitly requests continuous values (logits) rather than discrete binary choices ($0$ or $1$). If the LLM acted as a binary switch, the reward landscape would shift instantaneously. In Multi-Agent RL, such rapid shifts induce severe non-stationarity that disrupts the Critic's value predictions~\parencite{Foerster_Nardelli_Farquhar_Afouras_Torr_Kohli_Whiteson_2017}. By outputting continuous relative priorities instead, the downstream programmatic layer (\texttt{RewardInjector}) can mathematically blend the new values with the previous weights using an Exponential Moving Average (EMA). This programmatic smoothing ensures the agents transition gently toward their new objectives, regardless of how drastically the LLM changes its mind.
+The prompt explicitly requests continuous values (logits) rather than discrete binary choices ($0$ or $1$). If the LLM acted as a binary switch, the reward landscape would shift instantaneously. In Multi-Agent RL, such rapid shifts induce severe non-stationarity that disrupts the Critic's value predictions~\parencite{Foerster_Nardelli_Farquhar_Afouras_Torr_Kohli_Whiteson_2017}. By outputting continuous relative priorities instead, a downstream programmatic layer can mathematically blend the new values with the previous weights using an Exponential Moving Average (EMA). This programmatic smoothing ensures the agents transition gently toward their new objectives, regardless of how drastically the LLM changes its mind.
 
 The LLM responds with a standardized JSON object containing its reasoning and the raw logits for each subtask:
 
@@ -233,7 +233,7 @@ By requiring the LLM to generate a brief reasoning trace before outputting the s
 
 When the Commander responds to the SOS flare, the raw logits $\boldsymbol{c}=(c_1,\dots,c_K)$ it returns are unconstrained real numbers (e.g., they can be wildly positive or negative). If we applied these raw values directly to the reward function, the Commander could accidentally inflate or deflate the entire "economy" of the grid-world, completely destabilizing the PPO Critic's value estimations.
 
-To prevent this, the programmatic \texttt{RewardInjector} first strictly bounds the raw logits, capping any individual task logit at a maximum of $3.0$ and ensuring the total sum across all tasks does not exceed $15.0$. These bounded logits are then converted into a \emph{budget-preserving} weight vector via a temperature-scaled softmax~\parencite{Sutton_Barto_2018}:
+To prevent this, the programmatic safety layer first strictly bounds the raw logits, capping any individual task logit at a maximum of $3.0$ and ensuring the total sum across all tasks does not exceed $15.0$. These bounded logits are then converted into a \emph{budget-preserving} weight vector via a temperature-scaled softmax~\parencite{Sutton_Barto_2018}:
 \begin{equation}
 \label{eq:softmax_budget}
 \boxed{
@@ -272,7 +272,7 @@ with $\alpha=0.2$. This mechanism acts as a shock absorber. Because the EMA is a
 \subsubsection{Auto-Rollback}
 \label{sec:safety_rollback}
 
-Despite these mathematical safeguards, the system employs a final safety net inspired by Safe Reinforcement Learning~\parencite{Amodei_Olah_Steinhardt_Christiano_Schulman_Mané_2016}. The \texttt{RewardInjector} monitors the average environment reward for 25~updates following any LLM intervention. If this post-intervention average drops more than 20\% (an empirically chosen safety threshold) below the pre-intervention level, it triggers an \emph{Auto-Rollback}:
+Despite these mathematical safeguards, the system employs a final safety net inspired by Safe Reinforcement Learning~\parencite{Amodei_Olah_Steinhardt_Christiano_Schulman_Mané_2016}. The safety layer monitors the average environment reward for 25~updates following any LLM intervention. If this post-intervention average drops more than 20\% (an empirically chosen safety threshold) below the pre-intervention level, it triggers an \emph{Auto-Rollback}:
 \begin{equation}
     \text{rollback}
     \;\Longleftrightarrow\;
@@ -360,7 +360,7 @@ Additionally, the indicator $\mathds{1}[g \text{ active}]$ acts as a mask. If th
 
 To execute this geometric logic simultaneously across 128 parallel environments efficiently, the scaling relies entirely on vectorized tensor operations, bypassing Python loops.
 
-The Commander's influence is encapsulated entirely within the goal selection variable $g$ (\cref{eq:greedy_select}). The LLM dictates \emph{which} direction the magnetic pull originates from, but it does not change the \emph{strength} of that pull. If $F$ were dynamically scaled by the shifting LLM weights $w_j$, the underlying physical laws of the grid-world would constantly change, creating massive non-stationarity that would crash the PPO Critic. By isolating the strategy (the target $g$) from the force (the stable, policy-invariant gradient $F$), the agents can learn to navigate safely.
+The Commander's influence is encapsulated entirely within the goal selection variable $g$ (Equation~\ref{eq:greedy_select}). The LLM dictates \emph{which} direction the magnetic pull originates from, but it does not change the \emph{strength} of that pull. If $F$ were dynamically scaled by the shifting LLM weights $w_j$, the underlying physical laws of the grid-world would constantly change, creating massive non-stationarity that would crash the PPO Critic. By isolating the strategy (the target $g$) from the force (the stable, policy-invariant gradient $F$), the agents can learn to navigate safely.
 
 \subsubsection{Mathematical Impact on the MAPPO Objective}
 \label{sec:dyn_math_impact}
@@ -380,17 +380,17 @@ To ensure the agents eventually learn to act independently, the blending coeffic
 
 In standard Markov Decision Processes, observation and action delays severely destabilize training~\parencite{Katsikopoulos_Engelbrecht_2003}. If the PPO workers paused to wait for the LLM Commander's response during every SOS flare, network latency and inference time would bottleneck the simulation, dropping GPU utilization to near zero.
 
-To prevent this, queries are dispatched asynchronously via an \texttt{LLMBridge} daemon thread. This approach mirrors frameworks like GITM~\parencite{Zhu_etal_2023}, which explicitly decouple the environment clock from the LLM inference clock. The dataflow executes as follows:
+To prevent this, queries are dispatched asynchronously via a daemon thread. This approach mirrors frameworks like GITM~\parencite{Zhu_etal_2023}, which explicitly decouple the environment clock from the LLM inference clock. The dataflow executes as follows:
 
 \begin{enumerate}[nosep]
-    \item \textbf{Trigger:} The \texttt{CriticTrigger} fires at the end of a PPO update and constructs the situation report prompt.
-    \item \textbf{Dispatch:} The prompt is enqueued to a thread-safe \texttt{queue.Queue}.
+    \item \textbf{Trigger:} The critic trigger fires at the end of a PPO update and constructs the situation report prompt.
+    \item \textbf{Dispatch:} The prompt is enqueued to a thread-safe queue.
     \item \textbf{Background Processing:} The daemon thread queries the LLM API without interrupting the main simulation loop.
     \item \textbf{Continuous Execution:} While the LLM generates a response, the RL agents continue interacting with the environment using the \emph{previous} priority weights.
-    \item \textbf{Seamless Injection:} Once inference completes, the new weights are stored as "pending." At the next PPO update boundary, the \texttt{RewardInjector} applies EMA smoothing and seamlessly updates the active shaping targets.
+    \item \textbf{Seamless Injection:} Once inference completes, the new weights are stored as "pending." At the next PPO update boundary, the safety layer applies EMA smoothing and seamlessly updates the active shaping targets.
 \end{enumerate}
 
-Ultimately, this asynchronous delay does not destabilize the agents because the LLM only shifts the \emph{macro-strategy} (the target zone), rather than controlling step-by-step micro-actions. To further ensure system robustness, the \texttt{LLMBridge} employs a thread-safe cache to eliminate redundant queries, and an exponential backoff mechanism ($2^k$ seconds, up to 3~retries) to safely handle API timeouts, allowing identical prompts to instantly recycle previous LLM outputs.
+Ultimately, this asynchronous delay does not destabilize the agents because the LLM only shifts the \emph{macro-strategy} (the target zone), rather than controlling step-by-step micro-actions. To further ensure system robustness, the asynchronous bridge employs a thread-safe cache to eliminate redundant queries, and an exponential backoff mechanism ($2^k$ seconds, up to 3~retries) to safely handle API timeouts, allowing identical prompts to instantly recycle previous LLM outputs.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Summary}

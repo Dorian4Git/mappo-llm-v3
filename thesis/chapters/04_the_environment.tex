@@ -8,6 +8,30 @@ Before detailing the neuro-symbolic architectures developed in this thesis, this
 
 The environment operates as a cooperative spatial grid where multiple agents must jointly gather resources, craft tools, and defeat adversaries to achieve a final objective. Unlike standard dense-reward environments, where agents receive incremental gradient signals based on Euclidean distance to a target, this environment utilizes a logical sparse-reward formulation. The agents receive extrinsic rewards solely upon the completion of discrete logical milestones (subtasks).
 
+\subsubsection{Extrinsic Reward Structure}
+The environment reward $r_t^{\text{env}}$ is the true, unmodified signal from the environment. It consists of a constant time-step penalty of $-0.01$ to encourage speed, plus massive milestone bonuses upon successfully completing a physical subtask:
+
+\begin{table}[H]
+\centering
+\caption{Environment reward structure from \texttt{crafting\_env.py}.}
+\label{tab:env_rewards}
+\begin{tabular}{@{}lc@{}}
+\toprule
+\textbf{Event} & \textbf{Reward (shared)} \\
+\midrule
+Step penalty      & $-0.01$ \\
+Collect Wood      & $+2.0$  \\
+Collect Stone     & $+2.0$  \\
+Craft Pickaxe     & $+3.0$  \\
+Mine Iron         & $+2.0$  \\
+Craft Sword/Armor & $+3.0$  \\
+Build Bridge      & $+3.0$  \\
+Defeat Enemy      & $+10.0$ \\
+Mine Gold (win)   & $+15.0$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \subsubsection{The Dependency Graph (DAG)}
 \label{subsec:env_dag}
 

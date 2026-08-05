@@ -209,7 +209,7 @@ During the optimization epochs, we continuously monitor the approximate KL diver
     D_{\text{KL}}^{\text{approx}} = \mathbb{E}\left[ -\log \left( \frac{\pi_{\theta}(a|s, o)}{\pi_{\theta_{\text{old}}}(a|s, o)} \right) \right]
 \end{equation}
 
-If $D_{\text{KL}}^{\text{approx}}$ exceeds the predefined trust region threshold ($\delta = 0.015$, implemented as \texttt{target\_kl}), the gradient updates for the current batch are immediately aborted.
+If $D_{\text{KL}}^{\text{approx}}$ exceeds the predefined trust region threshold ($\delta = 0.015$, implemented as a target KL divergence), the gradient updates for the current batch are immediately aborted.
 
 \begin{figure}[H]
     \centering
@@ -313,7 +313,7 @@ In \Cref{sec:ema_smoothing}, we posited that feeding raw, discrete priority logi
     \label{fig:ema_ablation_subtasks}
 \end{figure}
 
-As shown in Figure~\ref{fig:ema_ablation_td}, removing the EMA filter results in a noticeable spike in TD-error variance. The ablation itself was executed by passing a \texttt{skip\_ema=True} flag to the \texttt{LLMOrchestrator}, which bypassed the exponential smoothing step entirely.
+As shown in Figure~\ref{fig:ema_ablation_td}, removing the EMA filter results in a noticeable spike in TD-error variance. The ablation itself was executed by bypassing the exponential smoothing step entirely in the programmatic orchestration layer.
 
 The Critic network struggles to track a reward objective that shifts instantaneously. Figure~\ref{fig:ema_ablation_subtasks} illustrates the behavioral consequence: the non-stationarity leads to suboptimal optimization, causing the workers to exhibit slight regressions in their \texttt{Iron} and \texttt{Sword} completion rates during the mid-stages of training. However, it is worth noting that the No-EMA workers do eventually recover and climb back to a 100\% success rate on these tasks. Thus, while the workers can mathematically overcome the noise, this proves that the EMA smoothing equation is highly helpful for bridging discrete LLM outputs with continuous RL gradients, enabling faster convergence and preventing such regressions.
 
@@ -363,7 +363,7 @@ Beyond pure execution speed, the financial and energy footprints of these archit
 
 A fundamental critique of using LLMs in MARL is whether they rely on genuine semantic world-models or merely overfit to node names. To test this, the environment was silently modified at Update 500: the `Workbench` zone was renamed to `Furnace` in the Commander's prompt space. A secondary control run replaced `Workbench` with a nonsense string, `Zylorg`.
 
-This shift was executed by dynamically injecting an alias mapping into the \texttt{LLMOrchestrator} mid-training, forcing the Commander to output weights for the alias rather than the canonical node name, which the orchestrator then reversed and fed to the PPO workers.
+This shift was executed by dynamically injecting an alias mapping into the orchestrator mid-training, forcing the Commander to output weights for the alias rather than the canonical node name, which the orchestrator then reversed and fed to the PPO workers.
 
 The initial hypothesis assumed the Commander would cleanly map "Furnace" to crafting success, while failing on "Zylorg". However, empirical results revealed a counter-intuitive phenomenon: \textbf{semantic over-confidence induced severe reward hacking, while semantic ignorance acted as a natural regularizer.}
 
@@ -395,7 +395,7 @@ As seen in Figures~\ref{fig:semantic_shift_subtasks} and~\ref{fig:shift_all_subt
 "w\_enemy": 1.2
 \end{hegquote}
 
-Because \texttt{w\_zylorg} was not artificially inflated, the MAPPO workers, driven by the baseline extrinsic rewards for crafting a Sword, naturally explored the environment, discovered the `Zylorg` station was the required prerequisite, and solved the bottleneck via standard PPO exploration. The Commander's ignorance prevented it from interfering with the RL algorithm's foundational mechanics.
+Because this unknown target weight was not artificially inflated, the MAPPO workers, driven by the baseline extrinsic rewards for crafting a Sword, naturally explored the environment, discovered the `Zylorg` station was the required prerequisite, and solved the bottleneck via standard PPO exploration. The Commander's ignorance prevented it from interfering with the RL algorithm's foundational mechanics.
 
 Conversely, the `Furnace` shift failed severely on advanced tasks (`Iron`, `Sword`) due to reward hacking. The Commander correctly deduced zero-shot that a Furnace serves an identical semantic purpose to a crafting bench, as demonstrated in its reasoning logs:
 
