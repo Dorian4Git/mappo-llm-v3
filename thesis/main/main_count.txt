@@ -36,9 +36,9 @@ Poorly designed shaping signals frequently lead to reward hacking, where agents 
 surrogate metrics without achieving the true environmental milestone (Ma et al., 2024). At the
 same time, as multiple agents update their policies simultaneously, the environment becomes
 highly non-stationary from the perspective of any individual agent, leading to variance spikes and
-policy collapse (Lowe_Wu_Tamar_Harb_Abbeel_Mordatch_2017). The fundamental problem
-lies in bridging the gap between high-level semantic planning (knowing what to do) and low-level
-kinetic control (learning how to do it) without destabilizing the multi-agent learning process.
+policy collapse (Lowe et al., 2017). The fundamental problem lies in bridging the gap between
+high-level semantic planning (knowing what to do) and low-level kinetic control (learning how to
+do it) without destabilizing the multi-agent learning process.
 To systematically investigate this intersection of large language models and multi-agent reinforcement learning, this thesis poses the following three central research questions:
 RQ1: How can the zero-shot reasoning of Large Language Models dynamically shape potentialbased rewards, and does this continuous shaping effectively mitigate exploration bottlenecks in sparse-reward MARL environments?
 RQ2: Does a Hierarchical Reinforcement Learning (HRL) architecture, where the LLM acts as a
@@ -91,8 +91,7 @@ and the Options framework, before reviewing modern integrations of Large Languag
 Fundamentals of Reinforcement Learning
 
 Reinforcement learning (RL) formalizes sequential decision-making under uncertainty, where
-an autonomous agent learns to optimize its behavior through interaction with a dynamic
-environment(Sutton_Barto_2018). Imagine an agent dropped into a complex grid-world, tasked
+an autonomous agent learns to optimize its behavior through interaction with a dynamic environment(Sutton; Barto, 2018). Imagine an agent dropped into a complex grid-world, tasked
 with navigating a forest to collect wood. At each step, it observes its surroundings, chooses a
 direction, and receives a numerical reward if it successfully harvests the resource.
 
@@ -146,14 +145,14 @@ immediate rewards slightly more valuable than future rewards, forcing the agent 
 the wood efficiently rather than wandering the grid forever.
 To navigate this world, the agent needs a strategy, known as a policy. Rather than a rigid set of
 if/then rules, modern RL utilizes a stochastic (probabilistic) policy, denoted mathematically as
-π(a | s) = P[At = a | St = s] (Sutton_Barto_2018). Intuitively, this means that given a specific
+π(a | s) = P[At = a | St = s] (Sutton; Barto, 2018). Intuitively, this means that given a specific
 state s, the policy outputs a probability distribution over all possible actions. For instance, if the
 agent is standing directly next to a tree, its policy π might assign a 95% probability to the ’Chop’
 action, and a 5% probability to ’Move South’ to encourage a slight amount of random exploration.
 The ultimate goal of the agent is to optimize this policy to maximize its expected discounted
 P
 k
-return, denoted as Gt (Sutton_Barto_2018). Gt = ∞
+return, denoted as Gt (Sutton; Barto, 2018). Gt = ∞
 k=0 γ Rt+k+1 represents the agent’s "total
 lifetime score." It is the sum of every reward the agent expects to collect from the current moment
 t until the end of the episode, with future rewards multiplied by the discount factor γ so they
@@ -167,7 +166,7 @@ To train our wood-collecting agent, we must optimize its policy. Instead of memo
 table of every possible grid coordinate, modern reinforcement learning parameterizes the policy
 using a neural network. This network, commonly referred to as the Actor, is denoted as πθ (a | s).
 It outputs a probability distribution over available actions a given the current state s, utilizing its
-trainable weights θ ∈ Rd (Sutton_Barto_2018).
+trainable weights θ ∈ Rd (Sutton; Barto, 2018).
 To help the Actor learn, we introduce a second neural network called the Critic, parameterized
 by an entirely separate set of weights ϕ. The Critic learns the Value function, Vϕ (s), which is its
 estimate of the total expected return from a given state. Conceptually, this is the agent’s "gut
@@ -177,7 +176,7 @@ stands next to a hazard, it outputs a low value.
 Because we have two distinct networks, they have two distinct mathematical objectives during
 optimization:
 • The Actor aims to maximize its expected performance score, denoted as J(θ). Therefore,
-it updates its weights θ via gradient ascent (∇θ ). Shown later in ??.
+it updates its weights θ via gradient ascent (∇θ ). Shown later in Equation (4).
 • The Critic aims to minimize its prediction errors. Its objective is a loss function L(ϕ),
 typically defined as the Mean Squared Error between its predicted value and the actual
 target return R̂t . Therefore, it updates its weights ϕ via gradient descent (∇ϕ ):
@@ -194,7 +193,7 @@ Vϕ (st ) − R̂t
 
 (2)
 
-As illustrated in Figure 3, this dual-network architecture creates a continuous feedback loop. The
+As illustrated in Figure 2, this dual-network architecture creates a continuous feedback loop. The
 Critic evaluates the Actor’s choice by generating an Advantage signal (Ât ), which dictates the
 direction of the Actor’s policy gradient update, pushing it to favor successful actions in the future.
 Figure 2: The Actor-Critic architecture. The Actor maximizes its performance via gradient ascent,
@@ -227,7 +226,7 @@ The Critic’s Evaluation: TD-Error and Advantage
 
 Because the Critic’s Value function is a prediction, it requires a mathematical mechanism to
 measure when it is wrong. This is achieved via the Temporal Difference Error (TD-Error),
-denoted as δt (Sutton_Barto_2018).
+denoted as δt (Sutton; Barto, 2018).
 Let’s consider our lumberjack agent. Suppose the Critic predicts that from its current state st , it
 expects to gather 50 future points (Vϕ (st ) = 50). The agent then executes an action, immediately
 receives a small reward of 5 from the environment (rt = 5), and lands in a new state st+1 . The
@@ -240,7 +239,7 @@ was perfectly accurate.
 However, if the agent unexpectedly finds a hidden cache of wood and receives an immediate
 reward of 20, the new estimate becomes 20 + 45 = 65. The TD-Error is the gap between reality
 and expectation: δt = 65 − 50 = +15. This positive "surprise" signal forces the Critic to update
-its weights ϕ to make better predictions in the future. We can visualize this mismatch in Figure 2.
+its weights ϕ to make better predictions in the future. We can visualize this mismatch in Figure 3.
 Formally, the TD-Error is defined as:
 δt = rt + γVϕ (st+1 ) − Vϕ (st )
 
@@ -264,7 +263,7 @@ Future Value
 Building upon this, we must evaluate the specific action the Actor chose. We define the statevalue V πθ (s) as the baseline expectation of simply being in a state. Conversely, we define
 the action-value Qπθ (s, a) as the expected return of taking a specific action in that state before
 resuming the regular policy.
-The Advantage function, Aπθ (s, a), isolates the unique benefit of that specific action by subtracting the baseline from the action-value: Aπθ (s, a) = Qπθ (s, a) − V πθ (s) (Sutton_Barto_2018).
+The Advantage function, Aπθ (s, a), isolates the unique benefit of that specific action by subtracting the baseline from the action-value: Aπθ (s, a) = Qπθ (s, a) − V πθ (s) (Sutton; Barto, 2018).
 Modern algorithms estimate this Advantage using a discounted sum of the TD-Errors we just
 calculated.
 
@@ -272,17 +271,20 @@ calculated.
 
 The Actor’s Update and Proximal Policy Optimization (PPO)
 
-With the Advantage calculated by the Critic (Figure 3), the Actor knows whether its chosen action was better or worse than expected. Classically, by the Policy Gradient Theorem (Sutton_Barto_2018), the Actor updates its weights θ to maximize its performance via the
-following gradient:
+With the Advantage calculated by the Critic (Figure 2), the Actor knows whether its chosen action
+was better or worse than expected. Classically, by the Policy Gradient Theorem (Sutton; Barto,
+2018), the Actor updates its weights θ to maximize its performance via the following gradient:
 ∇θ J(θ) = Es∼ρπθ ,a∼πθ [∇θ log πθ (a | s)Aπθ (s, a)]
+
 (4)
+
 In other words, we take the expectation (essentially, an average) of the product of the log
 probability of the specific action that was just taken and the Advantage signal from the Critic,
-calculated over a large batch of state s the agent visited and action a it took. In plain English,
 
-Equation ?? tells the neural network: "On average across all your recent experiences, if an
-action was surprisingly good (positive Advantage), push your weights in a direction that makes
-that action more likely in the future. If it was bad, make it less likely."
+calculated over a large batch of state s the agent visited and action a it took. In plain English,
+Equation 4 tells the neural network: "On average across all your recent experiences, if an action
+was surprisingly good (positive Advantage), push your weights in a direction that makes that
+action more likely in the future. If it was bad, make it less likely."
 We can see why it could be fragile in practice. Suppose our lumberjack agent accidentally
 executes a random sequence of movements and luckily discovers a massive, hidden cache of
 wood. The Critic will calculate an enormous positive Advantage. Standard gradient ascent will
@@ -311,8 +313,8 @@ To fully understand this equation, we can break down its notation:
 than computing a perfect theoretical expectation. Ât is the estimated Advantage provided
 by the Critic.
 t)
-, which measures how much more (or
 • rt (θ) is the probability ratio, defined as ππθ θ (a(at |s
+, which measures how much more (or
 |s
 t
 t)
@@ -331,14 +333,14 @@ destructive variance spikes.
 
 Kullback-Leibler (KL) Divergence and Early Stopping
 
-While the clipping mechanism described in Equation 4 acts as a strict per-action speed limit—
+While the clipping mechanism described in Equation 5 acts as a strict per-action speed limit—
 ensuring the probability of taking one specific action doesn’t spike too drastically—PPO implementations frequently employ an additional, broader safety net. This is known as early stopping
 based on Kullback-Leibler (KL) divergence (Schulman et al., 2017).
 To understand why this is necessary, consider our lumberjack once more. The clipping function
 works perfectly for isolating and limiting a single enthusiastic update (like chopping a tree).
-However, if the agent updates thousands of small, unclipped actions simultaneously across
 
-a large batch of data, the cumulative effect might still fundamentally alter the agent’s overall
+However, if the agent updates thousands of small, unclipped actions simultaneously across
+a large batch of data, the cumulative effect might still fundamentally alter the agent’s overall
 behavior.
 KL divergence is a concept from information theory that measures exactly this: how much
 one probability distribution diverges from a reference distribution. In our case, it measures the
@@ -407,9 +409,9 @@ Cooperative Multi-Agent Reinforcement Learning
 
 Imagine our wood-collecting agent is no longer alone. We now introduce a second agent into
 the grid, tasked with mining stone. Suddenly, the fundamental assumption of our standard MDP
-(that the environment only changes when our agent acts) is shattered. Because both agents
 
-update their policies and take actions concurrently, the environment becomes a moving target. If
+(that the environment only changes when our agent acts) is shattered. Because both agents
+update their policies and take actions concurrently, the environment becomes a moving target. If
 the lumberjack moves toward a tree, but the miner accidentally blocks the path a millisecond
 prior, the environment’s transition dynamics become non-stationary from the local perspective of
 any individual agent (Albrecht et al., 2024).
@@ -469,9 +471,9 @@ information each agent receives.
 • O : S × A × Ω → [0, 1] is the observation probability distribution O(o | s′ , a). This acts as
 the mathematical "filter" shown in Figure 5, determining what slice of the true state each
 agent is permitted to see.
-• R : S × A → R is the globally shared reward signal. If the agents successfully cooperate
 
-to build a tool, this single scalar reward is emitted to all agents equally.
+• R : S × A → R is the globally shared reward signal. If the agents successfully cooperate
+to build a tool, this single scalar reward is emitted to all agents equally.
 This structure introduces a critical mathematical consequence. Because an individual agent
 (i)
 i cannot perceive the full state st , a single observation ot ∈ Ωi instantly breaks the Markov
@@ -482,12 +484,14 @@ To restore temporal context, agent i must rely on its memory. It maintains an ac
 (i) (i)
 (i)
 history τt = (o1 , a1 , . . . , ot ), and parameterizes its decentralized policy as πi (ai | τi ). While
-standard feed-forward or Convolutional Neural Networks (CNNs) (Lecun_Bottou_Bengio_Haffner_1998)
-are highly effective at extracting spatial features from a single isolated observation, they inherently lack the capacity to remember past states. This is why modern architectures implement this memory using Recurrent Neural Networks (RNNs). Gated variants like Long ShortTerm Memory (LSTM) (Hochreiter_Schmidhuber_1997) or Gated Recurrent Units (GRUs)
-(Chung_Gulcehre_Cho_Bengio_2014) are typically used to prevent the vanishing gradient
-problem. By maintaining stable learning signals over time, these networks allow the agent
-to build a continuous understanding of the environment from fragmented spatial snapshots
-(Hausknecht_Stone_2015).
+standard feed-forward or Convolutional Neural Networks (CNNs) (Lecun et al., 1998) are highly
+effective at extracting spatial features from a single isolated observation, they inherently lack the
+capacity to remember past states. This is why modern architectures implement this memory
+using Recurrent Neural Networks (RNNs). Gated variants like Long Short-Term Memory (LSTM)
+(Hochreiter et al., 1997) or Gated Recurrent Units (GRUs) (Chung et al., 2014) are typically
+used to prevent the vanishing gradient problem. By maintaining stable learning signals over time,
+these networks allow the agent to build a continuous understanding of the environment from
+fragmented spatial snapshots (Hausknecht et al., 2015).
 
 2.2.2
 
@@ -544,13 +548,12 @@ Adapted from (Yu et al., 2022)
 Multi-Agent Proximal Policy Optimization (MAPPO)
 
 Before the widespread adoption of Actor-Critic methods in multi-agent settings, the field heavily
-relied on value-decomposition techniques to solve the credit assignment problem. Algorithms like
-Value-Decomposition Networks (VDN) (Sunehag_Lever_Gruslys_Czarnecki_Zambaldi_Jaderberg_Lanc
-and QMIX (Rashid_Samvelyan_Witt_Farquhar_Foerster_Whiteson_2018) became popular
-by factorizing a global reward into individual agent contributions. QMIX, for example, enforces
-a strict monotonic relationship between the global value and the local values of the agents.
-However, these structural constraints limit the types of cooperative tasks these algorithms can
-solve effectively (Castellini_2022).
+relied on value-decomposition techniques to solve the credit assignment problem. Algorithms
+like Value-Decomposition Networks (VDN) (Sunehag et al., 2017) and QMIX (Rashid et al.,
+2018) became popular by factorizing a global reward into individual agent contributions. QMIX,
+for example, enforces a strict monotonic relationship between the global value and the local
+values of the agents. However, these structural constraints limit the types of cooperative tasks
+these algorithms can solve effectively (Castellini, 2022).
 More recently, research has demonstrated that on-policy Actor-Critic methods can avoid these
 constraints altogether while matching or exceeding the performance of off-policy factorization
 methods. Multi-Agent PPO (MAPPO) brings our grid-world to life by extending the single-agent
@@ -561,9 +564,9 @@ The Centralized Critic Network (Value), parameterized by ϕ, learns the value fu
 Crucially, st is the unclipped global joint state. In our RPG scenario, while the lumberjack only
 sees the trees immediately in front of them, the Critic sees the entire map, knowing exactly where
 both the lumberjack and the miner are located, and what resources they hold. By estimating
+baseline returns using this true reality of the board, the Critic stabilizes the variance in its
 
-baseline returns using this true reality of the board, the Critic stabilizes the variance in its
-Advantage calculations. It is optimized by minimizing the Mean Squared Error against the actual
+Advantage calculations. It is optimized by minimizing the Mean Squared Error against the actual
 calculated returns R̂t (Yu et al., 2022):
 LVF (ϕ) =
 
@@ -582,7 +585,7 @@ prediction error across all agents and all sampled experiences.
 Simultaneously, the decentralized Actors (the lumberjack and the miner) learn their respective
 policies πθi (ai | τi ). Because they operate in the fog of war, their inputs are restricted strictly to
 their localized action-observation histories (τi ). Each Actor updates its weights using the exact
-same clipped surrogate objective from Equation 4.
+same clipped surrogate objective from Equation 5.
 As shown in Figure 6, the gradient flow is strictly separated. The global state error updates
 only the Critic’s weights (ϕ), while the Critic passes its computed Advantage signal to the
 Actors. The lumberjack and miner then use this Advantage to update their own weights (θi ).
@@ -603,10 +606,9 @@ agent masters these basic concepts, the environment’s complexity is progressiv
 reinforcement learning, this typically means a human designer must manually craft a sequence
 of environments. For example, starting the agent in a tiny grid with the target one step away, and
 gradually expanding the grid size and adding obstacles.
-
 Although effective, this traditional approach suffers from scalability issues due to its reliance on
 manual engineering. To overcome this, the field shifted toward Automated Curriculum Learning
-(ACL), where algorithms dynamically adjust the environment parameters (Portelas_Colas_Weng_Hofmann_
+(ACL), where algorithms dynamically adjust the environment parameters (Portelas et al., 2020).
 However, generating entirely new physical environments on the fly introduces significant computational overhead and non-stationarity. If the physical rules or map layouts constantly change, the
 agents struggle to stabilize their policies. Therefore, rather than altering the environment from
 the outside, a more stable solution is to alter the agent’s cognitive abstractions from the inside.
@@ -795,7 +797,7 @@ isolate the intermediate weight matrix W from
  weT can
 
 QK
-Equation 8 (specifically, the softmax √d
+Equation 9 (specifically, the softmax √d
 component) to see how the causal mask operates
 k
 before the final multiplication by the Values (V ):
@@ -844,7 +846,7 @@ where si,j represents the raw, scaled dot-product score between query i and key 
 
 √
 the QK
-matrix), and wi,j represents the final valid probability weight. As shown in Equation ??,
+matrix), and wi,j represents the final valid probability weight. As shown in Equation 10,
 dk
 when the model is processing token 3 (row 3), it can only attend to past and current tokens 1, 2,
 and 3. The connection to the future token 4 is mathematically erased (0). This resulting weight
@@ -880,13 +882,13 @@ target token yi∗ is too low, and gradients (∇Θ ) are backpropagated to upda
 This foundational pre-training over trillions of words endows LLMs with vast latent world models,
 encompassing logical dependencies, domain knowledge, and common-sense heuristics.
 But why is this specific architecture so critical for our multi-agent framework? During a standard
-MARL episode, the local Qwen model acts as a frozen, inference-only "Commander". It is not
-actively learning or updating its weights via Equation 9. Instead, we rely entirely on the Attention
-Mechanism (Equation 8) to perform in-context reasoning. When we feed the model the full
-game state as a prompt (e.g., "Agent 1 is at [2,3] and holds Wood and Stone. It must craft a
-Pickaxe,"), the attention mechanism is exactly what allows the network to mathematically link
-the available inventory ("Wood", "Stone") with the goal ("Pickaxe") to deduce the correct next
-macro-action. The autoregressive generation loop then allows it to construct and output the
+MARL episode, the local Qwen model acts as a frozen, inference-only "Commander". It is
+not actively learning or updating its weights via Equation 11. Instead, we rely entirely on the
+Attention Mechanism (Equation 9) to perform in-context reasoning. When we feed the model
+the full game state as a prompt (e.g., "Agent 1 is at [2,3] and holds Wood and Stone. It must
+craft a Pickaxe,"), the attention mechanism is exactly what allows the network to mathematically
+link the available inventory ("Wood", "Stone") with the goal ("Pickaxe") to deduce the correct
+next macro-action. The autoregressive generation loop then allows it to construct and output the
 command GO_TO_WORKBENCH step-by-step.
 However, as we will explore in the following section, relying purely on a base model’s general
 knowledge is often insufficient for formatting precise JSON commands. We must first adapt this
@@ -929,7 +931,7 @@ Instead, LoRA introduces a "bottleneck" defined by the rank r. If we choose a ti
 r = 8, matrix A becomes 8 × 10, 000 (80,000 parameters) and matrix B becomes 10, 000 × 8
 (80,000 parameters). By multiplying them together (B × A), we reconstruct a matrix ∆W that is
 still 10, 000 × 10, 000, but we only had to train 160,000 actual parameters (a reduction of over
-99.8%). Equation ?? illustrates this bottleneck visually for a small 4 × 4 matrix with rank r = 1,
+99.8%). Equation 12 illustrates this bottleneck visually for a small 4 × 4 matrix with rank r = 1,
 where training only 8 parameters is required to reconstruct all 16 weights:
  
 
@@ -1040,7 +1042,7 @@ where α is a constant scaling factor (Hu et al., 2021; Dettmers; Pagnoni, et al
 knowledge (BA) should be blended into the general world knowledge (W0 ).
 Once this forward pass is complete and the model generates its sequence, how does it actually
 learn to fix its mistakes? This is where the Causal Language Modeling loss (LCLM ) from
-Equation 9 returns to the stage (Dettmers; Pagnoni, et al., 2023). If the model outputs a
+Equation 11 returns to the stage (Dettmers; Pagnoni, et al., 2023). If the model outputs a
 malformed JSON, the LCLM calculates the mathematical error between the model’s output and
 the true desired output.
 The optimizer then uses backpropagation to send this error signal backward through the network
@@ -1052,7 +1054,7 @@ Instead, the error signal flows down the new adapter pathway via the Chain Rule 
 Let L represent the loss and ∂L
 ∂h represent the error signal arriving from the network’s output.
 Because the forward pass computes B(Ax), the backward pass encounters matrix B first. As
-shown in Equation ??, calculating the gradient for B (∇B ) relies on the cached forward outputs
+shown in Equation 14, calculating the gradient for B (∇B ) relies on the cached forward outputs
 
 of A. To calculate the gradient for A (∇A ), the error signal must flow backward through the
 transpose of B (B T ):
@@ -1107,12 +1109,13 @@ gemma3:27b exhibited strong logic capabilities and consistent formatting but req
 consumer-grade NVIDIA RTX 5070 with 12 GB of VRAM), the 27B model exceeded the physical
 
 memory budget entirely, causing immediate out-of-memory errors before the MAPPO environment could even be initialized.
-Among the mid-range models (qwen2.5:7b, llama3.1:8b, and gemma2:9b), differences in instruction following and context processing became apparent. While both LLaMA 3.1 and
-Gemma 2 fit within the memory envelope and performed adequately on general reasoning
-tasks, they occasionally hallucinated keys or deviated from the strict JSON hierarchy required
-for parsing environment commands. In contrast, qwen2.5:7b demonstrated more reliable
-capabilities for programmatic orchestration. Standard industry benchmarks support this empirical observation: as shown in Table ??, Qwen 2.5 7B Instruct outperforms its peers in both
-zero-shot coding and multi-step reasoning (measured by HumanEval and GSM8K, respectively)1 (Qwen_Yang_Yang_Zhang_Hui_Zheng_Yu_Li_Liu_Huang_et_al_2024).
+Among the mid-range models (qwen2.5:7b, llama3.1:8b, and gemma2:9b), differences in instruction following and context processing became apparent. While both LLaMA 3.1 and Gemma
+2 fit within the memory envelope and performed adequately on general reasoning tasks, they
+occasionally hallucinated keys or deviated from the strict JSON hierarchy required for parsing
+environment commands. In contrast, qwen2.5:7b demonstrated more reliable capabilities for
+programmatic orchestration. Standard industry benchmarks support this empirical observation:
+as shown in Table 1, Qwen 2.5 7B Instruct outperforms its peers in both zero-shot coding and
+multi-step reasoning (measured by HumanEval and GSM8K, respectively)1 (Qwen et al., 2024).
 Table 1: Comparison of zero-shot coding and multi-step reasoning performance among midrange models.
 Model
 Qwen 2.5 7B Instruct
@@ -1130,18 +1133,17 @@ GSM8K (%)
 91.6
 84.5
 68.6
-
-Adapted from (Qwen_Yang_Yang_Zhang_Hui_Zheng_Yu_Li_Liu_Huang_et_al_2024)
+Adapted from (Qwen et al., 2024)
 
 Because the Meta-Controller must parse spatial data and output strict, unbroken JSON commands, this gap in coding and reasoning performance is a deciding factor. Ultimately, this thesis
-leverages the Qwen 2.5 7B architecture (Qwen_Yang_Yang_Zhang_Hui_Zheng_Yu_Li_Liu_Huang_et_al
-At roughly 4.7 GB of VRAM usage, it fits within the hardware constraints without interfering
-with concurrent PyTorch processes. Qwen 2.5 strikes a practical balance between speed and
-reasoning: it provides fast, latency-bound token generation while possessing the logical capacity
-required to navigate task dependency graphs (DAGs). The architecture’s extensive pre-training
-on code and structured data translates well to the deterministic formatting needed for an RL
-controller. By coupling this efficient base model with QLoRA fine-tuning, the 7B parameters can
-be locally specialized to act as a reliable, low-latency orchestrator.
+leverages the Qwen 2.5 7B architecture (Qwen et al., 2024). At roughly 4.7 GB of VRAM usage, it
+fits within the hardware constraints without interfering with concurrent PyTorch processes. Qwen
+2.5 strikes a practical balance between speed and reasoning: it provides fast, latency-bound
+token generation while possessing the logical capacity required to navigate task dependency
+graphs (DAGs). The architecture’s extensive pre-training on code and structured data translates
+well to the deterministic formatting needed for an RL controller. By coupling this efficient base
+model with QLoRA fine-tuning, the 7B parameters can be locally specialized to act as a reliable,
+low-latency orchestrator.
 
 3.4
 
@@ -1152,7 +1154,8 @@ bottlenecks in sparse-reward environments. While the Options Framework offers a 
 solution to temporal abstraction, designing the rules for when to trigger an Option traditionally
 demands extensive human engineering.
 Because LLMs develop powerful logic and reasoning skills during their initial pre-training, they
-can be deployed as zero-shot 2 semantic orchestrators. This means the model can manage
+can be deployed as zero-shot 2 semantic orchestrators. To elicit these reasoning capabilities
+effectively, researchers developed Chain-of-Thought (CoT) prompting (Wei et al., 2022). By
 1
 
 2
@@ -1162,15 +1165,21 @@ School Math 8K) tests its capacity to solve multi-step logical problems.
 In machine learning, "zero-shot" refers to a model’s ability to successfully perform a task it was not explicitly
 trained for, relying purely on generalized knowledge acquired during pre-training.
 
-complex tasks right out of the box, completely bypassing the need for human engineers to write
-manual, hard-coded decision rules. Frameworks such as ReAct (Yao et al., 2023) have shown
-that interleaving language reasoning with concrete actions allows models to solve multi-step
-problems autonomously. In reinforcement learning, systems like EUREKA (Ma et al., 2024) and
-PRM4RL (Zhang et al., 2026) successfully use LLMs to automatically write and refine reward
-functions.
+explicitly prompting the model to generate a step-by-step reasoning trace before outputting its
+final decision, CoT drastically improves performance on logical and multi-step tasks. Building
+upon this, frameworks such as ReAct (Yao et al., 2023) have demonstrated that interleaving this
+step-by-step language reasoning with concrete environmental actions allows models to solve
+complex problems autonomously. This means the model can manage tasks right out of the box,
+completely bypassing the need for human engineers to write manual, hard-coded decision rules.
+In the specific domain of reinforcement learning, a growing body of work has emerged using LLMs
+as meta-level reward designers. Systems like EUREKA (Ma et al., 2024) and PRM4RL (Zhang
+et al., 2026) successfully deploy LLMs to automatically write and refine reward code or generate
+step-by-step progress models. Similarly, recent advancements such as MEDS (Liu et al., 2026)
+and GLARE (Yan et al., 2026) utilize memory tracking to penalize redundant behaviors or
+translate trajectory events into temporal logic automata for dense reward assignment.
 Rather than relying on a single pre-existing framework, this thesis synthesizes these disparate
 concepts into a unified, dual-tier architecture, building upon the principles of a Neuro-Symbolic
-Hierarchy (Mitchener_2022). As illustrated in Figure 10, the high-level LLM Meta-Controller
+Hierarchy (Mitchener et al., 2022). As illustrated in Figure 10, the high-level LLM Meta-Controller
 analyzes the environment and dictates strategic goals (e.g., "Craft a Pickaxe") by reasoning over
 a semantic Directed Acyclic Graph (DAG) of task dependencies. These text-based decisions are
 translated into discrete Options and passed down to the low-level MAPPO execution workers,
@@ -1230,32 +1239,59 @@ with the design of the dependency-driven testbed.
 
 The Testbed: Engineering a Dependency-Driven World
 
-Before detailing the neuro-symbolic architectures developed in this thesis, it is crucial to establish
-the experimental testbed. The intersection of Large Language Models (LLMs) and Multi-Agent
-Reinforcement Learning (MARL) requires an environment that exhibits both kinetic complexity
-(movement, collision avoidance, spatial reasoning) and deep semantic dependencies (long
-horizon tasks gated by logical preconditions). To this end, a custom 2D multi-agent grid-world
-environment was engineered entirely from scratch.
+Before detailing the neuro-symbolic architectures developed in this thesis, this chapter establishes the experimental testbed. The intersection of Large Language Models (LLMs) and
+Multi-Agent Reinforcement Learning (MARL) requires an environment that exhibits both kinetic
+complexity (movement, collision avoidance, spatial reasoning) and semantic dependencies (long
+horizon tasks gated by logical preconditions). To this end, we have engineered a custom 2D
+multi-agent grid-world environment entirely from scratch.
 
 4.1
 
 Environment Design & Mechanics
 
 The environment operates as a cooperative spatial grid where multiple agents must jointly gather
-resources, craft tools, and defeat adversaries to achieve a final objective. Unlike standard
-dense-reward environments—where agents receive incremental gradient signals based on
-Euclidean distance to a target—this environment utilizes a logical sparse-reward formulation.
-The agents receive meaningful extrinsic rewards solely upon the completion of discrete logical
-milestones (subtasks).
+resources, craft tools, and defeat adversaries to achieve a final objective. Unlike standard densereward environments, where agents receive incremental gradient signals based on Euclidean
+distance to a target, this environment utilizes a logical sparse-reward formulation. The agents
+receive extrinsic rewards solely upon the completion of discrete logical milestones (subtasks).
 
 4.1.1
 
+Extrinsic Reward Structure
+
+The environment reward rtenv is the true, unmodified signal from the environment. It consists of a
+constant time-step penalty of −0.01 to encourage speed, plus massive milestone bonuses upon
+successfully completing a physical subtask:
+Table 2: Environment reward structure from crafting_env.py.
+Event
+Step penalty
+Collect Wood
+Collect Stone
+Craft Pickaxe
+Mine Iron
+Craft Sword/Armor
+Build Bridge
+Defeat Enemy
+Mine Gold (win)
+
+4.1.2
+
+Reward (shared)
+−0.01
++2.0
++2.0
++3.0
++2.0
++3.0
++3.0
++10.0
++15.0
+
 The Dependency Graph (DAG)
 
-The fundamental exploration challenge of the environment is formulated as a strict Directed
-Acyclic Graph (DAG) of dependencies. Agents cannot arbitrarily navigate to the final goal; they
-must coordinate to satisfy a rigid sequence of material and infrastructural preconditions. The
-required topological task progression is illustrated in Figure 12.
+The fundamental exploration challenge of the environment is formulated as a Directed Acyclic
+Graph (DAG) of dependencies. Agents cannot arbitrarily navigate to the final goal. They must
+coordinate to satisfy a rigid sequence of material and infrastructural preconditions. The required
+topological task progression is illustrated in Figure 12.
 
 Figure 12: The strict dependency Directed Acyclic Graph (DAG) governing environment progression. Agents must jointly acquire basic resources to clear logical bottlenecks. Notably, Wood is
 required for both the Pickaxe and the Bridge, while Iron supplies both Sword and Armor.
@@ -1280,10 +1316,10 @@ Wood (x2)
 
 As the topological depth of this chain increases, the probability of agents discovering the
 complete sequence through purely random, entropy-driven exploration decays exponentially.
-This rigid structure perfectly isolates the “exploration bottleneck” that our neuro-symbolic models
-are designed to circumvent.
+This structure isolates the “exploration bottleneck” that our neuro-symbolic models are designed
+to solve.
 
-4.1.2
+4.1.3
 
 Action and Observation Spaces
 
@@ -1295,15 +1331,15 @@ inventory).
 However, they are completely blind to the map layout. The environment strictly enforces the DecPOMDP partial observability (established in Section 2.2.1) by completely hiding the coordinates
 of the target zones (resources, workbenches, enemies) from the state vector. Because the true
 mathematical state of the environment includes these target locations, hiding them creates a
-cognitive "fog of war." This forces the agents to physically explore the spatial grid to locate their
+cognitive "fog of war". This forces the agents to physically explore the spatial grid to locate their
 objectives, rather than simply calculating a direct mathematical path to a known coordinate.
 The discrete action space consists of five parameters: four cardinal movement directions (Up,
 
-Down, Left, Right) and one semantic “Interact” action. The interaction mechanic is highly contextsensitive; for instance, triggering the action while adjacent to a forest tile chops wood, whereas
+Down, Left, Right) and one semantic “Interact” action. The interaction mechanic is contextsensitive. For instance, triggering the action while adjacent to a forest tile chops wood, whereas
 executing it at a workbench (contingent upon possessing the requisite inventory) initiates tool
 crafting.
 
-4.1.3
+4.1.4
 
 Visual Representation
 
@@ -1323,31 +1359,30 @@ sprites with different state if needed like enemy alive and dead and make sure w
 [generated July 10, 2026].
 
 All visual assets utilized in this rendering engine, including the 2D pixel-art sprites representing
-the workers, terrain tiles, and interactive elements, were procedurally generated using the Gemini
-1.5 Pro model via the Antigravity coding assistant platform.
+the workers, and interactive elements, were procedurally generated using the Gemini 1.5 Pro
+model via the Antigravity coding assistant platform.
 
 4.2
 
 Architecture & Technology Stack
 
-Engineering a custom MARL environment demands a rigorous assessment of the underlying
-technology stack, requiring a delicate balance between visual debugging capabilities and raw,
-parallelized simulation throughput.
+Engineering a custom MARL environment demands a careful selection of the underlying technology stack, requiring a balance between visual debugging capabilities and raw, parallelized
+simulation throughput.
 
 4.2.1
 
 The Necessity of Array-Native Execution over Game Engines
 
-Initially, robust open-source game engines such as Godot (godot) were considered for the
-simulation backbone. Godot provides a powerful visual editor, robust collision physics, and a
-mature node-based hierarchy, making it an optimal choice for traditional game development.
+Initially, robust open-source game engines such as Godot (Linietsky et al., 2023) were considered
+for the simulation backbone. Godot provides a powerful visual editor, robust collision physics, and
+a mature node-based hierarchy, making it an optimal choice for traditional game development.
 However, modern on-policy deep reinforcement learning algorithms like MAPPO require simulating tens of millions of environment transitions to converge. Full-stack game engines introduce
 massive computational overhead for rendering pipelines, audio processing, and internal state
 management. Attempting to spawn hundreds of headless engine instances in parallel quickly
 bottlenecks system memory and CPU inter-process communication.
-As a result, the environment was engineered natively in Python utilizing Pygame (pygame)
-and NumPy (numpy). This lower-level approach offers critical architectural advantages for
-reinforcement learning:
+As a result, the environment was engineered natively in Python utilizing Pygame (Shinners et al.,
+2023) and NumPy (Harris et al., 2024). This lower-level approach offers critical architectural
+advantages for reinforcement learning:
 • Headless Vectorization: The environment logic (kinematics, state transitions, collision
 detection) is mathematically decoupled from the rendering loop. During the training loop,
 the visual renderer is entirely disabled, allowing a vectorized wrapper to step thousands of
@@ -1364,9 +1399,8 @@ Libraries & Infrastructure
 The codebase relies on a modern, standardized stack of Python libraries to seamlessly interface
 the custom environment with the deep neural networks and the large language models:
 • MARL Interface: The environment conforms to the PettingZoo API (Terry et al., 2021),
-which has established itself as the canonical standard for multi-agent RL (analogous to
-the Gymnasium API for single-agent RL). Utilizing the Parallel API variant ensures the
-environment integrates natively with synchronous MAPPO tensor rollouts.
+which has established itself as the standard for multi-agent RL (analogous to the Gymnasium API for single-agent RL). Utilizing the Parallel API variant ensures the environment
+integrates natively with synchronous MAPPO tensor rollouts.
 • Deep Learning Framework: PyTorch (Paszke et al., 2019) serves as the computational
 backbone for designing, compiling, and optimizing the MAPPO Actor and Critic networks,
 leveraging GPU acceleration for Generalized Advantage Estimation (GAE) and gradient
@@ -1384,8 +1418,8 @@ training loop.
 Hardware and Inference Architecture
 
 A critical bottleneck in neuro-symbolic MARL is the severe latency introduced by the LLM during
-the training loop. This thesis relies on two distinct inference paradigms—online cloud APIs and
-localized serving—dictated by the constraints of the specific algorithms.
+the training loop. This thesis relies on two distinct inference paradigms, online cloud APIs and
+localized serving, dictated by the constraints of the specific algorithms.
 For the Dynamic Reward Shaping architecture, which requires infrequent, highly complex
 offline generation, this study leveraged the Gemini 2.5 Flash model hosted via Google AI
 Studio3 . However, integrating cloud-based models directly into the high-frequency Hierarchical
@@ -1397,11 +1431,10 @@ To overcome this, the HRL training loop was executed entirely locally on a consu
 locally alongside the PyTorch MAPPO actor-critic tensors within a strict 12GB memory envelope
 necessitated specific architectural compromises. To address this, the Ollama framework4 was
 deployed to provide highly optimized, low-latency local inference.
-The Qwen 2.5 7B architecture was explicitly chosen as the local orchestrator over other openweights alternatives (such as LLaMA 3 or Mistral) for two primary reasons. First, its parameter
-scale, when combined with 4-bit quantization, allowed it to fit comfortably within the VRAM
-constraints without displacing the MARL experience replay buffers. Second, its inherent dual
-architecture—combining a dedicated thinking mode for complex chain-of-thought routing with a
-non-thinking mode for rapid spatial reasoning—allowed the agent to process the strict dependency DAG effectively without necessitating a larger, memory-prohibitive parameter count.
+As detailed in Section 3.3, the Qwen 2.5 7B architecture was selected specifically to satisfy
+this strict 12GB memory envelope. When combined with 4-bit quantization via Ollama, it fits
+comfortably alongside the MARL experience replay buffers without displacing the PyTorch
+actor-critic tensors.
 
 3
 4
@@ -1413,34 +1446,35 @@ https://ollama.com/
 
 The Mixing Board: LLM-Driven Reward Shaping
 
-This section details the first integration strategy: LLM-driven dynamic reward shaping, informally
+This chapter details the first integration strategy: LLM-driven dynamic reward shaping, informally
 referred to as the Mixing Board approach. Intuitively, this approach separates strategy from
 execution. Returning to our established metaphor, the LLM acts as the Commander standing at
 a strategic mixing board, adjusting priority dials for various subtasks. Meanwhile, the low-level
-PPO agents (the lumberjack and miner) (Yu et al., 2022) act as the kinetic workers, navigating
+PPO agents (Yu et al., 2022) (the lumberjack and miner) act as the kinetic workers, navigating
 the physical grid-world to fulfill whichever priority is currently dialed highest.
-The Commander does not act directly inside the environment. Instead, it periodically observes
-the agents’ progress and adjusts a vector of subtask priority weights. These weights govern two
-things: (i) which semantic goal the agents’ internal planner selects, and (ii) the magnitude of the
-gravitational pull (potential-based shaping signal) guiding the agents toward that goal.
-This paradigm aligns with a growing body of work using LLMs as meta-level reward designers for
-RL. For instance, EUREKA (Ma et al., 2024) demonstrated that an LLM can write and iteratively
-refine reward functions that exceed human design. Similarly, PRM4RL (Zhang et al., 2026) uses
-LLMs to decompose tasks and generate dense shaping rewards. More recently, MEDS (Liu et al.,
-2026) introduced memory-enhanced dynamic shaping to penalize redundant behaviors, while
-GLARE (Yan et al., 2026) proposed translating trajectory events into temporal logic formulas for
-dense reward assignment.
-The present work shares this motivation but operates at a much faster, latency-bound granularity.
-Rather than writing entirely new reward functions from scratch, our Commander simply adjusts
-a vector of priority weights that steer goal selection within a fixed, mathematically safe potentialbased shaping framework.
+The Commander (our mixing board) does not act directly inside the environment. Instead, it
+periodically observes the agents’ progress and adjusts a vector of subtask priority weights.
+These weights govern two things:
+1. which semantic goal the agents’ internal planner selects, and
+2. the magnitude of the gravitational pull (potential-based shaping signal) guiding the agents
+toward that goal.
+As established in Section 3.4, this paradigm draws foundational inspiration from recent frameworks that deploy LLMs as meta-level reward designers, such as EUREKA, PRM4RL, MEDS,
+and GLARE (Ma et al., 2024; Zhang et al., 2026; Liu et al., 2026; Yan et al., 2026). While
+these approaches provided the theoretical justification for using LLMs to structure sparse-reward
+environments, the present work pivots to address the practical constraints of a high-frequency
+execution loop.
+Rather than requiring the LLM to write complex reward functions from scratch or compile logic
+formulas during the rollout phase, our Commander operates at a latency-bound granularity.
+It simply adjusts a vector of priority weights that steer goal selection within a pre-compiled,
+mathematically safe potential-based shaping framework.
 The exposition of this chapter follows the exact chronological dataflow of the implementation:
-1. DAG-Conditional Planning (section 5.2): The system prunes impossible tasks based on
+1. DAG-Conditional Planning (Section 5.2): The system prunes impossible tasks based on
 the agents’ current inventory, preventing the Commander from issuing invalid orders.
-2. LLM Weight Query (section 5.4): The Commander is queried to assign raw semantic
+2. LLM Weight Query (Section 5.4): The Commander is queried to assign raw semantic
 priorities to the remaining valid subtasks.
-3. Softmax Budget Normalisation (section 5.5): The Commander’s raw priorities are
+3. Softmax Budget Normalisation (Section 5.5): The Commander’s raw priorities are
 mathematically smoothed into a rigorously bounded probability distribution.
-4. Potential-Based Reward Shaping (section 5.6): The normalized budget is injected into
+4. Potential-Based Reward Shaping (Section 5.6): The normalized budget is injected into
 the training loop as a dense, magnetic reward signal to guide the workers.
 
 5.1
@@ -1451,13 +1485,13 @@ Figure 14 illustrates the end-to-end pipeline of the Mixing Board architecture. 
 system operates in a continuous loop. At every standard environment step, the agents update
 their inventory, the DAG Planner assigns them a valid target, and the PBRS module feeds them
 a shaped reward to guide their movement.
-However, at the end of every training update, a Critic Trigger acts as a diagnostic monitor.
-It watches the agents’ learning curves (TD-error and success rates). If the trigger detects
+However, at the end of every training update, a Critic Trigger acts as a diagnostic monitor. It
 
-that the lumberjack and miner are stuck at a learning plateau (spinning their wheels without
-making progress), it halts the system. It constructs a prompt detailing the failure, queries the
-LLM Commander for a new strategic direction, filters that new direction through a safety layer
-(RewardInjector), and updates the planner to pull the agents out of their rut.
+watches the agents’ learning curves (TD-error and success rates). If the trigger detects that
+the lumberjack and miner are stuck at a learning plateau (spinning their wheels without making
+progress), it halts the system. It constructs a prompt detailing the failure, queries the LLM
+Commander for a new strategic direction, filters that new direction through a safety layer, and
+updates the planner to pull the agents out of their rut.
 Figure 14: Dataflow of the LLM Dynamic “Mixing Board” approach. Solid arrows denote highfrequency per-step operations (execution); the dashed arrow indicates low-frequency per-update
 monitoring (strategy).
 rtshaped
@@ -1499,69 +1533,86 @@ DAG-Conditional Planner
 
 Before the LLM’s weights can be applied, we must ensure the Commander cannot assign
 impossible tasks. The crafting environment enforces a strict dependency graph over subtasks,
-as established by the topological task progression in Figure 12.
+as established in Figure 12.
 
 5.2.1
 
-Greedy Planner and Base Rewards
+Step-by-Step Goal Selection
 
-For each parallel environment, the planner acts as a logical filter. It inspects the agents’ current
-shared inventory vector x ∈ Z10 and builds a set of feasible subtasks, denoted as F (i) (x).
-For example, Agent 0 (the Lumberjack) might be restricted to targeting {Wood, Workbench,
-Bridge, Enemy}, while Agent 1 (the Miner) might target {Stone, Workbench, Iron, Enemy, Gold}.
-A subtask only enters this feasible set if its DAG preconditions are met; if the agents have
-not yet crafted a Pickaxe (xpickaxe = 0), then mining Iron is mathematically masked out of the
-options (Albrecht et al., 2024).
-Once the impossible tasks are pruned, the planner must decide which of the valid tasks to
-pursue. It does this by calculating a score sj for each feasible subtask j:
-sj = Rjbase · wj
+To understand how the Commander’s high-level strategy physically steers the low-level actors,
+the process can be broken down into four concrete steps:
+Step 1: Filtering Feasible Tasks. Before evaluating any LLM priorities, the planner acts as
+a hard programmatic filter. It inspects the agents’ shared inventory to build a set of feasible
+subtasks, masking out any tasks whose DAG preconditions are not met. Because LLMs are
+prone to hallucinations, they might occasionally assign a high priority to mining Iron even when
+no pickaxe exists. This step acts as an absolute constraint layer, zeroing out impossible goals to
+maintain mathematical stability.
+Step 2 & 3: Scoring and Greedily Picking the Target. For the remaining valid tasks, the
+planner calculates a selection score by multiplying the hand-crafted base reward (Rjbase , defined
+in Table 4) by the LLM’s dynamic priority weight (wj ). The agent then greedily selects the single
+subtask with the maximum score to be its active goal g (i) :
+g (i) = arg max
+
+j∈F (i) (x)
+
+Rjbase · wj
 
 (15)
 
-This score is the product of two distinct forces:
-1. Intrinsic Difficulty (Rjbase ): A hand-crafted base reward that encodes the structural depth
-of the task. Deep-tree tasks receive high base rewards (e.g., Rgold = 15) because they are
-harder to reach, while trivial early tasks receive low rewards (e.g., Rwood = 1).
-2. Commander Urgency (wj ): The dynamic multiplier provided by the LLM. If the base
-rewards were uniformly 1.0, the LLM would have to output extreme, destabilizing weights
+The base reward Rjbase provides a higher baseline value for tasks that are deeper in the
+dependency graph. For example, mining gold requires multiple prerequisite steps, so it naturally
 
-to convince an agent to walk past a trivial piece of wood to mine deep-game gold. The
-base reward provides the natural gravity, and the LLM simply tweaks the dial.
-The agent then greedily selects the subtask with the highest resulting score to be its active goal
-g (i) :
-g (i) = arg max Rjbase · wj
-(16)
-j∈F (i) (x)
+yields a much higher base reward than simply picking up wood. Because this "natural gravity" is
+built into the base reward, the LLM only needs to gently tweak the weights wj to shift the agent’s
+focus, rather than generating extreme numbers.
+Step 4: Cooperative Override. Because the environment is fully cooperative, certain tasks
+require synchronized presence. If the highest-scoring goal for either agent is a cooperative
+bottleneck (such as returning to the Workbench or building the Bridge), the planner overrides
+individual greedy selections and magnetically pulls the partner agent to the same target, ensuring
+they co-locate to trigger the interaction.
+Finally, as visualized in Figure ??, the planner does not pass the raw scalar weight wj to the
+actors. Instead, it passes the identity of this final chosen goal (e.g., “target: Stone”) down to the
+Potential-Based Reward Shaping (PBRS) module. As detailed later in Section 5.6, the PBRS
+module acts as a GPS system: it uses that target identity to activate a specific potential function,
+which then rains dense, step-by-step rewards onto the actors. As the actors physically navigate
+the grid, they receive small positive rewards for moving closer to the chosen goal, directly training
+their policy networks.
+While the actors pursue only one goal at a time, the LLM weights for the unselected tasks are
+not discarded. They are smoothed over time (Section 5.5.1), meaning a lower-ranked task
+can steadily rise in priority until it cleanly overtakes the current leader without causing erratic
+behavior.
+Figure 15: Visualization of Dynamic Goal Selection. The planner evaluates all feasible tasks, but
+only the task with the maximum score (orange) is selected as the active goal.
+Timestep t
 
-While the planner only selects the single maximum value to dictate the agent’s immediate
-target, the remaining weights are not permanently discarded. Because the system employs
-time-smoothing (detailed in section 5.5.1), a lower-ranked weight might continuously rise across
-subsequent timesteps until it ultimately overtakes the current leader, ensuring smooth and stable
-goal transitions.
-In practice, evaluating this logic across 128 parallel training environments requires strict vectorisation. This is handled by the Python backend which computes these conditional scores
-dynamically for each agent.
+Score (sj )
 
-5.2.2
+Score (sj )
 
-Cooperative Coupling Guardrail
+Target Selected
 
-Because the environment is fully cooperative, certain tasks require synchronized presence.
-If either agent selects a cooperative bottleneck task (such as returning to the Workbench or
-building the Bridge), the planner overrides individual greedy selections and magnetically pulls
-the partner agent to the same target, ensuring they co-locate to trigger the interaction.
+Timestep t + k
+New Target
 
-5.2.3
+Time Smoothing
 
-DAG Guardrails
-
-Finally, before the Commander’s weight vector is even allowed to touch the planner, it must pass
-through a hard programmatic filter (apply_dag_guardrails). While LLMs are powerful semantic
-reasoners, they are prone to hallucinations. If the LLM assigns a high priority to mining Iron
-(wiron > 0) when no pickaxe exists, it would inject severe noise into the PPO value network. This
-programmatic guardrail acts as an absolute constraint layer, zeroing out hallucinated weights
-and overriding the LLM output to maintain mathematical stability.
+Wood
 
 5.3
+
+Stone
+
+Iron
+
+Tasks
+
+Wood
+
+Stone
+
+Iron
+
+Tasks
 
 Two-Stage Critic Trigger
 
@@ -1575,68 +1626,43 @@ the end of each PPO update iteration.
 
 Stage 1: The Plateau Gate (Production Stalled)
 
-First, the system monitors the agents’ actual production rate. A rolling window of the last W
-success-rate values is maintained. The first gate opens only when the improvement in task
+First, the system checks if the agents have stopped making progress. Because reinforcement
+learning is inherently noisy, a single bad batch of trajectories does not necessarily mean
 
-completion over the previous window falls below a negligible threshold ϵ:
+the agents are stuck. Therefore, the system looks at the trend over recent time rather than
+overreacting to immediate fluctuations.
+Specifically, it tracks the agents’ success rate (ρ) for completing their assigned goals. It compares
+the average success rate over the most recent 10 updates (ρ̄recent ) against the average success
+rate over the previous 10 updates (ρ̄older ). The first gate opens only if the absolute improvement
+between these two periods falls below a negligible threshold (ϵ = 0.02):
+gate_open ⇐⇒ |ρ̄recent − ρ̄older | < ϵ
 
-gate_open ⇐⇒
+(16)
 
-−1
-−1
-X
-1 WX
-1 2W
-ρt−k −
-ρt−k
-W k=0
-W k=W
-
-|
-
-{z
-
-ρ̄recent
-
-}
-
-|
-
-{z
-
-ρ̄older
-
-< ϵ
-
-(17)
-
-}
-
-where ρt is the success rate at update t, W is the plateau_window (default 10), and ϵ is the
-plateau_threshold (default 0.02). W acts as a low-pass filter on the inherently noisy RL
-training signal. It ensures the Commander is not bothered by a single bad batch of trajectories,
-but only alerted when the smoothed trend shows that the lumberjack and miner have completely
-stalled. Additionally, this gate opens if any specific individual subtask has plateaued (variance
-< 0.02 over 20 updates while remaining between 5% and 95% completion).
+For example, if the agents successfully mined Iron in 40% of episodes 20 steps ago, and are
+still hovering around 40% completion today, their learning has flatlined. This mathematical gate
+ensures the LLM Commander is only bothered when the lumberjack and miner have genuinely
+stalled. Additionally, the gate will open as a failsafe if any specific individual subtask gets
+permanently stuck at a partial completion rate.
 
 5.3.2
 
 Stage 2: The Z-Score Trigger (The SOS Flare)
 
-Just because production has stalled does not mean the agents need new orders; they might
+Just because production has stalled does not mean the agents need new orders. They might
 simply be navigating a physically long path. To confirm they are actually stuck, the system looks
 at the Centralized Critic.
-As established in section 2.1.3, the TD-Error (Temporal Difference Error) measures the “surprise
-gap” of the Critic network—the mathematical difference between its prior prediction and the
-newly observed reality. A high mean TD-error is not necessarily alarming; it merely indicates
+As established in Section 2.1.3, the TD-Error (Temporal Difference Error) measures the “surprise
+gap” of the Critic network, i.e. the mathematical difference between its prior prediction and the
+newly observed reality. A high mean TD-error is not necessarily alarming. It merely indicates
 that the environment has a large reward scale.
 However, a spike in TD-error variance is a critical failure metric. It means the Critic is fundamentally confused: it is seeing wildly different returns for the exact same states (e.g., sometimes
-observing a massive reward, and sometimes a penalty for identical actions). This variance spike
-occurs when agents get stuck at a bottleneck, thrash between uncoordinated goals, or experience
-severe non-stationarity (Foerster_Nardelli_Farquhar_Afouras_Torr_Kohli_Whiteson_2017).
-Therefore, variance acts as the mathematical SOS flare of a confused agent. Once the plateau
-gate is open, the system checks whether the Critic’s TD-error variance has spiked beyond σ
-standard deviations from its running mean:
+observing a massive reward, and sometimes a penalty for identical actions). This variance
+spike occurs when agents get stuck at a bottleneck, thrash between uncoordinated goals, or
+experience severe non-stationarity (Foerster et al., 2017). Therefore, variance acts as the
+mathematical SOS flare of a confused agent. Once the plateau gate is open, the system checks
+whether the Critic’s TD-error variance has spiked beyond σ standard deviations from its running
+mean:
 
 z=
 
@@ -1649,10 +1675,11 @@ max(η,
 0.1)
 Std Var[δ]
 
-(18)
+(17)
 
 where δt is the TD error at update t, the bar denotes the running mean over a window of 100
-updates, σbase = 1.5, and η is a sensitivity factor that decays multiplicatively by 0.995 after each
+updates, σbase = 1.5 (a threshold determined empirically to balance rapid intervention against
+normal training noise), and η is a sensitivity factor that decays multiplicatively by 0.995 after each
 trigger, raising the effective threshold over time to prevent over-triggering.
 If the gate is open and the Z-score trigger fires, an LLM intervention is dispatched to rescue the
 agents, followed by a cooldown of 25 updates to give the new orders time to take effect.
@@ -1661,10 +1688,11 @@ agents, followed by a cooldown of 25 updates to give the new orders time to take
 
 LLM Weight Query: Continuous Logit Output
 
-When the SOS flare fires, the PromptBuilder constructs a structured situation report for the
-Commander. This prompt includes:
+When the SOS flare fires, the system constructs a structured situation report for the Commander.
+This prompt includes:
 1. The trigger reason (plateau description, z-score value).
-2. Current subtask completion percentages, with saturation flags (≥ 95%).
+2. Current subtask completion percentages, noting which tasks are already fully mastered
+(≥ 95% success rate).
 3. Per-agent TD-error statistics (mean, variance, per-agent breakdown).
 4. Current reward shaping weights.
 5. An episodic memory buffer of the last 3 interventions and their resulting TD-error deltas.
@@ -1674,16 +1702,14 @@ than final strict weights:
 via a temperature-scaled softmax function and scaled to maintain a constant total reward
 budget. Focus on the RELATIVE MAGNITUDE and PRIORITY RANKING of subtasks.”
 
-This design leverages the synergy between reasoning and acting (Yao et al., 2023). It intentionally
-decouples the LLM from absolute mathematical calibration, allowing it to act purely as a metasupervisor (Sun et al., 2024). The Commander is free to express priority differences via wide
-"feelings" of importance (e.g., scoring a critical bottleneck at 8.0 and a completed task at 0.5),
-knowing the downstream math will safely normalize this into a stable reward budget.
-Although the planner ultimately selects a single target goal (eq. (12)), outputting these continuous
-logit values is essential for mathematical stability. If we forced the LLM to output binary 0/1
-weights, the planner would instantly snap to a new goal like flipping a light switch. This violent
-shift would disrupt the Critic’s value predictions and risk catastrophic forgetting. By using
-continuous logits, the system can blend the weights over time, transitioning the agents smoothly
-toward the new objective.
+The prompt explicitly requests continuous values (logits) rather than discrete binary choices (0
+or 1). If the LLM acted as a binary switch, the reward landscape would shift instantaneously.
+In Multi-Agent RL, such rapid shifts induce severe non-stationarity that disrupts the Critic’s
+value predictions (Foerster et al., 2017). By outputting continuous relative priorities instead, a
+downstream programmatic layer can mathematically blend the new values with the previous
+weights using an Exponential Moving Average (EMA). This programmatic smoothing ensures
+the agents transition gently toward their new objectives, regardless of how drastically the LLM
+changes its mind.
 The LLM responds with a standardized JSON object containing its reasoning and the raw logits
 for each subtask:
 {
@@ -1702,20 +1728,26 @@ for each subtask:
 "w_gold":
 <float, logit>
 }
+By requiring the LLM to generate a brief reasoning trace before outputting the subtask weights,
+the prompt leverages the ReAct framework (Yao et al., 2023), which has been shown to
+significantly improve the logical consistency of LLM decision-making.
 
-5.5
+5.5
 
 Softmax Attention Budget
 
 When the Commander responds to the SOS flare, the raw logits c = (c1 , . . . , cK ) it returns
 are unconstrained real numbers (e.g., they can be wildly positive or negative). If we applied
-
-these raw values directly to the reward function, the Commander could accidentally inflate or
+these raw values directly to the reward function, the Commander could accidentally inflate or
 deflate the entire "economy" of the grid-world, completely destabilizing the PPO Critic’s value
 estimations.
-To prevent this, the raw logits are converted into a budget-preserving weight vector via a
-temperature-scaled softmax, analogous to Boltzmann action selection (Sutton_Barto_2018):
-wi = K ·
+To prevent this, the programmatic safety layer first strictly bounds the raw logits, capping any
+individual task logit at a maximum of 3.0 and ensuring the total sum across all tasks does not
+exceed 15.0. These bounded logits are then converted into a budget-preserving weight vector
+via a temperature-scaled softmax (Sutton; Barto, 2018):
+wisoftmax
+
+= K ·
 
 exp ci /τ
 K
@@ -1725,33 +1757,31 @@ X
 
 exp cj /τ
 
-(19)
+(18)
 
 
 j=1
 
-where K = |W| = 7 is the number of subtask weights and τ = 0.5 is the temperature hyperparameter. This operation enforces the following properties:
-• Constant budget: K
-i=1 wi = K always. The total amount of priority distributed among the
-tasks remains perfectly constant, ensuring the overall reward magnitude is invariant to the
-LLM’s output scale.
-• Sharpening via temperature: The exponentiation (ex ) forces the unconstrained logits
-into strictly positive values, creating a probability budget. The temperature τ acts as a
-"decisiveness" dial. As τ → ∞, the weights become perfectly uniform (ignoring the LLM).
-As τ → 0, the entire budget concentrates on the top choice, creating harsh transitions. A
-temperature of τ = 0.5 amplifies the Commander’s priority differences while maintaining a
-continuous landscape suitable for time-smoothing.
-• Numerical stability : To prevent overflow errors during exponentiation, the implementation
-shifts the logits by subtracting the maximum value before applying the softmax.
+where K = |W| = 7 is the total number of subtasks, and τ = 0.5 is an empirically tuned
+temperature hyperparameter. This operation transforms the raw LLM outputs c into normalized
+weights wsoftmax with the following properties:
+• Constant budget: wisoftmax = K. The total reward distributed among the tasks remains
+perfectly constant (exactly 7.0), regardless of the LLM’s output scale or the prior 15.0 bound
+on the raw logits.
+• Controlled transitions: The temperature τ = 0.5 softens the LLM’s raw priorities, preventing
+the entire budget from collapsing onto a single task, while still being decisive enough to
+direct the agents.
+• Numerical stability : To prevent overflow errors, the logits are shifted by subtracting their
+maximum value before exponentiation.
 P
 
 5.5.1
 
 EMA Smoothing
 
-As noted in Section 5.2, sudden transitions in target goals cause severe whiplash for the PPO
-algorithms. To ensure the active target shifts smoothly rather than snapping instantly, the softmax
-output is blended with the previously active weights via an Exponential Moving Average (EMA):
+Sudden transitions in target goals cause severe whiplash for the agents. To ensure the active
+weights shift smoothly, the newly computed wsoftmax is blended with the previously active weights
+via an Exponential Moving Average (EMA), a standard stabilization technique in RL:
 (t)
 
 ei
@@ -1762,38 +1792,38 @@ w
 ei
 = α · wisoftmax + (1 − α) · w
 
-(20)
+(19)
 
-with α = 0.2. This mechanism acts as a shock absorber. It ensures that each new directive from
-the Commander takes roughly ⌈1/α⌉ = 5 updates to fully propagate into the environment, giving
-the agents time to adjust their trajectories.
+with α = 0.2. This mechanism acts as a shock absorber. Because the EMA is a convex
+combination, if both the target wsoftmax and the previous weights sum to K, the new smoothed
+e (t) are mathematically guaranteed to also sum to exactly K, perfectly preserving
+weights w
+the budget constraint over time. Furthermore, it ensures that each new directive from the
+Commander takes roughly 5 updates to fully propagate into the environment, giving the agents
+time to adjust their trajectories.
 
-5.5.2
+5.5.2
 
-Safety Bounds and Auto-Rollback
+Auto-Rollback
 
-While the softmax budget normalizes the outputs, the system employs two final safety nets to
-enforce principles of Safe Reinforcement Learning and protect the workers from malformed LLM
-directives, a well-documented vulnerability often leading to reward hacking (Amodei et al., 2016).
-First, before softmax normalization, individual logits are clipped to a maximum of wmax = 3.0,
-and the raw sum is bounded to Wbound = 15.0. This prevents a hallucinated, extreme LLM logit
-from bypassing the temperature smoothing.
-
-Second, the RewardInjector monitors the average environment reward for 25 updates following
-any LLM intervention. If this post-intervention average drops more than 20% below the preintervention level, it triggers an Auto-Rollback :
+Despite these mathematical safeguards, the system employs a final safety net inspired by
+Safe Reinforcement Learning (Amodei et al., 2016). The safety layer monitors the average
+environment reward for 25 updates following any LLM intervention. If this post-intervention
+average drops more than 20% (an empirically chosen safety threshold) below the pre-intervention
+level, it triggers an Auto-Rollback :
 rollback ⇐⇒
 
 r̄pre − r̄post
 > 0.20
 |r̄pre |
 
-(21)
+(20)
 
-Fundamental policy optimization algorithms, including PPO, are designed around the mathematical desire for monotonic improvement, guaranteeing that a new policy performs at least as well
-as the old one (Schulman et al., 2017). Because the LLM injects external, non-stationary shocks
-into the reward landscape, mathematical guarantees of monotonic improvement are temporarily
-broken. This Auto-Rollback acts as an empirical failsafe, instantly reverting the weights to restore
-training stability if the Commander’s new strategy proves disastrous on the ground.
+Fundamental policy optimization algorithms, including PPO, are designed around the mathematical desire for monotonic improvement, guaranteeing that a new policy performs at least as
+well as the old one (Schulman et al., 2017). Because the LLM injects external, non-stationary
+shocks into the reward landscape, these mathematical guarantees are temporarily broken. The
+Auto-Rollback acts as an empirical failsafe, instantly reverting the weights to restore training
+stability if the Commander’s new strategy proves disastrous on the ground.
 
 5.6
 
@@ -1808,16 +1838,18 @@ potential-based reward shaping (PBRS) framework established in Section 2.4.1.
 
 The Magnetic Pull (Potential Function)
 
-The potential of agent i in state s with respect to its assigned goal zone g is calculated geometrically:
+As introduced theoretically in Chapter 2.2, Potential-Based Reward Shaping relies on a statebased potential function Φ(s). In this specific grid-world implementation, the potential of agent i
+with respect to its assigned goal zone g is calculated geometrically:
 Φ(i) (s, g) = Dmax − ∥p(i) (s) − zg ∥2
-(22)
-where p(i) (s) ∈ R2 is the agent’s (x, y) position, zg ∈ R2 is the target zone’s position, and
-Dmax = 85 is the maximum diagonal distance of the grid. This potential is a strict measure of
-proximity: it is high when the agent is physically close to the goal and low when it is far away.
 
-Figure 15: Visualizing the Potential Function Φ as a gravity well on the spatial grid. As the
-Euclidean distance to the active target decreases, the scalar potential strictly increases. This
-creates a stable "magnetic pull" (the gradient) that safely guides the agent toward the Commander’s chosen objective.
+(21)
+
+where p(i) (s) ∈ R2 is the agent’s (x, y) position, zg ∈ R2 is the target zone’s position, and
+Dmax = 85 is the maximum diagonal distance of the grid. This provides a strict scalar measure
+of proximity: it is high when the agent is physically close to the goal and low when it is far away.
+
+Figure 16: Visualizing the Potential Function Φ. The scalar potential strictly increases as the
+agent approaches the active target, creating a directional pull that guides navigation.
 
 Target Zone zg
 Φ = 40
@@ -1842,132 +1874,98 @@ this potential:
 
 (i)
 Ft = γ Φ(i) (st+1 , g) − Φ(i) (st , g) · λscale · 1[g active]
-(23)
+(22)
 As established in Section 2.4.1, γ = 0.99 acts as the anti-farming mechanism, mathematically
 punishing the agent if it loops backward along its own path.
 The scale factor (λscale = 0.05) acts as a volume knob. If an agent runs a long distance across
 the map, its potential Φ might jump by +20 points. If unscaled, the agent would receive +20
 simply for running, making marathon sprinting more lucrative than actually mining Gold (which
 only yields a true sparse reward of +15). Multiplying by 0.05 shrinks that +20 movement reward
-down to a +1.0 nudge. This guarantees the dense shaping reward remains a gentle guide, while
-the sparse environmental milestones remain the ultimate, most profitable prize.
+down to a +1.0 nudge. This guarantees the dense shaping reward remains a gentle guide
+rather than an exploitable feedback loop, while the sparse environmental milestones remain the
+ultimate prize.
 Additionally, the indicator 1[g active] acts as a mask. If the agent completes its portion of the
 DAG and is idling while waiting for its partner, this mask zeroes out the shaping reward entirely,
 preventing the agent from being incorrectly penalized for remaining stationary.
-To execute this equation simultaneously across 128 parallel environments without crushing
-the CPU, the shaping logic relies entirely on vectorized NumPy tensor operations, bypassing
-standard Python loops.
+To execute this geometric logic simultaneously across 128 parallel environments efficiently, the
+scaling relies entirely on vectorized tensor operations, bypassing Python loops.
+The Commander’s influence is encapsulated entirely within the goal selection variable g (Equation 16). The LLM dictates which direction the magnetic pull originates from, but it does not
+change the strength of that pull. If F were dynamically scaled by the shifting LLM weights
 
-5.6.3
+wj , the underlying physical laws of the grid-world would constantly change, creating massive
+non-stationarity that would crash the PPO Critic. By isolating the strategy (the target g) from the
+force (the stable, policy-invariant gradient F ), the agents can learn to navigate safely.
 
-Design Decision: Isolating Strategy from Force
-
-You might notice that the LLM’s priority weights wj do not appear anywhere in Equation 19. This
-is an intentional, critical design decision. The shaping signal F is not multiplied by the LLM’s
-weights.
-The Commander’s influence is encapsulated entirely within the goal selection variable g (eq. (12)).
-The LLM dictates which direction the magnetic pull originates from, but it does not change the
-strength of that pull. If F were dynamically scaled by the shifting LLM weights wj , the underlying
-physical laws of the grid-world would constantly change, creating massive non-stationarity that
-would crash the PPO Critic. By isolating the strategy (the target g) from the force (the stable,
-policy-invariant gradient F ), the agents can learn to navigate safely.
-
-5.6.4
+5.6.3
 
 Mathematical Impact on the MAPPO Objective
 
-In this Mixing Board implementation, the LLM does not alter the Actor network’s state observations. The agents remain completely blind to the fact that they are being guided by an LLM; their
-policy remains strictly πθ (at |st ).
-(i)
-
-Instead, the LLM alters the environment’s reward signal rt by injecting the shaping reward Ft
-(scaled by a time-varying decay factor λt ):
+In this Mixing Board architecture, the LLM does not alter the Actor network’s state observations;
+the agents remain completely blind to the LLM’s existence. Instead, the LLM alters the environ(i)
+ment’s reward signal rt by injecting the shaping reward Ft (scaled by a time-varying decay
+factor λt ):
 total,(i)
-
+(i)
 rt
-
-(i)
-
 = rtenv + λt Ft
-
-(24)
-
-This augmented reward is fed directly into the MAPPO Advantage calculation:
+(23)
 (i)
 
 total,(i)
 
-At = rt
+This augmented reward flows directly into the MAPPO Advantage calculation At = rt
++
+γVϕ (st+1 ) − Vϕ (st ). As a result, the Centralized Critic network Vϕ (st ) adjusts its value estimations
+to predict this newly dense, goal-oriented landscape, and the Actor simply follows the updated
+Advantage gradient.
+To ensure the agents eventually learn to act independently, the blending coefficient λt from
+Equation 24 forces the shaping signal to fade out over time. The decay λt begins at 1.0 and
+anneals linearly to 0.01 over 500 updates, but only after the agents achieve a 40% success
+rate on the critical "Bridge" bottleneck. This schedule ensures the agents have dense "training
+wheels" early in the learning process, and gracefully transitions them to the sparse environment
+reality once they prove they understand the map’s topology.
 
-+ γVϕ (st+1 ) − Vϕ (st )
-
-(25)
-
-As a result, the Centralized Critic network Vϕ (st ) adjusts its value estimations to predict this
-newly dense, goal-oriented reward landscape. The Actor simply follows the updated Advantage
-(i)
-gradient At . The LLM acts strictly as an invisible architect, magnetically pulling the MAPPO
-policy toward specific regions of the state space without interfering with the neural network’s
-architecture.
-
-5.6.5
-
-Shaping Decay
-
-To ensure the agents eventually learn to act independently, the blending coefficient λt (Shaping
-Decay) from Equation 20 forces the shaping signal to fade out over time. The decay λt begins
-at 1.0 and anneals linearly to 0.01 over 500 updates, but only after the agents achieve a 40%
-success rate on the critical "Bridge" bottleneck. This schedule ensures the agents have dense
-"training wheels" early in the learning process, and gracefully transitions them to the sparse
-environment reality once they prove they understand the map’s topology.
-
-5.7
+5.7
 
 Async Communication Architecture
 
 In standard Markov Decision Processes, observation and action delays severely destabilize
-training (Katsikopoulos et al., 2003). If the PPO workers (the lumberjack and miner) had to
-pause and wait for the Commander’s radio transmission (LLM inference) every time an SOS
-flare was fired, the simulation would bottleneck. Querying the LLM takes seconds due to network
-latency and inference time. If executed on the main thread, the GPU would sit at 0% utilization,
-completely halting the MAPPO training loop.
-To resolve this, queries are dispatched through an asynchronous LLMBridge module, which
-runs a background daemon worker thread. This asynchronous daemon approach mirrors recent
-LLM-agent frameworks like GITM (Zhu et al., 2023), which explicitly decouple the environment
-clock to accommodate LLM inference latency.
-The asynchronous dataflow executes as follows:
-1. Trigger: The Critic trigger fires at the end of a PPO update and constructs the prompt (the
-situation report).
-2. Dispatch: The prompt is enqueued to a thread-safe queue.Queue.
-3. Background Processing: A daemon worker thread dequeues the prompt and calls the
-LLM backend (Ollama HTTP API, HuggingFace local, or Gemini API) without interrupting
-the main simulation.
-4. Continuous Execution: While the LLM is "thinking," the RL loop continues gathering new
-trajectories using the old priority weights.
-5. Seamless Injection: On completion, the callback parses the JSON, passes it to the
-RewardInjector, and stores it as “pending weights.” At the next training update, the
-CriticTrigger.on_update_end detects the pending weights, applies the EMA smoothing,
-and updates the magnetic pull for the next rollout.
-This design guarantees that the high-frequency PPO update is never blocked by network latency.
-This delay does not destabilize the agents because the Commander is only shifting the macrostrategy (the reward gravity), rather than controlling their direct micro-actions. The LLM bridge
-also maintains a thread-safe response cache to avoid redundant queries for identical prompts,
-and utilizes an exponential backoff retry logic (2k seconds for attempt k, up to 3 retries) to handle
-API timeouts safely.
+training (Katsikopoulos et al., 2003). If the PPO workers paused to wait for the LLM Commander’s
+response during every SOS flare, network latency and inference time would bottleneck the
+simulation, dropping GPU utilization to near zero.
+To prevent this, queries are dispatched asynchronously via a daemon thread. This approach
+mirrors frameworks like GITM (Zhu et al., 2023), which explicitly decouple the environment clock
+from the LLM inference clock. The dataflow executes as follows:
+1. Trigger: The critic trigger fires at the end of a PPO update and constructs the situation
+report prompt.
+2. Dispatch: The prompt is enqueued to a thread-safe queue.
+3. Background Processing: The daemon thread queries the LLM API without interrupting
+the main simulation loop.
+4. Continuous Execution: While the LLM generates a response, the RL agents continue
+interacting with the environment using the previous priority weights.
+5. Seamless Injection: Once inference completes, the new weights are stored as "pending."
+At the next PPO update boundary, the safety layer applies EMA smoothing and seamlessly
+updates the active shaping targets.
+Ultimately, this asynchronous delay does not destabilize the agents because the LLM only shifts
+
+the macro-strategy (the target zone), rather than controlling step-by-step micro-actions. To
+further ensure system robustness, the asynchronous bridge employs a thread-safe cache to
+eliminate redundant queries, and an exponential backoff mechanism (2k seconds, up to 3 retries)
+to safely handle API timeouts, allowing identical prompts to instantly recycle previous LLM
+outputs.
 
 5.8
 
 Summary
 
-The Mixing Board approach successfully treats the LLM as a meta-level Commander that
-reads aggregate training statistics and outputs strategic priority logits. By routing these priorities
-through a cascade of safety layers (DAG guardrails, clipping, softmax budget normalization, EMA
-smoothing, and auto-rollback), the system ensures that the LLM’s influence remains bounded
-and mathematically stable. Finally, the Potential-Based Reward Shaping (PBRS) framework
-guarantees that this strategic influence acts as a policy-invariant magnetic pull, guiding the
-workers out of exploration bottlenecks without corrupting the foundational reinforcement learning
-mechanics.
-
-Table 2: Key hyperparameters of the Mixing Board approach.
+The Mixing Board architecture utilizes the LLM as a meta-level Commander to parse aggregate
+training statistics and output strategic priority logits. To prevent training instability, these priorities
+are routed through strict programmatic safety layers: DAG guardrails, bounding clips, softmax
+budget normalization, EMA smoothing, and an auto-rollback failsafe. Finally, the Potential-Based
+Reward Shaping (PBRS) framework translates this strategic intent into a dense, policy-invariant
+directional pull, successfully guiding the MAPPO workers out of exploration bottlenecks while
+preserving the mathematical convergence guarantees of the underlying RL algorithm.
+Table 3: Key hyperparameters of the Mixing Board approach.
 Component
 
 Parameter
@@ -2026,12 +2024,11 @@ Shaping decay
 
 The Meta-Controller: Discrete Neuro-Symbolic HRL
 
-The previous section established the Mixing Board architecture, representing a "soft integration"
+The previous chapter established the Mixing Board architecture, representing a "soft integration"
 of Large Language Models into MARL. In that paradigm, the LLM acted as an environmental
-architect, manipulating the gravitational pull of potential-based rewards to gently guide the
-agents toward logical milestones. While this elegant separation preserves the underlying Markov
-properties, it restricts the LLM to an indirect role: it can only suggest a direction, not enforce a
-strategy.
+architect, manipulating the gravitational pull of potential-based rewards to gently guide the agents
+toward logical milestones. While this separation preserves the underlying Markov properties, it
+restricts the LLM to an indirect role: it can only suggest a direction, not enforce a strategy.
 To fully explore the spectrum of neuro-symbolic integration, we must ask: what happens when
 we grant the LLM direct semantic authority over the agents’ cognitive state?
 This section details the second integration strategy: a Hierarchical Reinforcement Learning
@@ -2060,11 +2057,11 @@ System Overview
 
 Figure 16 illustrates this two-level command architecture. The Meta-Controller (LLM) observes
 inventory transitions and assigns explicit Options to each agent asynchronously. Unlike the
-dynamic approach where the MAPPO policy remained blind to the LLM’s existence, here, the
+previous approach where the MAPPO policy remained blind to the LLM’s existence, here, the
 low-level MAPPO policy receives the active option directly as part of its mathematical observation
 space. This creates a true, tightly coupled two-level decision hierarchy.
 
-Figure 16: Two-level HRL architecture. The LLM Meta-Controller is triggered by option success
+Figure 17: Two-level HRL architecture. The LLM Meta-Controller is triggered by option success
 or staleness (dashed). The OptionController passes one-hot embeddings to the MAPPO agent
 at every step (solid), directly altering the agent’s cognitive state.
 LLM
@@ -2100,8 +2097,8 @@ planner. It selects from a finite set of explicit macro-actions, or Options, and
 the low-level MAPPO agents.
 An Option o ∈ O is mathematically defined by the triple ⟨Io , πo , βo ⟩: an initiation set, an intraoption policy, and a termination condition (Sutton; Precup, et al., 1999). In our framework, the
 option set O is derived directly from the dependency DAG, providing 10 discrete macro-actions
-as detailed in Table 2.
-Table 3: Option properties: target zone, responsible agent, and initiation condition.
+as detailed in Table 3.
+Table 4: Option properties: target zone, responsible agent, and initiation condition.
 Option
 COLLECT_WOOD
 COLLECT_STONE
@@ -2188,9 +2185,9 @@ cooldown are safely excluded from triggering new queries.
 
 Prompt Structure and Counterfactual Reflection
 
-When a trigger fires, the PromptBuilder translates the grid-world’s Python inventory state into a
-text-based JSON schema. For a standard Success trigger, the Commander receives a Chain-ofThought prompt detailing the current inventory and the DAG dependencies, requesting exactly
-one discrete Option per agent:
+When a trigger fires, the system translates the grid-world’s physical inventory state into a
+text-based JSON schema. For a standard Success trigger, the Commander receives a Chain-ofThought prompt (Wei et al., 2022) detailing the current inventory and the DAG dependencies,
+requesting exactly one discrete Option per agent:
 You are the high-level Cognitive Orchestrator for two MARL agents.
 Strict Dependency DAG: (Wood+Stone) -> Pickaxe -> Iron
 -> (Sword+Armor) -> Bridge -> Enemy -> Gold.
@@ -2229,33 +2226,20 @@ Respond ONLY with JSON:
 
 6.3.3
 
-Batched Queries with Deduplication
+Asynchronous Query Management
 
-Training MARL requires running 128 parallel copies of the grid-world simultaneously. If 40
-parallel environments all trigger the LLM at the same time because the lumberjack just collected
-wood, querying the Commander 40 separate times for the exact same inventory state would
-waste massive computational resources.
-To optimize throughput, the system employs a deduplication mechanism. It groups the parallel
-environments by their unique inventory vectors, sends only one prompt per unique state to the
-LLM, and broadcasts the single response back to all environments sharing that exact state.
+Training MARL across 128 parallel environments generates significant query volume. To optimize
+throughput, the system deduplicates queries by grouping environments with identical inventory
+states, sending a single prompt per unique state to the LLM, and broadcasting the response to
+all matching environments.
+Additionally, because LLM inference takes several seconds, continuous environment execution
+would cause state drift (latency-induced non-stationarity) (Katsikopoulos et al., 2003), rendering
+the LLM’s eventual decision outdated. Following established LLM-agent practices (Zhu et al.,
+2023), any environment awaiting a response is paused. This ensures the Meta-Controller’s
+decision is applied to the exact state it observed, maintaining strict temporal alignment between
+strategy and execution.
 
-6.3.4
-
-Environment Freezing During Pending Queries
-
-A critical challenge in asynchronous LLM-agent frameworks is state drift (latency-induced
-non-stationarity) (Katsikopoulos et al., 2003). Querying the Commander takes several seconds.
-If the RL environment continues to run while awaiting the radio transmission, the lumberjack
-would execute random or stale actions. By the time the Commander’s new Option arrives, the
-agent might have wandered to the opposite side of the map, rendering the LLM’s decision
-irrelevant to the new physical reality. This problem is well-documented in LLM-agent systems:
-for instance, Ghost in the Minecraft (Zhu et al., 2023) relies on pausing the simulation while the
-LLM reasons about its next action.
-To prevent this drift, any environment awaiting an LLM response is physically frozen.
-This ensures that the Commander’s decision is applied to the exact physical state it observed,
-maintaining strict temporal alignment between strategy and execution.
-
-6.4
+6.4
 
 One-Hot Observation Augmentation
 
@@ -2268,135 +2252,148 @@ for the Commander’s orders.
 
 Dynamic Enemy State
 
-Unlike the Mixing Board approach, which used the base BatchCraftingEnvV2 environment, the
-HRL architecture operates on a custom extended environment (HRLCraftingEnv) that introduces
-a dynamic enemy. In this variant, the enemy is no longer a static zone interaction. Instead, the
-enemy tracks the agents’ positions and actively chases any agent that crosses the river, creating
-a real-time pursuit challenge. The combat system rewards coordination: if both agents attack the
-enemy simultaneously, they deal 50 HP of damage per step, compared to only 10 HP for a solo
-attack. This 5× coordination multiplier makes the FIGHT_ENEMY option inherently cooperative.
+Unlike the Mixing Board approach, which utilized the baseline static environment, the HRL architecture operates in an extended environment that introduces a dynamic enemy. In this variant,
+the enemy is no longer a static zone interaction. Instead, the enemy tracks the agents’ positions
+
+and actively chases any agent that crosses the river, creating a real-time pursuit challenge. The
+combat system rewards coordination: if both agents attack the enemy simultaneously, they deal
+50 HP of damage per step, compared to only 10 HP for a solo attack. This 5× coordination
+multiplier makes the FIGHT_ENEMY option inherently cooperative.
 To give the agents spatial awareness of this dynamic threat, the three dimensions that were
 occupied by the goal embedding in the Mixing Board approach (indices 2–4) are repurposed to
-carry the enemy’s real-time state: its (x, y) position and its normalized health h/100.
+carry the enemy’s real-time state: its (x, y) position and its normalized health h/100. Providing
+this state information is standard practice in fully observable Markov Decision Processes (MDPs);
+it simply represents the agents’ physical line-of-sight, which is required for the low-level PPO
+policy to learn the kinetic micro-actions of pursuit and combat.
 
 6.4.2
 
 Observation Construction
 
-The vector input to the MAPPO network in this HRL mode is expanded to 25 dimensions:
+The vector input to the MAPPO network in this HRL mode is expanded to a 25-dimensional
+vector:
 
-(i)
-
 
+(i)
 
 
 
 |{z}
 
 vt =  p(i)
-R2
 
 enemy
 d
 | {z }
-R3
 
 x
 |{z}
 
-R10 (inv)
-
-eo(i)
-
 t
 |{z}
+
+R10 (inv)
+
+R3
+
+R2
+
+eo(i)
 
 
 
  ∈ R25
 
 
-(26)
+(24)
 
 R10 (one-hot)
 
 where p(i) is the agent’s spatial position, denemy = (xenemy , yenemy , henemy /100) is the dynamic
 enemy state vector, x is the shared inventory vector, and eo ∈ {0, 1}10 is the one-hot encoding
 of the active option.
+For example, if an agent is located at coordinates (3, 4), the enemy is at (5, 5) with 50% health,
+the inventory contains exactly 1 wood, and the Commander has assigned the first option (e.g.,
+COLLECT_WOOD, index 0), the augmented vector is constructed as follows:
+
+(i)
+
+
+
+vt = 3, 4
+
+
+|{z}
+p(i)
+
+5, 5, 0.5
+
+1, 0, . . . , 0
+
+|
+
+|
+
+{z
+
+denemy
+
+}
+
+{z
+
+x∈R10
+
+}
+
+1, 0, . . . , 0
+|
+
+{z
+
+eo ∈R10
+
+
+}
+
+(25)
+
 This design maintains the same R25 dimensionality as the Mixing Board approach, allowing the
 identical neural network architecture to be used across both experiments. The three dimensions
 previously occupied by the continuous goal embedding are simply repurposed to carry the
 enemy state, preventing any architecture mismatch when loading or comparing models between
 the two approaches.
+Furthermore, by appending the one-hot vector eo(i) directly to the observation space, the
+t
+MAPPO network learns an option-conditional policy πθ (a | s, o). This one-hot encoding acts as
+a mathematical switch, allowing a single neural network to dynamically shift its behavior based
+on the Commander’s active assignment, avoiding the need to train a separate policy network for
+each of the 10 distinct options.
 
-6.4.3
-
-One-Hot State Augmentation vs. Dense Embeddings
-
-There is a fundamental mathematical distinction in representation learning between a sparse
-one-hot encoding and a dense continuous embedding. The OptionController maintains perenvironment, per-agent option indices and produces a categorical one-hot representation via
-vectorised indexing.
-
-In deep reinforcement learning, appending a one-hot vector eo to the agent’s physical observation
-state st effectively acts as an index lookup. When the augmented state s′t = [st ∥ eo ] is passed
-through the first linear layer of the MAPPO network, the matrix multiplication mathematically
-isolates a specific set of weights corresponding to the active option.
-This mechanism allows the single MAPPO network to learn option-conditional behaviour. We
-do not need to train 10 separate policy networks for 10 separate options; the singular policy
-πθ (a | s, o) dynamically specializes its internal activations based on which one-hot "switch" the
-Commander has flipped.
-
-6.5
+6.5
 
 Bipartite Reward Structure
 
 In standard RL, the environment reward is the ground truth. However, in our sparse environment,
 relying solely on this is analogous to a university student only receiving feedback on graduation
 day (the diploma). To ensure the agents learn the day-to-day behaviors required to achieve that
-diploma, the HRL approach uses a bipartite (two-part) composite reward: a sparse environment
-reward and a dense intrinsic reward.
+diploma, the HRL approach uses a bipartite composite reward: a sparse environment reward
+and a dense intrinsic reward.
 
 6.5.1
 
-Environment Reward (Sparse)
+Extrinsic and Intrinsic Components
 
-The environment reward rtenv is the true, unmodified signal from the environment. It consists of a
-constant time-step penalty of −0.01 to encourage speed, plus massive milestone bonuses upon
-successfully completing a physical subtask:
-Table 4: Environment reward structure from crafting_env.py.
-Event
-Step penalty
-Collect Wood
-Collect Stone
-Craft Pickaxe
-Mine Iron
-Craft Sword/Armor
-Build Bridge
-Defeat Enemy
-Mine Gold (win)
-
-6.5.2
-
-Reward (shared)
-−0.01
-+2.0
-+2.0
-+3.0
-+2.0
-+3.0
-+3.0
-+10.0
-+15.0
-
-Intrinsic Reward (Dense)
-
-The intrinsic (shaping) reward is a synthetic “breadcrumb trail” generated internally by the
-architecture to keep the agent motivated toward the Commander’s assigned target. It consists of
-two sub-components: a continuous distance-based shaping mechanism, and a discrete option
-success bonus.
+As established in Section 4.1, the extrinsic environment reward rtenv is the true, unmodified
+sparse signal from the grid-world (refer to Table 4). It consists of a constant time-step penalty of
+−0.01 to encourage speed, plus massive milestone bonuses upon successfully completing a
+physical subtask.
+Conversely, the intrinsic (shaping) reward is a synthetic “breadcrumb trail” generated internally
+by the architecture to keep the agent motivated toward the Commander’s assigned target. It
+consists of two sub-components: a continuous distance-based shaping mechanism, and a
+discrete option success bonus.
 First, the continuous distance-based shaping reward toward the active option’s target zone is
-
-computed identically to the PBRS framework (Ng et al., 1999) established in Section 2.4.1, but
+computed identically to the PBRS framework (Ng et al., 1999) established in Section 2.4.1, but
 applied to the option’s target rather than the planner’s target:
 shape,(i)
 
@@ -2406,43 +2403,45 @@ rt
 
 
 
-(27)
+(26)
 
-where zo is the target zone of option o (table 2), Φ is the potential function, and λintr = 0.05.
+where zo is the target zone of option o (table 3), Φ is the potential function, and λintr = 0.05.
 This formulation is mathematically constructed to guarantee policy invariance while ensuring
 multi-agent coordination stability. The canonical difference form γ Φ(st+1 ) − Φ(st ) prevents the
 agent from exploiting the dense reward signal. Without the discount factor γ, an agent could
 theoretically accumulate infinite positive reward by stepping back and forth between two adjacent
 states. By decaying the future potential, any such cycle yields a net negative shaping reward (Ng
 et al., 1999).
-The indicator function 1{o(i) ̸=IDLE} serves as a key coordination mask. In cooperative tasks,
-an agent assigned the IDLE option is intentionally waiting for its partner to satisfy a DAG
-dependency. If shaping rewards were applied during this state, the agent’s policy gradient would
-be erroneously penalized for remaining stationary. The mask zeroes out the shaping gradient
-entirely, ensuring the agent learns to safely wait without introducing non-stationary noise into
-the value network.
+The indicator function 1{o(i) ̸=IDLE} acts as a coordination mask. An agent assigned the IDLE
+option is actively waiting for its partner to satisfy a dependency; applying distance-based shaping
+here would incorrectly penalize it for remaining stationary. The mask zeroes out this shaping
+signal, allowing the agent to safely wait without destabilizing the value network.
 Second, when an agent completes its active option (the relevant inventory slot increases), the
 distance shaping is overridden, and it receives a flat intrinsic success bonus of +1.0:
+intr,(i)
+
+rt
+
+=
+
 
 
 1.0
 
-intr,(i)
-rt
-=
-
-r shape,(i) (eq. (23))
-t
-
 if option o(i) terminated successfully
 
-(28)
+
+r shape,(i) (eq. (27))
 
 otherwise
 
+t
+
 Success is detected by comparing the inventory before and after the environment step.
 
-6.5.3
+(27)
+
+6.5.2
 
 Composite Reward
 
@@ -2450,7 +2449,7 @@ The total reward signal fed to the PPO algorithm is a weighted sum of the enviro
 and the intrinsic breadcrumbs:
 rttotal = rtenv + αintr · rtintr
 
-(29)
+(28)
 
 with αintr = 0.5. This coefficient was chosen to balance the dense intrinsic signal against the
 sparse environment milestones; too large a value causes the policy to over-optimise for intrinsic
@@ -2459,7 +2458,7 @@ Note the key difference from the Mixing Board approach: here, no λ decay schedu
 The intrinsic coefficient remains fixed because the LLM continuously updates the direction (which
 option to pursue) rather than the magnitude of shaping.
 
-6.6
+6.6
 
 Mathematical Impact on the MAPPO Objective
 
@@ -2493,7 +2492,7 @@ rt (θ) =
 
 πθ (at |st , ot )
 
-(30)
+(29)
 
 πθold (at |st , ot )
 
@@ -2512,7 +2511,7 @@ h
 
 LCLIP (θ) = E min rt (θ)At , clip rt (θ), 1 − ϵ, 1 + ϵ At
 
-(31)
+(30)
 
 (i)
 
@@ -2532,14 +2531,17 @@ At = rt
 
 + γVϕ (st+1 , ot+1 ) − Vϕ (st , ot )
 
-(32)
+(31)
 
 Because the Value function Vϕ now receives the globally augmented state s′t = [st ∥ eot ], the
 Critic learns to predict entirely different baseline expected returns depending on the combination
 of options actively guiding the agents.
 The consequence is a tightly coupled learning loop: the Actor gradient explicitly links the
+
+(i)
+
 (i)
-(i)
+
 local physical state st , the Commander’s specific order ot , and the intrinsic success of that
 (i)
 command through At . The network learns distinct sub-policies for each option, not through
@@ -2548,68 +2550,74 @@ LLM has flipped.
 
 6.7
 
-Staleness Detection and Counterfactual Reflection
+Execution Lifecycle and Stability Guardrails
+
+To ensure the HRL architecture remains robust over millions of training steps, several lifecycle
+management and stability mechanisms are integrated directly into the environment loop.
 
 6.7.1
 
-Staleness Detection
+Episode Initialization and Reset
 
-The OptionController acts as a watchdog, tracking the age (number of steps) of each active
-option per environment. If an option exceeds Tstale = 150 steps without termination, the
-environment is marked as stale and the Commander is re-queried.
-The IDLE options are excluded from staleness triggers, because intentional waiting (e.g., the
-
-lumberjack waiting while the miner collects stone) is a valid strategy.
+When an environment reaches a terminal state (gold mined, game over, or truncation at 800
+steps), the environment is hard-reset. The agents are assigned initial options corresponding
+to the first layer of the DAG (COLLECT_WOOD for the lumberjack, COLLECT_STONE for the miner),
+ensuring they begin collecting resources immediately upon episode start without waiting for an
+initial LLM query.
 
 6.7.2
 
-Counterfactual Reflection
+Staleness Detection and Counterfactual Reflection
 
+During execution, an internal watchdog tracks the age (number of steps) of each active option. If
+an option exceeds Tstale = 150 steps without termination, the environment is marked as stale
+and the LLM is re-queried. The IDLE options are excluded from this trigger, as intentional waiting
+is a valid cooperative strategy.
 When a staleness trigger fires, the LLM receives a reflection prompt instead of the standard
-assignment prompt. This forces the LLM to reason about why the previous option failed—typically
-a missing DAG precondition—before proposing a corrected assignment.
-This design addresses the observed failure mode where the LLM repeatedly assigned options
-whose preconditions were not met (e.g., MINE_IRON without a pickaxe). The reflection mechanism
-leverages the LLM’s zero-shot reasoning to debug its own prior hallucination. This synergizes
-reasoning and acting, a paradigm demonstrated by ReAct (Yao et al., 2023), and extends it into
-the realm of self-reflection and counterfactual critique (Shinn et al., 2023).
+assignment prompt. This forces the LLM to reason about why the previous option failed (e.g.,
+a missing DAG precondition like MINE_IRON without a pickaxe) before proposing a corrected
+assignment. This mechanism leverages the LLM’s zero-shot reasoning to debug its own prior
+hallucinations, synergizing reasoning with counterfactual critique (Yao et al., 2023; Shinn et al.,
+2023).
 
-6.8
+6.7.3
 
-Episode Lifecycle and Option Reset
+Target KL Divergence Guard
 
-When an environment reaches a terminal state (gold mined, game over, or truncation at 800
-steps), the OptionController hard-resets that environment to its initial options.
-The initial options (COLLECT_WOOD for the lumberjack, COLLECT_STONE for the miner) correspond
-to the first layer of the DAG, ensuring agents begin collecting resources immediately upon
-episode start.
-
-6.9
-
-PPO Integration: Target KL Guard
-
-The HRL training loop adds a target KL divergence early-stopping mechanism, a standard
-stability guardrail in Proximal Policy Optimization (as detailed in Section 2.1.4) (Schulman et al.,
-2017). During each PPO epoch, the approximate KL divergence between the old and new
-policies is monitored:
-
-
+To protect the policy network from destructive updates when intrinsic reward signals shift abruptly
+after an LLM reassignment, the training loop employs a target KL divergence early-stopping
+mechanism (Schulman et al., 2017). During each PPO epoch, the approximate KL divergence
+between the old and new policies is monitored:
 approx
 DKL
-= E − log πθnew (a|s) + log πθold (a|s)
-(33)
+= E − log πθnew (a | s, o) + log πθold (a | s, o)
+
+
+
+
+
+(32)
+
 approx
 If DKL
-> 0.015, the remaining PPO epochs are aborted for that update.
+> 0.015 (an empirical threshold widely adopted in standard PPO implementations), the
+remaining PPO epochs are aborted for that update, ensuring stable policy convergence.
 
-This guard prevents destructive policy updates when the intrinsic reward signal changes abruptly
-after an LLM option reassignment.
-
-6.10
+6.8
 
 Comparison with the Mixing Board Approach
-Table 5: Structural comparison of the two LLM integration strategies.
 
+Before detailing the specific fine-tuning pipeline required for the Meta-Controller, it is instructive to
+contrast this architecture with the Dynamic Reward Shaping (Mixing Board) approach developed
+in Chapter 5. While both paradigms seek to integrate LLM reasoning into MARL, they operate at
+fundamentally different levels of abstraction.
+The Mixing Board is a soft integration strategy: the LLM gently nudges the priority of intrinsic
+rewards, but the MARL agents remain entirely responsible for discovering the physical behaviors. Conversely, the Meta-Controller represents a hard integration: the LLM acts as a strict
+supervisor, dictating explicit macro-actions (options) that the agents must execute. This shift
+from continuous priority logits to discrete option assignments necessitates significant structural
+changes, particularly regarding LLM query frequency, observation augmentation, and safety
+mechanisms. Table 5 summarizes these core architectural distinctions.
+Table 5: Structural comparison of the two LLM integration strategies.
 Aspect
 
 Mixing Board (Soft Integration)
@@ -2648,7 +2656,7 @@ High (per-option completion)
 DAG in prompt, reflection, env
 freezing
 
-6.11
+6.9
 
 QLoRA Fine-Tuning Pipeline
 
@@ -2657,48 +2665,33 @@ this section details the complete practical pipeline used to produce the special
 adapter deployed throughout the HRL experiments evaluated in Chapter 7. As will be demonstrated, a surprisingly brief fine-tuning process on a modest synthetic dataset is sufficient to
 dramatically improve the Meta-Controller’s decision quality.
 
-6.11.1
+6.9.1
 
 Oracle Dataset Generation
 
-While the training data was ultimately generated synthetically to ensure exhaustive coverage of
-the environment’s crafting DAG, the foundational state distributions were originally seeded by
-observations from early, successful exploratory RL trajectories. By grounding the generation
-process in these empirically observed states, a deterministic oracle function was developed to
-systematically enumerate all meaningful inventory combinations (wood, stone, pickaxe, iron,
-sword, armor, bridge, enemy, gold) and apply hardcoded DAG logic to determine the optimal
-(agent_0_option, agent_1_option) assignment for each state. This oracle encodes the
-optimal policy: for example, “if no pickaxe and wood ≥ 1 and stone ≥ 1, then both agents should
-CRAFT_PICKAXE.”
-To ensure balanced training signal across all phases of the DAG progression, the raw states
-are grouped into six progression phases (early collection, pickaxe crafting, iron mining, gear
-crafting, bridge building, and endgame combat). Each phase is upsampled to contribute an
-equal share of the final dataset, preventing the model from over-indexing on trivially simple
-early-game states.
-Two augmentation techniques are applied to improve generalization:
-1. Stochastic Oracle Augmentation (SOA): Drawing inspiration from Input Dropout and
+The training dataset is generated synthetically to ensure exhaustive coverage of the crafting DAG.
+Exploratory successful runs from the agents helped build the dataset. A deterministic oracle
+systematically enumerates all meaningful inventory combinations and applies hardcoded logic
+to determine the optimal (agent_0_option, agent_1_option) assignment for each state. For
+example: “if no pickaxe and wood ≥ 1 and stone ≥ 1, then both agents should CRAFT_PICKAXE.”
 
-state perturbation techniques in robust RL (e.g., Domain Randomization), we introduce
-SOA to prevent overfitting to perfect state representations. With a 10% probability, a
-randomly selected inventory field is zeroed before querying the oracle. For example, if the
-true state is [wood: 1, stone: 1, pickaxe: 0], SOA might perturb it to [wood: 0,
-stone: 1, pickaxe: 0]. This teaches the model to produce reasonable, safe outputs
-even when the prompt contains slightly degraded or inconsistent state information—a
-common occurrence during live RL rollouts where discrete observations may briefly lag
-behind true kinetic state transitions.
+To prevent the model from over-indexing on trivially simple early-game states, the generated
+states are grouped into six progression phases (e.g., early collection, iron mining, endgame
+combat). Each phase is upsampled equally to ensure a balanced training signal.
+Two augmentation techniques are applied to improve generalization:
+1. Stochastic Oracle Augmentation (SOA): To prevent overfitting to perfect state representations, a randomly selected inventory field is zeroed out with a 10% probability before
+querying the oracle. For example, a true state of [wood: 1, stone: 1] might be perturbed to [wood: 0, stone: 1]. This forces the model to produce safe outputs even
+when the prompt contains slightly degraded or delayed state information, which is common
+during live RL rollouts.
 2. Reflection Augmentation (40% injection rate): A synthetic hallucinated failure is
 prepended to the prompt: “You previously chose [Incorrect Option]. It failed after [N]
-steps.” The model must then output the correct option despite this misleading prior. This
-augmentation was an intentional design decision to teach the Commander to recover from
-logical errors. However, as will be revealed in Section 7.3.4, this same training signal
-inadvertently caused the model to develop a strong prior that any reported failure implies
-a logical mistake, even when the failure was purely kinetic (e.g., the agent simply had not
-walked far enough yet). This foreshadows the central “Reflection Contradiction” finding of
-the experimental evaluation.
+steps.” The model must then output the correct option despite this misleading prior. While
+intended to teach the Commander to recover from logical errors, Section 7.3.4 demonstrates that this training signal inadvertently caused the model to assume any reported
+failure implies a logical mistake (the “Reflection Contradiction”).
 The final raw dataset contains 1,200 balanced examples spanning all DAG phases and agent
 status combinations.
 
-6.11.2
+6.9.2
 
 ChatML Formatting and Dataset Splits
 
@@ -2711,13 +2704,13 @@ After a 90/10 train–validation split and a 2× training set duplication (to en
 updates given the small dataset), the final corpus comprises 2,160 training examples and 120
 validation examples.
 
-6.11.3
+6.9.3
 
 Training Configuration
 
 Fine-tuning was performed on the local workstation’s NVIDIA RTX 5070 GPU (12GB VRAM), as
 described in Section 4.4. The strict memory envelope forced several architectural compromises
-documented in Table 5.
+documented in Table 6.
 
 Table 6: QLoRA fine-tuning hyperparameters. Values marked with † were constrained by the
 12GB VRAM budget.
@@ -2759,24 +2752,11 @@ Optimizer
 Max sequence length†
 Gradient checkpointing†
 
-1
-1
-8 (eff. batch = 8)
-2 × 10−4
-Cosine with warmup (10%)
-Paged AdamW 8-bit (Dettmers; Lewis, et al., 2022)
-1,024 tokens
-Enabled
-
 Infrastructure
 
 Library
 Adapter library
 Logging
-
-HuggingFace TRL (Werra et al., 2020) (SFTTrainer)
-PEFT v0.19.1 (Mangrulkar et al., 2022)
-TensorBoard
 
 4-bit NormalFloat (NF4)
 bfloat16
@@ -2785,18 +2765,31 @@ Enabled
 32
 0.05
 All 7 (q/k/v/o/gate/up/down)
+1
+1
+8 (eff. batch = 8)
+2 × 10−4
+Cosine with warmup (10%)
+Paged AdamW 8-bit (Dettmers; Lewis, et al., 2022)
+1,024 tokens
+Enabled
+HuggingFace TRL (Werra et al., 2020)
+PEFT v0.19.1 (Mangrulkar et al., 2022)
+TensorBoard
 
-A critical engineering detail is the use of a custom DataCollatorForCompletionOnlyLM. During
-standard supervised fine-tuning, the causal language modeling loss is computed over all tokens
-in the sequence, including the system prompt and user message. This wastes gradient signal
-on tokens that the model should never generate at inference time. Our custom collator scans
-each tokenized sequence for the ChatML response delimiter (<|im_start|>assistant\n) and
-masks all preceding tokens by setting their labels to −100. As a result, the cross-entropy loss
-is computed exclusively over the Commander’s actual decision output (the JSON response),
-ensuring that every gradient update directly improves the quality of option selection rather than
-memorizing prompt boilerplate.
+A critical training detail is the application of response-only loss masking, implemented via the
+TRL library (Werra et al., 2020). By default, causal language models learn by predicting every
+subsequent word in a sequence, meaning they would normally compute an error gradient for the
+prompt itself. This wastes training capacity on memorizing instructions. To solve this, a custom
+data collator leverages PyTorch’s native ignore_index mechanic: it sets the target labels of
+all system and user prompt tokens to −100. Mathematically, the Cross-Entropy loss function
+ignores any token with a −100 label, computing zero gradient for it. For example, in the sequence
+[User] State is X [Assistant] {"opt": 1}, every token preceding the JSON response is
+assigned a −100 label, while only the JSON characters receive valid target IDs. As a result,
+the model is penalized exclusively on its final JSON output, ensuring that every weight update
+directly improves its strategic decision-making rather than memorizing boilerplate text.
 
-6.11.4
+6.9.4
 
 Training Results and Adapter Deployment
 
@@ -2804,9 +2797,9 @@ The complete fine-tuning process converged in approximately 3.1 hours (1,910 ste
 RTX 5070. As shown in Figure 17, the training loss dropped rapidly from 1.605 to 0.165, with
 the final evaluation metrics confirming near-perfect task acquisition:
 • Evaluation loss: 0.0007
-• Mean token accuracy: 99.98%
 
-Figure 17: QLoRA adapter fine-tuning performance over 1,910 training steps. The training loss
+• Mean token accuracy: 99.98%
+Figure 18: QLoRA adapter fine-tuning performance over 1,910 training steps. The training loss
 (left axis) converges rapidly within the first 500 steps, while the mean token accuracy (right axis)
 saturates near 100%.
 
@@ -2819,21 +2812,20 @@ latencies compatible with the synchronous RL training loop, as quantified in Sec
 fine-tuned adapter serves as the Meta-Controller for all “QLoRA” HRL configurations evaluated
 in Chapter 7.
 
-6.12
+6.10
 
 Summary
 
-The Meta-Controller approach creates a clean separation of concerns: the Commander reasons
-about what to do (strategic option selection via one-hot augmentation), while the MAPPO policy
-learns how to do it (low-level navigation and interaction). The one-hot conditioning allows a
-single network to exhibit option-dependent behaviour, and the bipartite reward structure ensures
-that the policy receives both a consistent dense gradient from intrinsic shaping and a grounding
-signal from the true environment rewards.
-This architecture also effectively acts as an automated curriculum generator (contrasting with
-the manual Curriculum Learning discussed in Section 2.3). While traditional curriculum learning
-requires a human engineer to laboriously design and schedule environments of increasing difficulty, our LLM Meta-Controller dynamically orchestrates a skill curriculum on the fly, seamlessly
-guiding the agents from simple resource gathering to complex combat coordination within a
-single, static environment.
+The Meta-Controller approach establishes a strict separation of concerns: the LLM Commander
+dictates what to do (strategic option selection), while the MAPPO policy learns how to do it
+(kinetic execution). By appending a one-hot option encoding to the state vector, a single policy
+network learns option-specific behaviors. Simultaneously, the bipartite reward structure ensures
+the policy receives both dense intrinsic guidance and sparse environmental grounding.
+Crucially, this architecture functions as an automated curriculum generator. Unlike traditional
+Curriculum Learning (Section 2.3), which requires manually designing environments of escalating
+difficulty, the Meta-Controller orchestrates a skill curriculum dynamically. It guides agents
+from basic resource gathering to advanced combat coordination entirely within a single, static
+environment.
 
 Table 7: Key hyperparameters of the Meta-Controller approach.
 Component
@@ -2877,21 +2869,20 @@ Network
 
 Empirical Results: Breaking the Exploration Bottleneck
 
-This chapter presents the experimental setup, the environments used for evaluation, and the
-results obtained. We specifically focus on validating the hypothesis that a Meta-Controller LLM
-can effectively resolve exploration bottlenecks in a sparse Multi-Agent Reinforcement Learning
-(MARL) environment through dynamic reward shaping, and subsequently, how Hierarchical
-Reinforcement Learning (HRL) further improves these capabilities.
+This chapter evaluates the hypothesis that a Meta-Controller LLM can resolve exploration
+bottlenecks in a sparse Multi-Agent Reinforcement Learning (MARL) environment through
+dynamic reward shaping, and subsequently, how Hierarchical Reinforcement Learning (HRL)
+further improves these capabilities.
 
 7.1
 
 Experimental Setup
 
-To rigorously evaluate the proposed architectures, we compare distinct configurations within our
-multi-agent resource-gathering environment, structured into two parts.
+To evaluate the proposed architectures, we compare distinct configurations within our multi-agent
+resource-gathering environment, structured into two parts.
 For the Dynamic Reward Shaping experiments, we evaluate:
-1. Sparse Baseline: A standard MAPPO implementation (Yu et al., 2022) relying purely on
-sparse environmental rewards (+1 for completing milestones).
+1. Sparse Baseline: A standard MAPPO implementation (Yu et al., 2022) relying on sparse
+environmental rewards (+1 for completing milestones).
 2. LLM Dynamic (Gemini 2.5 Flash Lite): The proposed “Mixing Board” architecture,
 utilizing Google’s Gemini 2.5 Flash Lite model via API as the Commander to dynamically
 shift potential-based reward weights.
@@ -2913,77 +2904,101 @@ All runs were executed with identical MAPPO hyperparameters (clipping ϵ = 0.2, 
 
 Part 1: Dynamic Reward Shaping
 
-The key metric validating the LLM Dynamic architecture is the progression through the environment’s strict dependency Directed Acyclic Graph (DAG).
+The progression through the environment’s strict dependency Directed Acyclic Graph (DAG)
+serves as the primary metric to validate the LLM Dynamic architecture.
 5
 
 Generalized Advantage Estimation
 
-Figure 18: Subtask Completion Rates: Comparison between the Sparse Baseline and the LLM
+Figure 19: Subtask Completion Rates: Comparison between the Sparse Baseline and the LLM
 Dynamic models over 2000 training updates.
 
-As shown in fig. 18, all three configurations conquer the early-game tasks (Wood, Stone) almost
-immediately. The Pickaxe subtask follows shortly after, with the Baseline reaching it at step 1.1M
-and Gemini at step 720K.
+As shown in Figure 18, all three configurations solve the early-game tasks (Wood, Stone) initially.
+The Pickaxe subtask follows shortly after, with the Baseline reaching it at step 1.1M and Gemini
+at step 720K.
 
-However, the Baseline completely collapses at the Iron bottleneck. Without any dynamic reward
-shaping to guide exploration, the Baseline workers never discover how to consistently mine Iron
-(0% final rate), resulting in a total failure to learn all downstream tasks (Sword, Armor, Bridge).
-In contrast, both LLM-guided runs break through the Iron bottleneck, but at remarkably different
-speeds. Qwen unlocks Iron at step 10M, subsequently discovering Sword and Armor at
-essentially the same step (10.1M). This rapid cascade demonstrates the snowball effect: once
-a critical bottleneck is broken, downstream tasks are unlocked quickly. Gemini 2.5 Flash Lite
-unlocks Iron much later, at step 40.7M (approximately 4× slower than Qwen). However, once
-unlocked, the same cascade occurs: Sword and Armor appear at step 41.3M.
-Neither run achieved Enemy defeats (0% for all three configurations), indicating that the combat
-subtask represents a qualitatively different challenge beyond reward gravity, likely requiring
-specialised action coordination that the current shaping signal alone cannot provide.
+However, the Baseline fails at the Iron bottleneck. Without dynamic reward shaping to guide
+exploration, the Baseline workers do not discover how to consistently mine Iron (0% final rate),
+preventing the learning of downstream tasks (Sword, Armor, Bridge).
+In contrast, both LLM-guided runs overcome the Iron bottleneck at different speeds. Qwen
+unlocks Iron at step 10M, and discovers Sword and Armor around step 10.1M. This rapid
+progression is explained by the DAG structure: once Iron is available, Sword and Armor only
+require visiting the Workbench, a behavior the agents have already mastered. Gemini 2.5 Flash
+Lite unlocks Iron later, at step 40.7M. Once unlocked, an identical cascade occurs, with Sword
+and Armor appearing at step 41.3M.
+The learning dynamics for both LLM configurations are characterised by high variance. Rather
+than smooth monotonic improvement, the agents exhibit repeated oscillations in task completion
+rates across many updates before stabilising on a subtask. This is particularly visible in the
+mid-game tasks (Pickaxe, Bridge), where completion rates fluctuate between 0% and partial
+success for extended periods. In the case of Qwen, the agents eventually forget how to build
+a Bridge after their initial success around step 2.97 × 107 , regressing to 0% completion. This
+indicates that the learned policies can remain fragile when the shaping signal shifts focus away
+from previously mastered behaviours.
+Neither run achieved Enemy defeats (0% for all configurations), indicating that the combat subtask represents a challenge beyond reward shaping. It likely requires specific action coordination
+that the current scalar reward signal cannot provide.
 
 7.2.1
 
 LLM Interventions in Action
 
-To understand exactly how the LLMs broke the bottleneck, we analyse the evolution of the
-reward weights. The weights shown in fig. 19 are the post-softmax weights actually applied to
-the potential-based shaping.
+To understand how the LLMs shaped exploration, we analyse the evolution of the reward
+weights. The weights shown in Figure 19 are the post-softmax weights actually applied to the
+potential-based shaping (Equation 19).
 
-Figure 19: Evolution of the Dynamic Reward Weights (post-softmax, as applied to the PBRS
+Figure 20: Evolution of the Dynamic Reward Weights (post-softmax, as applied to the PBRS
 signal).
 
 (a) Gemini 2.5 Flash Lite Meta-Controller (198 interventions)
 
 (b) Local Qwen 2.5 7B Meta-Controller (20 interventions)
 
-Figure 19 reveals strikingly different command strategies. Gemini’s strategy as a Commander is
-characterised by broad amplification of the early-chain tasks. wwood and wstone rapidly climb and
-stay high, while wiron remains near zero after the softmax (mean 0.01). This reveals a counterintuitive insight: despite the raw LLM outputs assigning wiron = 1.0, the softmax normalisation
-compresses this into a negligible effective weight because the Commander simultaneously
-assigns high values to wood, stone, and bridge.
-Qwen’s strategy exhibits a focused suppression-and-amplification profile. After an initial
-exploration phase, wwood and wstone are aggressively dropped, while wiron rises sharply to a
-peak of 3.87 during the mid-training bottleneck. By zeroing out already-mastered tasks and
-concentrating the magnetic pull entirely on the bottleneck, Qwen breaks through Iron 30M steps
-earlier than Gemini.
+Figure 19 shows two distinct command strategies, though both share an initial semantic understanding: from the very first intervention, both Commanders set wenemy = 0.0 and wgold = 0.0
+throughout the entire run. Both models recognise that these terminal tasks are unreachable
+early on and allocate no reward budget to them.
+Beyond this shared starting point, the strategies diverge. Gemini’s strategy employs broad
+amplification and oscillation. It alternates between pushing wwood and wstone to their maximum
+(3.0) when early tasks fail, and pushing wiron high when early tasks succeed. However, because
+the agents had not yet mastered Pickaxe (the prerequisite for Iron), the DAG guardrail layer
+(Section 5.2) programmatically forced wiron = 0.0. Thus, despite Gemini’s correct diagnosis of
+the Iron bottleneck, its interventions were systematically overridden. Worse, by dropping wood
+and stone weights to boost iron, Gemini inadvertently slowed the prerequisite progress needed
+to actually unlock iron.
+Qwen’s strategy is infrequent but highly stable. With only 20 interventions, Qwen establishes
+a consistent hierarchy (wwood ≈ 2.33, wstone ≈ 2.33, wworkbench ≈ 1.51, wiron ≈ 0.38). Because
 
-7.2.2
+Qwen persistently allocates a small weight to iron, wiron instantly becomes active the moment
+the guardrail condition (Pickaxe mastery) is satisfied. Gemini, caught in its oscillation, often has
+a raw iron weight of zero at the exact moment the guardrail lifts.
+This stability directly affects the greedy planner (g (i) = arg maxj∈F Rjbase · wj ). Because base
+rewards (Rjbase ) increase with DAG depth, Qwen’s moderate but consistent iron weight (≈0.38)
+is sufficient to make Iron the active goal once available. Gemini’s oscillation prevents the planner
+from reliably targeting Iron.
+This dynamic explains the significant intervention frequency disparity (198 for Gemini vs. 20 for
+Qwen). The CriticTrigger (Section 5.3) only fires during performance plateaus. Because Qwen’s
+stable strategy resolved the Iron bottleneck early (step 10M), the agents learned continuously,
+keeping the trigger gate closed. Conversely, Gemini’s ineffective oscillation kept the agents
+stuck at the Iron bottleneck until step 40.7M. During this 30M-step plateau, the trigger fired as
+frequently as its cooldown allowed. Therefore, Gemini’s high intervention count is a symptom of
+prolonged stagnation, not proactive command.
+
+7.2.2
 
 Reward Analysis
-Figure 20: Average Environment Reward (True Milestones Reached).
+Figure 21: Average Environment Reward (True Milestones Reached).
 
 Figure 20 presents the true average environment reward. Both LLM Dynamic runs achieve
-significantly higher returns than the Baseline, reaching an identical peak reward (≈0.076). This
-suggests that once the bottleneck is broken, the final quality of the learned policy is comparable;
-the difference lies purely in the sample efficiency driven by Qwen’s highly focused interventions.
-However, a closer inspection of the training trajectories reveals a critical difference in policy
-stability and retention. Around step 2.97 × 107 , the Qwen-guided workers exhibit a sharp drop
-in performance, seemingly forgetting how to complete the Bridge subtask. This catastrophic
-forgetting is reflected in a corresponding dip in Qwen’s average environment reward. Conversely,
-the Gemini Commander demonstrates superior stability: once it teaches the workers to build a
-Bridge, they retain this behavior. This retention culminates in a higher average reward spike for
-Gemini around step 4.65 × 107 . These observations suggest that while Qwen’s aggressive, narrowly focused shaping breaks bottlenecks much faster, Gemini’s broader amplification strategy
-(Figure 19) may foster a more robust, generalizable policy that is less susceptible to catastrophic
-forgetting.
+higher returns than the Baseline, reaching an identical peak reward (≈0.076). This indicates
+that once the bottleneck is resolved, the final quality of the learned policy is comparable; the
+primary difference lies in the sample efficiency driven by Qwen’s stable weight profile.
+However, the training trajectories highlight a trade-off in policy stability (Figure 18). Around step
+2.97 × 107 , the Qwen-guided agents temporarily forget how to build a Bridge, causing a dip in
+average reward. Gemini’s policy is much more stable; once the agents learn Bridge, they retain
+it, producing a higher reward spike at step 4.65 × 107 . This stability is a direct benefit of Gemini’s
+broad amplification: by constantly reinforcing prerequisite tasks (wood, stone), Gemini provides
+a safety net against forgetting. Qwen’s focused suppression of mastered tasks removes this
+safety net, leaving the policy vulnerable when the reward signal shifts to new goals.
 
-7.3
+7.3
 
 Part 2: Hierarchical Reinforcement Learning
 
@@ -2991,25 +3006,19 @@ While the dynamic shaping architecture successfully guided the lumberjack and mi
 bottlenecks (like Iron), it ultimately stalled at the combat phase (Enemy, Gold). Modifying the
 continuous reward landscape was insufficient to teach the workers the discrete, long-horizon
 macro-actions required for coordinated combat.
-This limitation motivated the shift to a full Hierarchical Reinforcement Learning (HRL) architecture, where the Commander does not merely shape the rewards, but explicitly radios
-discrete Options (e.g., “Craft Sword”, “Defeat Enemy”) directly to the lower-level MAPPO policy.
-Three configurations were evaluated over 2000 optimization updates (≈65.5M environment
-steps each):
-
-1. No-LoRA Base: The un-finetuned Qwen 2.5 7B model serving as Meta-Controller.
-2. QLoRA (With Reflection): The QLoRA fine-tuned model with counterfactual reflection
-logic, triggered when an assigned Option becomes stale (workers fail to complete it within
-150 steps).
-3. QLoRA (No Reflection): The identical fine-tuned model, but with the reflection trigger
-suppressed. On staleness, the Commander re-evaluates the raw environment state without
-injecting any prior failure context.
+This limitation motivated the shift to a full Hierarchical Reinforcement Learning (HRL) architecture, where the Commander explicitly assigns discrete Options (e.g., “Craft Sword”, “Defeat
+Enemy”) directly to the lower-level MAPPO policy. As outlined in Section 7.1, we evaluated
+three configurations over 2000 optimization updates (≈65.5M environment steps each): the
+un-finetuned No-LoRA Base (plotted in grey), and two QLoRA fine-tuned variants: with counterfactual reflection (blue) and without (red). The reflection mechanism is triggered whenever an
+assigned Option becomes “stale” (i.e., workers fail to complete it within 150 steps).
 
 7.3.1
 
 Subtask Progression: Solving the DAG
 
-Table 7 presents the exact environment step at which each subtask was first completed across
-the three configurations. Each one managed to complete the DAG at some point.
+All three configurations managed to complete the DAG at some point, but with significant
+differences in efficiency. Table 8 presents the exact environment step at which each subtask
+was first completed.
 Table 8: First breakthrough step (millions of environment steps) for each subtask. Bold indicates
 the fastest configuration per subtask.
 Subtask
@@ -3060,25 +3069,24 @@ Gold
 3.24M
 6.29M
 
-Several patterns emerge from Table 7. First, all three configurations solve the early-game tasks
+Several patterns emerge from Table 8. First, all three configurations solve the early-game tasks
 (Wood, Stone) within the first 0.3M steps, with the No-LoRA base marginally faster due to
-lower inference overhead. Second, the QLoRA models exhibit a dramatic advantage starting
+lower inference overhead. Second, the QLoRA models show a significant advantage starting
 at Pickaxe: both fine-tuned runs complete the mid-game milestones (Pickaxe through Armor)
 approximately 8–14× faster than the base model. The No-LoRA run does not reach Pickaxe
 until 13.5M steps, nearly 11× slower than QLoRA with Reflection (1.25M), demonstrating that
 fine-tuning is essential for coherent option sequencing.
-Third, the No-LoRA run exhibits a pronounced ordering anomaly : it completes Iron, Sword, and
-Armor (∼16.7M) well before Bridge (30.6M). Since the bridge is a prerequisite for reaching the
-enemy side of the river, these combat-preparatory milestones accumulate without immediate
-use. The workers spend ∼14M steps fully equipped but unable to cross the river. Both QLoRA
-runs, by contrast, follow the optimal DAG ordering (building the bridge before crafting combat
-equipment), resulting in a tight cascade from Bridge to Enemy (<0.5M steps gap).
+Third, the No-LoRA run exhibits an ordering anomaly: it completes Iron, Sword, and Armor
+(∼16.7M) well before Bridge (30.6M). Since Bridge is a prerequisite for reaching the enemy,
+the agents spend ∼14M steps fully equipped but unable to cross the river. Both QLoRA runs,
+however, follow the optimal DAG ordering (building the bridge before crafting combat equipment),
+
+resulting in a tight progression from Bridge to Enemy (<0.5M steps gap).
 Finally, at the Gold milestone, QLoRA without Reflection is the fastest (6.29M), followed closely
 by QLoRA with Reflection (7.08M). The No-LoRA base reaches Gold at 32.31M, 5.1× slower,
 confirming that without fine-tuning, the Commander struggles to plan the late-game transition
 from combat to resource extraction.
-
-Figure 21: Subtask completion rates across all nine environment milestones for the three HRL
+Figure 22: Subtask completion rates across all nine environment milestones for the three HRL
 configurations. The dependency chain flows left-to-right, top-to-bottom.
 
 (a) Wood
@@ -3099,29 +3107,24 @@ configurations. The dependency chain flows left-to-right, top-to-bottom.
 
 (i) Gold
 
-Figure 21 reveals that all three configurations ultimately solve the complete DAG, reaching
-100% completion on every subtask including Gold. This is a qualitative leap over the Dynamic
-Shaping architecture (Part 1), which never reached Enemy or Gold. The key differentiator
-between configurations is not whether they succeed, but how quickly : QLoRA with Reflection
-reaches 100% on Gold by ∼10M steps, QLoRA without Reflection by ∼8M steps, while the
-No-LoRA base requires ∼35M steps, consuming more than half the training budget before the
-workers first collect Gold.
-Interestingly, the QLoRA with Reflection run’s subtask curves exhibit a distinctive “staircase”
-pattern (Figure 21, Bridge and Enemy panels): early plateaus near 0% are followed by abrupt
-jumps to 100%. This indicates that the rapid option cycling caused by the reflection mechanism
-prevents workers from making incremental progress; instead, the completion rate stays near
-zero until the PPO policy forces a breakthrough, after which it saturates instantly. By contrast,
-the QLoRA without Reflection run shows a much smoother, gradual learning ramp (taking
-roughly 4× as many updates to transition from 0% to 90% on the Enemy subtask compared
-to No-LoRA). This smooth monotonic ramp is evidence of deliberate, stable option sequencing
-by the fine-tuned Meta-Controller. The No-LoRA base falls in between, showing delayed but
-relatively fast transitions once it eventually stumbles upon the correct behavior.
+Figure 21 shows that all three configurations solve the complete DAG, reaching 100%
+completion on Gold. This is a significant improvement over the Dynamic Shaping architecture
+(Part 1). The key differentiator is sample efficiency: QLoRA with Reflection reaches 100% on
+Gold by ∼10M steps, QLoRA without Reflection by ∼8M steps, and the No-LoRA base requires
+∼35M steps (consuming over half the training budget).
+The subtask curves for QLoRA with Reflection exhibit a “staircase” pattern (Figure 21): plateaus
+near 0% followed by abrupt jumps to 100%. This indicates that the reflection mechanism’s
+rapid option cycling prevents incremental progress; completion stays near zero until the PPO
+policy forces a breakthrough. Conversely, QLoRA without Reflection shows a smoother, gradual
+learning ramp. This monotonic ramp suggests deliberate, stable option sequencing by the
+Meta-Controller. The No-LoRA base falls in between, showing delayed but fast transitions once
+it stumbles upon the correct behavior.
 
 7.3.2
 
 Reward Trajectories
 
-Figure 22: Average Extrinsic Reward across HRL configurations. All three runs converge to
+Figure 23: Average Extrinsic Reward across HRL configurations. All three runs converge to
 comparable final rewards (∼0.326), but the QLoRA runs reach this level ∼3× faster than the
 No-LoRA base.
 
@@ -3133,9 +3136,11 @@ quality, given enough time. The practical difference is entirely one of sample e
 Compared to the Dynamic Shaping architectures (Part 1), which plateaued at 0.076, the HRL
 architecture achieves a 4.4× improvement in peak reward. The QLoRA runs reach their peak
 reward plateau by ∼28M steps (No Reflection) and ∼37M steps (With Reflection), while the
-No-LoRA base does not stabilize until ∼55M steps. This ∼2× sample efficiency gap between
-the QLoRA runs is the first quantitative signal that the reflection mechanism, while not preventing
-convergence, actively delays it.
+No-LoRA base does not stabilize until ∼55M steps. This sample efficiency gap between the
+QLoRA runs is a clear quantitative signal that the reflection mechanism actively delays learning
+in terms of environment steps. Furthermore, because generating counterfactual reflections
+requires outputting additional tokens, the “With Reflection” run also incurs a higher wall-clock
+inference overhead compared to its non-reflective counterpart.
 
 7.3.3
 
@@ -3145,10 +3150,9 @@ In the HRL architecture, the transition between discrete macro-actions (Options)
 shifts in the intrinsic reward landscape. From the perspective of the low-level PPO workers,
 the objective function is highly non-stationary. To prevent catastrophic forgetting of previously
 learned kinetic policies, we bound the surrogate objective update using a strict Kullback-Leibler
-(KL) divergence guard.
-During the optimization epochs, we continuously monitor the approximate KL divergence be-
 
-tween the behavioral policy πθold and the updating policy πθ (Schulman et al., 2017):
+(KL) divergence guard.
+During the optimization epochs, we continuously monitor the approximate KL divergence between the behavioral policy πθold and the updating policy πθ (Schulman et al., 2017):
 "
 approx
 DKL
@@ -3161,14 +3165,14 @@ DKL
 
 !#
 
-(34)
+(33)
 
 approx
 If DKL
-exceeds the predefined trust region threshold (δ = 0.015, implemented as target_kl),
-the gradient updates for the current batch are immediately aborted.
+exceeds the predefined trust region threshold (δ = 0.015, implemented as a target KL
+divergence), the gradient updates for the current batch are immediately aborted.
 
-Figure 23: Maximum approximate KL divergence per update across the three HRL configurations.
+Figure 24: Maximum approximate KL divergence per update across the three HRL configurations.
 The dashed red line marks the early-stopping threshold δ = 0.015.
 
 Table 9: KL divergence statistics and policy stability metrics across HRL configurations.
@@ -3212,60 +3216,40 @@ Mean TD error (all updates)
 0.023
 0.048
 
-Figure 23 and Table 8 reveal a counter-intuitive relationship between KL instability and learning
-dynamics. The QLoRA with Reflection run triggers the KL early-stopping guardrail 5.1× more
-often than the No-LoRA base (234 vs. 46 triggers) and 1.5× more often than the No-Reflection
-run (234 vs. 152). Both QLoRA runs exhibit large peak KL spikes (>0.1), indicating aggressive
-policy shifts during option transitions. The No-LoRA base, by contrast, shows modest peak KL
+Table 9 highlights how KL instability disrupts learning. The QLoRA with Reflection run hits
+the KL guardrail 5.1× more often than the No-LoRA base and 1.5× more often than the
+No-Reflection run. Since each KL trigger immediately aborts the current gradient update, this
 
-(0.025) and infrequent triggers. Its policy shifts are small because the un-finetuned Commander
-generates less decisive option switches.
-These aggressive policy shifts and high KL guard triggers in the QLoRA with Reflection run also
-directly manifest as increased fluctuations in its average extrinsic reward trajectory (Figure 22).
-The constant disruption of the objective function prevents the PPO workers from smoothly
-optimizing their kinetic behaviors.
-The QLoRA with Reflection run accumulates 2.3× more staleness resets than the No-Reflection
-run (88,711 vs. 39,137), despite dispatching nearly the same number of LLM queries (12,791 vs.
-13,710). This means each reflection-triggered re-query produces an Option that fails faster —
-the Commander actively generates worse plans when told its previous plan failed. The rapid
-cycling of short-lived Options produces a high frequency of small policy shifts: each individual
-shift is small enough to avoid the KL guardrail, but the cumulative effect prevents the Critic
-from converging on a stable value estimate. We term this pattern death by a thousand cuts:
-individually invisible perturbations that collectively devastate sample efficiency.
-The No-Reflection run follows the opposite pattern: infrequent, large, guarded transitions. The
-Commander commits to long-horizon Options and rarely switches. When it does (for example,
-transitioning from CRAFT_SWORD to DEFEAT_ENEMY), the policy shift is dramatic (peak KL = 0.107,
-or 7× the threshold). The guardrail catches these large transitions and aborts the gradient
-update. Over subsequent updates, the policy absorbs the new objective gradually. This pattern
-of rare but controlled disruptions produces the lowest mean TD error (0.048) among the three
-runs.
-
-7.3.4
-
-The Paradox of Reflection
-
-The staleness data (Table 8) provides the mechanistic explanation for the delay caused by
-reflection. The With-Reflection run dispatches essentially the same number of LLM queries
-as the other runs (∼12,800), yet accumulates 3.1× more staleness resets than the No-LoRA
-base (88,711 vs. 28,927) and 2.3× more than the No-Reflection run (88,711 vs. 39,137). Each
-reflection-triggered query thus produces a worse Option, an Option that expires faster and
-triggers yet another staleness event.
-The root cause lies in how the instruction-tuning dataset was constructed. During QLoRA
-fine-tuning, the dataset synthetically injected counterfactual failures: the training prompt stated
-“You previously chose [Incorrect Option]. It failed.” The model then learned to output the correct
-Option. As a result, the Commander associated the reflection trigger with a strong prior: my
-previous choice was logically wrong, and I must switch to a different option.
-During inference, however, option staleness is frequently triggered not by a logical error by
-the Commander, but by kinetic delays on the ground: the lumberjack navigating around the
-river terrain, the miner queuing at resource nodes, or simply needing more steps to execute a
-fundamentally correct plan. When the orchestrator fires the reflection prompt, the Commander,
-conditioned by its training data, assumes it made a reasoning error. It abandons the correct
-long-horizon option and switches to an alternative, derailing the workers’ execution.
-To illustrate this transparency, consider a snapshot directly from the evaluation logs where the
-
-workers have already defeated the Enemy and just need to collect the Gold. The Commander
-correctly assigns COLLECT_GOLD, but when the workers take too long and trigger a staleness
-reset, the LLM hallucinates a logical error and regresses to an unnecessary prerequisite:
+constant disruption prevents the PPO workers from smoothly optimizing their kinetic behaviors.
+This manifests directly as the jagged fluctuations seen in its reward trajectory (Figure 22).
+Furthermore, QLoRA with Reflection accumulates 2.3× more staleness resets than the NoReflection run (88,711 vs. 39,137) despite a similar number of total LLM queries. This indicates
+a destructive cycle: when told a plan failed, the reflective Commander generates a worse plan
+that fails even faster. This rapid cycling of short-lived Options causes constant, small policy
+shifts. While these individual shifts may not always trigger the KL guardrail, their cumulative
+effect prevents the Critic from converging, severely reducing sample efficiency.
+Conversely, the No-Reflection run exhibits infrequent but large transitions. The Commander
+commits to an Option and rarely switches. When a switch occurs (e.g., from CRAFT_SWORD
+to DEFEAT_ENEMY), the resulting policy shift is massive (peak KL = 0.107). The KL guardrail
+correctly catches these spikes and halts the update, allowing the policy to gradually absorb the
+new objective over subsequent steps. This strategy of rare, controlled disruptions yields the
+lowest mean TD error (0.048) and the highest sample efficiency.
+In LLM literature, reflection is widely considered a mechanism to improve reasoning. However,
+in this HRL context, it actively degrades sample efficiency. The With-Reflection run accumulates
+2.3× more staleness resets than the No-Reflection run, despite generating a similar number of
+total queries (∼12,800).
+This paradox stems from a misalignment between the instruction-tuning data and actual RL
+inference. During QLoRA fine-tuning, the dataset injected synthetic counterfactuals (e.g., “You
+previously chose [Incorrect Option]. It failed.” ) to teach the model to correct logical errors.
+Consequently, the fine-tuned Commander learned a strong prior: a failure prompt means its
+previous choice was logically wrong and must be changed.
+During RL training, however, option “staleness” rarely indicates a logical error. More often,
+it represents a kinetic delay: the agents simply need more time to navigate the terrain or
+collect resources for a fundamentally correct plan. When the reflection prompt fires due to this
+kinetic delay, the Commander incorrectly assumes a reasoning error and abandons the correct
+long-horizon option.
+To illustrate this, consider a snapshot from the evaluation logs. The workers have defeated the
+Enemy and need to collect Gold. The Commander correctly assigns COLLECT_GOLD, but when
+the workers take too long, staleness triggers the reflection prompt:
 Inventory: {..., ’pickaxe’: 1, ’sword’: 1, ’bridge’: 1, ’enemy’: 1, ’gold’: 0}
 Previous Assignment: Agent 1 failed on COLLECT_GOLD
 LLM Response:
@@ -3276,36 +3260,33 @@ agents lacked the necessary sub-tier items.",
 "agent_0_option": "IDLE",
 "agent_1_option": "CRAFT_ARMOR"
 }
-Even though Armor is entirely irrelevant once the Enemy is defeated, the Commander doubts its
-own correct logic because the reflection prompt implied it made a mistake.
-We term this failure mode the Reflection Contradiction: the architecture inadvertently trained the
-LLM to doubt its own correct logic. Disabling the reflection mechanism allows the Commander
-to maintain stable plans. On re-query, it re-confirms its current Option rather than compulsively
-switching.
-Figure 24: Temporal Difference Error Variance. The With-Reflection configuration exhibits
+
+Because the prompt implies a mistake, the Commander hallucinates a logical error (“lacked
+necessary items”) and regresses to an irrelevant prerequisite (CRAFT_ARMOR). Disabling reflection
+prevents this forced doubt, allowing the Commander to stably re-confirm the correct Option.
+Future work could isolate this effect by evaluating reflection on the un-finetuned No-LoRA base
+model.
+Figure 25: Temporal Difference Error Variance. The With-Reflection configuration exhibits
 persistent high variance during mid-training from contradictory option switches. Both QLoRA
 runs converge to similar final TD errors (∼0.024), while the No-LoRA base settles higher at
 0.042.
 
-The downstream effect is quantified in the TD Error Variance (Figure 24). The With-Reflection
-configuration maintains the highest mean TD error across the full training run (0.060), 25%
-higher than the No-Reflection run (0.048) and 30% higher than the No-LoRA base (0.046). This
-elevated TD error during mid-training reflects the Critic’s inability to track the rapidly switching
-intrinsic reward landscape caused by reflection-induced option churn. By the final 100 updates,
-both QLoRA runs converge to comparable TD errors (With Reflection: 0.024, No Reflection:
-0.023), indicating that the Critic eventually stabilizes once the policy has saturated all subtasks
-and option switching diminishes. The No-LoRA base, despite its lower mid-training variance,
-settles at a higher final TD error (0.042). Its Critic struggles with the less structured option
-transitions produced by the un-finetuned model.
-Ultimately, all three HRL configurations solve the complete environment DAG, representing a
-qualitative breakthrough over the Dynamic Shaping architecture. The key finding is that QLoRA
-fine-tuning is essential for sample efficiency (5× faster to Gold than the base model), while
-the reflection mechanism (despite its theoretical appeal) delays convergence by injecting
-ungrounded self-doubt into the Meta-Controller’s reasoning. The KL-divergence guardrail proves
-indispensable for absorbing the inherent non-stationarity of option transitions, but it cannot
-protect against the high-frequency, sub-threshold perturbations generated by the reflection loop.
+The downstream effect is quantified in the TD Error (Figure 24). The With-Reflection configuration
+maintains the highest mean TD error across the full training run (0.060), 25% higher than the
+No-Reflection run (0.048). This elevated error during mid-training reflects the Critic’s inability
+to track the rapidly switching intrinsic reward landscape caused by reflection-induced option
+churn. However, as the policies saturate and option switching diminishes, the TD errors stabilize.
+Averaged over the final 100 updates, both QLoRA runs converge to a comparable mean TD
+error (∼0.024). The No-LoRA base settles at a higher final mean TD error (0.042), as its Critic
+continues to struggle with the less structured option transitions generated by the un-finetuned
+model.
+Ultimately, all three HRL configurations solve the complete DAG. The key findings are twofold:
+first, QLoRA fine-tuning significantly accelerates sample efficiency (5× faster to Gold);
+second, while the KL-divergence guardrail absorbs major non-stationarity, it cannot filter out
+the high-frequency, sub-threshold perturbations caused by the reflection loop. Thus, forcing
+reflection upon a fine-tuned model actively delays convergence.
 
-7.4
+7.4
 
 Part 3: Robustness and Semantic Adaptation
 
@@ -3321,15 +3302,12 @@ Ablation: The Necessity of EMA Smoothing
 
 In Section 5.5.1, we posited that feeding raw, discrete priority logits directly into the potentialbased shaping function would induce severe non-stationarity. To empirically verify this, an
 ablation run was conducted wherein the Exponential Moving Average (EMA) layer was disabled.
-Figure 25: Comparison of training stability with and without EMA smoothing (α = 0.2). Disabling
+As shown in Figure 25, removing the EMA filter results in a noticeable spike in TD-error variance.
+The ablation itself was executed by bypassing the exponential smoothing step entirely in the
+programmatic orchestration layer.
+Figure 26: Comparison of training stability with and without EMA smoothing (α = 0.2). Disabling
 smoothing induces a severe spike in Temporal Difference (TD) error variance (right).
 
-Figure 26: Subtask completion rates for Iron (left) and Sword (right). The variance spike directly
-correlates with suboptimal learning and temporary regressions in advanced subtasks.
-
-As shown in Figure 25, removing the EMA filter results in a noticeable spike in TD-error variance.
-The ablation itself was executed by passing a skip_ema=True flag to the LLMOrchestrator,
-which bypassed the exponential smoothing step entirely.
 The Critic network struggles to track a reward objective that shifts instantaneously. Figure 26
 illustrates the behavioral consequence: the non-stationarity leads to suboptimal optimization,
 causing the workers to exhibit slight regressions in their Iron and Sword completion rates
@@ -3338,12 +3316,16 @@ eventually recover and climb back to a 100% success rate on these tasks. Thus, w
 workers can mathematically overcome the noise, this proves that the EMA smoothing equation
 is highly helpful for bridging discrete LLM outputs with continuous RL gradients, enabling faster
 convergence and preventing such regressions.
-To quantify the optimization efficiency provided by the EMA filter, Table 9 details the number of
+
+Figure 27: Subtask completion rates for Iron (left) and Sword (right). The variance spike directly
+correlates with suboptimal learning and temporary regressions in advanced subtasks.
+
+To quantify the optimization efficiency provided by the EMA filter, Table 10 details the number of
 environment steps required to reliably learn (i.e., achieve a ≥ 90% success rate) the advanced
 subtasks.
 Table 10: Environment steps required to reach a 90% completion rate. Disabling the EMA
-smoothing filter causes a severe learning slowdown across all tasks, culminating in an inability
-to converge on the terminal tasks within the training envelope.
+smoothing filter causes a severe learning slowdown across all tasks. Note that neither configuration converges on the terminal combat tasks (Enemy, Gold), consistent with the limitations of the
+Dynamic Shaping architecture established in Part 1.
 Subtask
 
 With-EMA (Baseline)
@@ -3367,8 +3349,8 @@ Gold
 2.22M steps
 2.52M steps
 2.52M steps
-3.01M steps
-7.07M steps
+Failed to Converge
+Failed to Converge
 
 2.36M steps (7.2× slower)
 2.46M steps (3.0× slower)
@@ -3380,110 +3362,125 @@ Gold
 Failed to Converge
 Failed to Converge
 
-Figure 27: Maximum subtask completion rates achieved across all runs. Despite the early
+Figure 28: Maximum subtask completion rates achieved across all runs. Despite the early
 variance spikes, No-EMA eventually masters all tasks identical to the baseline.
 
-7.4.2
+7.4.2
 
 Computational, Financial, and Energy Overheads
 
-A practical consideration when integrating LLMs tightly into the RL training loop is the wallclock time overhead. Because the meta-controller queries the LLM dynamically throughout
-the episode, relying on external or cloud-based APIs introduces severe network latency and
-rate-limiting bottlenecks.
-Analyzing the total execution times for a complete 128-update training run reveals this stark
-reality. The Standard HRL Baseline (which uses a traditional static meta-controller without LLM
-queries) completed training in 8.30 hours. When deploying an external cloud model (Gemini 2.5
-Flash-Lite) for the LLM Dynamic run, the training time ballooned to 12.27 hours—a roughly 48%
-increase purely due to API latency, despite querying a highly optimized "lite" model. Using a
-heavier state-of-the-art online model (such as GPT-4) was entirely infeasible for our full training
-comparisons due to strict API rate limits and prohibitive latency over thousands of calls.
-In contrast, our optimized LLM Dynamic (LoRA) implementation, running a locally fine-tuned
-Qwen2.5-7B model, completed the identical training run in just 7.78 hours. By keeping inference
-entirely local, batching requests, and avoiding network overhead, the LLM-guided approach
-achieved execution speeds completely on par with (and in this instance, marginally faster than)
-the standard HRL baseline. This proves that dynamic LLM orchestration is not just theoretically
-advantageous, but computationally viable when deployed efficiently at the edge.
-Beyond pure execution speed, the financial and energy footprints of these architectures are
-critical factors for independent researchers. Relying on commercial online APIs for the metacontroller generates a staggering volume of requests; simulating 128 parallel environments over
-millions of steps yields millions of input and output tokens per training run. Relying on paid
-APIs for this volume of queries would render the approach financially prohibitive. Additionally,
-reinforcement learning is highly hardware-intensive. A standard local workstation drawing
-approximately 750W continuously over a 12.27-hour API-bound run—or a 13.5-hour unoptimized
-local run—results in substantial electricity consumption, which becomes especially burdensome
-when multiplied by dozens of iterations, failed experiments, and hyperparameter sweeps. In
-regions with high energy costs such as Switzerland, the ability of the optimized local LoRA
-implementation to slash training time down to 7.78 hours provides a compounded benefit: it
-completely eliminates API token costs while simultaneously reducing the electrical footprint and
-
-associated utility costs by nearly 40% per run.
+Integrating LLMs directly into the RL training loop introduces severe wall-clock overhead if not
+managed carefully. Querying external cloud APIs dynamically throughout an episode creates
+massive network latency.
+A standard 128-update training run illustrates this bottleneck. The Standard HRL Baseline,
+using a traditional programmed meta-controller without LLM queries, finished in 8.30 hours. By
+comparison, routing queries through a cloud model (Gemini 1.5 Flash) inflated the training time
+to 12.27 hours. This is a 48% slowdown caused entirely by API latency. Attempting the same
+with heavier models like GPT-4 proved completely impossible due to strict rate limits.
+Our optimized LLM Dynamic (LoRA) implementation solves this issue. Running a locally
+fine-tuned Qwen2.5-7B model, it completed the same run in 7.78 hours. By batching requests
+and eliminating network travel, local inference matches and even slightly beats the standard
+programmatic baseline.
+This local optimization also yields massive financial and energy savings. Simulating 128
+parallel environments generates millions of tokens per run, making commercial APIs financially
+prohibitive for researchers. Furthermore, a workstation drawing 750W over a 12.27-hour API
+run consumes substantial electricity. Cutting the run time to 7.78 hours eliminates token fees
+entirely while dropping power consumption and utility costs by nearly 40%.
 
 7.4.3
 
-Environment Shift: The Paradox of Semantic Over-Confidence
+Environment Shift: The Case for a Semantic Commander
 
-A fundamental critique of using LLMs in MARL is whether they rely on genuine semantic worldmodels or merely overfit to node names. To test this, the environment was silently modified
-at Update 500: the ‘Workbench‘ zone was renamed to ‘Furnace‘ in the Commander’s prompt
-space. A secondary control run replaced ‘Workbench‘ with a nonsense string, ‘Zylorg‘.
-This shift was executed by dynamically injecting an alias mapping into the LLMOrchestrator
-mid-training, forcing the Commander to output weights for the alias rather than the canonical
-node name, which the orchestrator then reversed and fed to the PPO workers.
-The initial hypothesis assumed the Commander would cleanly map "Furnace" to crafting success,
-while failing on "Zylorg". However, empirical results revealed a counter-intuitive phenomenon:
-semantic over-confidence induced severe reward hacking, while semantic ignorance
-acted as a natural regularizer.
-Figure 28: Subtask completion rates during semantic shifts. The ‘Furnace‘ shift traps workers
+A valid question is why we should use an LLM Commander at all. If the goal is simply to shift
+priority weights when a bottleneck occurs, a hard-coded Python script could automate this
+process perfectly.
+The limitation of a programmed script is its brittleness. If a map designer updates the environment
+and renames the Workbench to Furnace, a hard-coded script will crash instantly with a missing
+key error. An LLM, however, possesses zero-shot semantic reasoning. It can instantly adapt to
+environmental changes without any code modifications.
+To test this adaptability, we injected an alias mapping into the orchestrator at Update 500. The
+Workbench was renamed to Furnace in the Commander’s prompt space. A secondary control
+run replaced it with a nonsense string: Zylorg.
+
+Figure 29: Subtask completion rates during semantic shifts. The ‘Furnace‘ shift traps workers
 in a local optimum, halting ‘Iron‘ and ‘Sword‘ progression, while the ‘Zylorg‘ shift organically
 recovers.
 
-Figure 29: Maximum subtask completion rates for the Shift group. Furnace masters initial tasks
+Figure 30: Maximum subtask completion rates for the Shift group. Furnace masters initial tasks
 (Wood, Stone, Pickaxe) but completely fails advanced tasks requiring exploration (Iron, Sword).
 
-As seen in Figures 28 and 29, the ‘Zylorg‘ control unexpectedly succeeded across almost all
-subtasks, achieving near-parity with the baseline’s extrinsic reward. When the Commander
-
-encountered "Zylorg", it lacked a semantic prior. As a result, it assigned it a balanced priority
-weight alongside other nodes, focusing its reasoning on recognizable end-goals like enemies.
+The results in Figures 28 and 29 prove the LLM’s resilience, even though the Furnace run
+ultimately failed to master the final tasks.
+When the Commander encountered Zylorg, it lacked any semantic prior. It gracefully degraded
+its strategy, assigning the unknown node a neutral priority weight while focusing on recognizable
+end-goals.
 "reasoning": "Enemy defeat is the current bottleneck with no progress.",
 "w_wood": 0.8,
 "w_stone": 0.8,
 "w_zylorg": 0.9,
 "w_iron": 0.9,
 "w_enemy": 1.2
-Because w_zylorg was not artificially inflated, the MAPPO workers, driven by the baseline
-extrinsic rewards for crafting a Sword, naturally explored the environment, discovered the ‘Zylorg‘
-station was the required prerequisite, and solved the bottleneck via standard PPO exploration.
-The Commander’s ignorance prevented it from interfering with the RL algorithm’s foundational
-mechanics.
-Conversely, the ‘Furnace‘ shift failed severely on advanced tasks (‘Iron‘, ‘Sword‘) due to reward
-hacking. The Commander correctly deduced zero-shot that a Furnace serves an identical
-semantic purpose to a crafting bench, as demonstrated in its reasoning logs:
-"reasoning": "Agents are not crafting Pickaxe or Sword, indicating a
+Because the Commander did not artificially inflate the unknown target, the MAPPO workers
+organically explored the map, discovered the Zylorg station themselves, and solved the bottleneck. The LLM correctly stepped back and let the standard RL exploration mechanics take over.
+A programmed script would have simply crashed.
+When the Commander encountered the Furnace alias, it successfully executed a zero-shot
+semantic mapping. It correctly reasoned that a furnace serves an identical purpose to a crafting
+bench:
+
+"reasoning": "Agents are not crafting Pickaxe or Sword, indicating a
 bottleneck at the Workbench.",
 "w_furnace": 0.4,
 "w_iron": 0.2
-However, by mapping the Furnace to the crafting bottleneck, the Commander heavily skewed
-the Potential-Based Reward Shaping (PBRS) landscape. The MAPPO workers successfully
-crafted the Pickaxe (Figure 29), but subsequently discovered they could accumulate massive
-intrinsic returns simply by navigating back to the Furnace and idling there. They optimized for
-the dense shaping signal at the expense of the sparse extrinsic reward, halting all exploration for
-‘Iron‘ and ‘Sword‘.
-This finding highlights a key vulnerability in neuro-symbolic MARL architectures: while LLMs
-possess exceptional zero-shot semantic mapping, coupling high-confidence oracle weights with
-dense gradient shaping can inadvertently trap low-level workers in local optima.
+The Commander successfully adapted its logic to the new terminology. The failure of the Furnace
+run was not a failure of the LLM. Rather, the LLM was too confident. By heavily weighting the
+Furnace, it skewed the continuous reward landscape. The MAPPO workers discovered they
+could accumulate massive intrinsic rewards simply by navigating to the Furnace and idling there.
+They reward-hacked the dense shaping signal and abandoned all exploration for Iron and
+Sword.
+This experiment validates the core advantage of neuro-symbolic MARL architectures. An LLM
+provides immediate, code-free adaptation to new environments. However, developers must be
+careful: coupling an LLM’s high-confidence semantic logic with continuous gradient shaping can
+easily trap low-level workers in local optima.
+
+7.5
+
+Qualitative Observations: Emergent Kinetic Behaviors
+
+While quantitative metrics show the LLM Commander successfully directing semantic objectives,
+visual analysis reveals the MAPPO workers retain their capacity for highly optimized emergent
+behavior.
+RL agents inherently exploit mechanics to minimize execution time and maximize discounted
+returns. Since our environment shares inventory instantaneously, the workers discovered
+non-obvious cooperative strategies:
+• Asymmetric Crafting (Hit-and-Run): Rather than gathering materials together, the policy
+converges on a specialized division of labor. One agent stays at the crafting station to forge
+weapons, while the second rushes to stand adjacent to the Enemy. Because inventory
+updates globally, the moment the first agent crafts the Sword, the second instantly uses it
+to strike. This eliminates all travel time.
+• Spawn Camping: During the endgame, one agent often positions itself exactly on the
+Gold spawn tile and waits idly while its partner engages the Enemy. When the Enemy is
+defeated, the waiting agent collects the Gold on the very next timestep.
+Although the LLM Commander provided the semantic structure, the PPO workers ruthlessly
+optimized the kinetic execution. This demonstrates a key strength of the neuro-symbolic
+hierarchy: the LLM prevents agents from getting lost in sparse-reward graphs, while the RL
+policy discovers spatial and temporal optimizations a scripted system would miss.6
+
+6
+
+Video recordings of these emergent behaviors: https://youtu.be/oLo0zAtuO0Y
 
 8
 
 Conclusion: The Future of Neuro-Symbolic Control
 
-This thesis investigated the integration of Large Language Models (LLMs) with Multi-Agent
-Reinforcement Learning (MARL) to overcome the severe exploration bottlenecks inherent in
-sparse-reward environments. By structuring the environment as a strict Directed Acyclic Graph
-(DAG) of dependencies, we evaluated two distinct neuro-symbolic architectures: continuous Dynamic Reward Shaping (the “Mixing Board” approach) and discrete Hierarchical Reinforcement
-Learning (the “Meta-Controller” approach).
+This thesis investigated the integration of Large Language Models (LLMs) with Multi-Agent Reinforcement Learning (MARL) to overcome exploration bottlenecks in sparse-reward environments.
+By structuring the environment as a strict Directed Acyclic Graph (DAG) of dependencies, we
+evaluated two distinct neuro-symbolic architectures: continuous Dynamic Reward Shaping (the
+“Mixing Board” approach) and discrete Hierarchical Reinforcement Learning (the “Meta-Controller”
+approach).
 The results demonstrate that while LLMs possess exceptional zero-shot semantic planning
-capabilities, acting as high-level Commanders for low-level kinetic workers, integrating them
-introduces profound challenges regarding reward stationarity, semantic grounding, and temporal
-alignment.
+capabilities as high-level Commanders for low-level kinetic workers, integrating them introduces
+significant challenges regarding reward stationarity, semantic grounding, and temporal alignment.
 
 8.1
 
@@ -3492,56 +3489,60 @@ Review of Findings
 Our first major realization was the successful implementation of a dynamic Potential-Based
 Reward Shaping (PBRS) framework. We demonstrated that an LLM could actively monitor
 MARL agents and shift priority weights to guide exploration, successfully unblocking mid-game
-bottlenecks that a standard sparse-reward MAPPO baseline failed to solve. We proved the
-mathematical necessity of Exponential Moving Average (EMA) smoothing; without it, discrete
-jumps in the Commander’s weight assignments induced severe Temporal Difference (TD) error
-variance, triggering catastrophic forgetting in the underlying PPO policies.
-The transition to a Hierarchical Reinforcement Learning (HRL) architecture represented our
-most significant qualitative leap. By allowing the Commander to dictate discrete macro-actions
-(Options) rather than merely adjusting the gravitational pull of rewards, the agents mastered the
-entire environment DAG, reaching 100% completion on the final milestones. Through ablation,
-we established that QLoRA fine-tuning is absolutely critical for sample efficiency, enabling the
-agents to reach the final objective approximately 5.1× faster than an un-finetuned base model.
+bottlenecks that a standard sparse-reward MAPPO baseline failed to solve. However, we proved
+the mathematical necessity of Exponential Moving Average (EMA) smoothing; without it, discrete
+jumps in the Commander’s weight assignments induced spikes in Temporal Difference (TD) error
+variance, causing temporary regressions in the underlying PPO policies.
+The transition to a Hierarchical Reinforcement Learning (HRL) architecture represented a
+notable improvement in reliability. By allowing the Commander to dictate discrete macro-actions
+(Options) rather than adjusting the gravitational pull of rewards, the agents mastered the entire
+environment DAG, reaching 100% completion on the final milestones. Through ablation, we
+established that QLoRA fine-tuning is highly beneficial for sample efficiency, enabling the agents
+to reach the final objective approximately 5.1× faster than an un-finetuned base model.
 Despite these successes, our experiments revealed vulnerabilities in neuro-symbolic MARL
-paradigms, highlighting a fundamental misalignment between an LLM’s semantic priors and
-kinetic reality. We isolated two major failure modes:
+paradigms, highlighting a mismatch between an LLM’s semantic priors and kinetic reality. We
+isolated two primary failure modes:
 1. We discovered that when an LLM possesses strong zero-shot knowledge of a concept
-(such as mapping a "Furnace" to crafting), it confidently warps the shaping signal and
-inadvertently traps the agents in a local optimum via reward hacking. Conversely, when
-presented with nonsense strings ("Zylorg"), its semantic ignorance acted as a natural
-regularizer, allowing the underlying PPO exploration mechanics to organically solve the
-bottleneck.
-2. Endowing the LLM with counterfactual reflection generated 2.3× more staleness resets
-and actively delayed convergence. Because the LLM was fine-tuned on synthetic data
-where timeouts implied logical failures, it learned to doubt its own correct reasoning when
-faced with purely kinetic delays. This resulted in rapid, contradictory option switching that
-destabilized the PPO Critic, proving that reactive self-debugging is highly detrimental if the
+(such as mapping a "Furnace" to crafting), it can confidently warp the shaping signal and
+trap the agents in a local optimum via reward hacking. Conversely, when presented with
+nonsense strings ("Zylorg"), its semantic ignorance acted as a natural regularizer, allowing
+the underlying PPO exploration mechanics to organically solve the bottleneck.
+2. Endowing the LLM with counterfactual reflection generated 2.3× more staleness resets and
+delayed convergence. Because the LLM was fine-tuned on synthetic data where timeouts
+implied logical failures, it learned to doubt its own correct reasoning when faced with purely
+kinetic delays. This resulted in rapid, contradictory option switching that destabilized the
+PPO Critic, proving that reactive self-debugging is counterproductive if the model cannot
+distinguish between a logical error and physical friction.
 
-model cannot distinguish between a logical error and physical friction.
-Finally, the computational overhead of running an LLM in the training loop remains a significant
-limitation, severely bounding the scalability of this architecture for high-frequency control tasks
-despite the use of quantized, localized models.
+Finally, the computational overhead of running an LLM in the training loop remains a practical
+limitation for high-frequency control tasks, despite the use of quantized, localized models.
 
 8.2
 
 Prospective Vision and Recommendations
 
-The findings of this thesis lay the groundwork for more robust neuro-symbolic architectures,
-carrying direct implications for complex coordination problems such as robotic swarm control,
-automated supply chain logistics, and advanced game AI. To realize this potential, future
-research must fundamentally bridge the gap between semantic logic and temporal delays.
+The findings of this thesis lay the groundwork for more robust neuro-symbolic architectures, carrying implications for complex coordination problems such as robotic swarm control, automated
+supply chain logistics, and advanced game AI. To realize this potential, future research must
+fundamentally bridge the gap between semantic logic and temporal delays.
 Rather than relying on simple text-based timeout triggers, Meta-Controllers should be equipped
 with spatio-temporal memory or multimodal state representations. This would allow the Commander to visually or temporally differentiate between a fundamentally flawed plan and a correct
 plan that merely requires the workers to spend more physical time navigating the grid.
 Additionally, the stabilization of non-stationary objectives requires refinement. While our static
-KL-divergence guardrail (δ = 0.015) successfully prevented catastrophic forgetting during option
-transitions, implementing an adaptive trust region could further stabilize the PPO workers.
-Scaling the KL threshold dynamically based on the LLM’s confidence or the specific Option type
-offers a more nuanced defense against objective shifts.
-Finally, the current architecture evaluates cooperative agents executing a shared Meta-Controller
-policy. A highly prospective avenue for future work is the development of decentralized HRL,
-where multiple LLMs act as adversarial or dynamically allied faction leaders managing subgroups of agents. Expanding into these complex diplomacy and resource-competition scenarios
-would thoroughly test the boundaries of MARL and AI alignment.
+KL-divergence guardrail (δ = 0.015) successfully stabilized the PPO workers during option
+transitions, implementing an adaptive trust region could provide further robustness. Scaling the
+KL threshold dynamically based on the LLM’s confidence or the specific Option type offers a
+more nuanced defense against objective shifts.
+Perhaps the most promising avenue for future research is the concept of recursive selfimprovement through RL-driven self-alignment. Recent works like STaR (zelikman2022star)
+and Voyager (wang2023voyager) demonstrate that agentic LLMs can iteratively build skill libraries or generate reasoning traces that improve their own foundation. In our MARL context,
+the environment itself serves as an absolute verifier: if the LLM issues an Option and the PPO
+workers successfully achieve it, that trajectory constitutes ground-truth success. This successful
+reasoning trace can be distilled back into the LLM via DPO (Direct Preference Optimization),
+creating a closed-loop system where the LLM continuously refines its own kinetic understanding
+based on the physical successes and failures of its RL agents.
+Finally, while the current architecture evaluates cooperative agents executing a shared MetaController policy, a natural extension is the development of decentralized HRL. In this setting,
+multiple LLMs act as adversarial or dynamically allied faction leaders managing sub-groups of
+agents. Expanding into these complex diplomacy and resource-competition scenarios would
+thoroughly test the boundaries of MARL and AI alignment.
 This thesis demonstrates that while Large Language Models are profoundly powerful strategic
 directors for MARL agents, they must not be treated as infallible oracles. The path forward lies in
 designing architectures that safely balance the high-level semantic brilliance of language models
