@@ -1,7 +1,7 @@
 % ==========================================================================
 % Section 6 — HRL Architecture: The "Meta-Controller" Approach
 % ==========================================================================
-\section{The Meta-Controller: Discrete Neuro-Symbolic HRL}
+\section{Architecture 2: Hierarchical RL with an LLM Meta-Controller}
 \label{ch:hrl_architecture}
 
 The previous chapter established the \emph{Mixing Board} architecture, representing a "soft integration" of Large Language Models into MARL. In that paradigm, the LLM acted as an environmental architect, manipulating the gravitational pull of potential-based rewards to gently guide the agents toward logical milestones. While this separation preserves the underlying Markov properties, it restricts the LLM to an indirect role: it can only suggest a direction, not enforce a strategy. 
@@ -65,7 +65,7 @@ The exposition follows the implementation order:
     % Env -> Controller (reset on terminal)
     \draw[arr,dashed] (env.north east) -- node[right,font=\footnotesize,pos=0.3]{\scriptsize terminal} (ctrl.south west);
 \end{tikzpicture}
-\caption{Two-level HRL architecture. The LLM Meta-Controller is triggered by option success or staleness (dashed). The OptionController passes one-hot embeddings to the MAPPO agent at every step (solid), directly altering the agent's cognitive state.}
+\caption[Two-Level HRL Architecture]{Two-level HRL architecture. The LLM Meta-Controller is triggered by option success or staleness (dashed). The OptionController passes one-hot embeddings to the MAPPO agent at every step (solid), directly altering the agent's cognitive state.}
 \label{fig:hrl_system_flow}
 \end{figure}
 
@@ -422,7 +422,7 @@ Fine-tuning was performed on the local workstation's NVIDIA RTX 5070 GPU (12GB V
 
 \begin{table}[H]
     \centering
-    \caption{QLoRA fine-tuning hyperparameters. Values marked with $\dagger$ were constrained by the 12GB VRAM budget.}
+    \caption[QLoRA Fine-Tuning Hyperparameters]{QLoRA fine-tuning hyperparameters. Values marked with $\dagger$ were constrained by the 12GB VRAM budget.}
     \label{tab:qlora_training_config}
     \begin{tabular}{@{}llr@{}}
         \toprule
@@ -470,7 +470,7 @@ The complete fine-tuning process converged in approximately \textbf{3.1 hours} (
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.85\textwidth]{../../plots/qlora/QLoRA_Training_Performance.png}
-    \caption{QLoRA adapter fine-tuning performance over 1,910 training steps. The training loss (left axis) converges rapidly within the first 500 steps, while the mean token accuracy (right axis) saturates near 100\%.}
+    \caption[QLoRA Adapter Fine-Tuning Performance]{QLoRA adapter fine-tuning performance over 1,910 training steps. The training loss (left axis) converges rapidly within the first 500 steps, while the mean token accuracy (right axis) saturates near 100\%.}
     \label{fig:qlora_training}
 \end{figure}
 

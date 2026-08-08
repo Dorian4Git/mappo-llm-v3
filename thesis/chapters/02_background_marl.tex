@@ -1,10 +1,10 @@
 % ==========================================================================
 % Chapter 2 — Background and State of the Art
 % ==========================================================================
-\section{The Kinetic Baseline: Multi-Agent Reinforcement Learning}
+\section{Background: Multi-Agent Reinforcement Learning}
 \label{ch:background}
 
-This chapter establishes the theoretical foundations required to contextualize the neuro-symbolic multi-agent architectures presented in this thesis. We begin by formalizing single-agent Markovian decision processes and policy optimization. We then extend these concepts to multi-agent environments under partial observability, detailing the Centralized Training with Decentralized Execution (CTDE) paradigm and Multi-Agent Proximal Policy Optimization (MAPPO). Finally, we examine temporal abstraction frameworks, specifically Potential-Based Reward Shaping (PBRS) and the Options framework, before reviewing modern integrations of Large Language Models (LLMs) as cognitive controllers.
+This chapter covers the theoretical foundations for the architectures developed in this thesis. We begin by formalizing single-agent Markovian decision processes and policy optimization. We then extend these concepts to multi-agent environments under partial observability, detailing the Centralized Training with Decentralized Execution (CTDE) paradigm and Multi-Agent Proximal Policy Optimization (MAPPO). Finally, we examine temporal abstraction frameworks, specifically Potential-Based Reward Shaping (PBRS) and the Options framework, before reviewing modern integrations of Large Language Models (LLMs) as cognitive controllers.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Fundamentals of Reinforcement Learning}
@@ -56,7 +56,7 @@ We can map each of these mathematical variables directly to our wood-collecting 
     \item $\mathcal{A}$ is the set of available actions. For our agent, this might be limited to \{Move North, Move South, Interact/Chop\}.
     \item $\mathcal{P}: \mathcal{S} \times \mathcal{A} \times \mathcal{S} \rightarrow [0, 1]$ is the transition probability. If the agent chooses the 'Move North' action, $\mathcal{P}$ defines the chance it actually lands on the tile above (e.g., 100\%, or perhaps 90\% if the environment includes slippery terrain).
     \item $\mathcal{R}: \mathcal{S} \times \mathcal{A} \rightarrow \mathbb{R}$ is the reward function. This is the environment's feedback, such as emitting $+1.0$ for successfully chopping the wood, or $-0.01$ for wasting a step.
-    \item $\gamma \in [0, 1)$ is the discount factor. This is a mathematical trick (e.g., 0.99) that makes immediate rewards slightly more valuable than future rewards, forcing the agent to collect the wood efficiently rather than wandering the grid forever.
+    \item $\gamma \in [0, 1)$ is the discount factor. This is a design parameter (e.g., 0.99) that makes immediate rewards slightly more valuable than future rewards, forcing the agent to collect the wood efficiently rather than wandering the grid forever.
 \end{itemize}
 
 To navigate this world, the agent needs a strategy, known as a \emph{policy}. Rather than a rigid set of if/then rules, modern RL utilizes a stochastic (probabilistic) policy, denoted mathematically as $\pi(a \mid s) = \mathbb{P}[A_t = a \mid S_t = s]$~\parencite{Sutton_Barto_2018}.
@@ -121,7 +121,7 @@ As illustrated in Figure~\ref{fig:actor_critic}, this dual-network architecture 
     \draw[arrow, dashed, draw=purple!80] (critic_grad.north) -- (critic.south);
 
 \end{tikzpicture}
-\caption{The Actor-Critic architecture. The Actor maximizes its performance via gradient ascent, while the Critic minimizes its prediction error via gradient descent.}
+\caption[The Actor-Critic Architecture]{The Actor-Critic architecture. The Actor maximizes its performance via gradient ascent, while the Critic minimizes its prediction error via gradient descent.}
 \label{fig:actor_critic}
 \end{figure}
 
@@ -163,7 +163,7 @@ However, if the agent unexpectedly finds a hidden cache of wood and receives an 
     \draw[brace, draw=red!80] (7.2, 5.5) -- (7.2, 4.0) node[midway, right=0.3cm, font=\small\sffamily\bfseries, text=red!80, align=left] {TD-Error $\delta_t$\\ (Surprise Gap)};
     
 \end{tikzpicture}
-\caption{Visualizing the Temporal Difference (TD) Error as the mathematical gap between the Critic's prior prediction and the newly observed reality.}
+\caption[Visualizing the Temporal Difference (TD) Error]{Visualizing the Temporal Difference (TD) Error as the mathematical gap between the Critic's prior prediction and the newly observed reality.}
 \label{fig:td_error_visual}
 \end{figure}
 
@@ -265,7 +265,7 @@ Let us consider the lumberjack standing next to a tree. Under the old policy, it
         \draw[->, thick, draw=red!80] (2.0, 0.5) -- (3.5, 0.5) node[midway, above, font=\tiny\sffamily] {Massive Shift};
     \end{scope}
 \end{tikzpicture}
-\caption{Visualizing KL Divergence. A small divergence (left) preserves the core behavior while optimizing safely. A large divergence (right) indicates the new policy has aggressively abandoned the old behavior, potentially leading to catastrophic forgetting.}
+\caption[Visualizing KL Divergence]{Visualizing KL Divergence. A small divergence (left) preserves the core behavior while optimizing safely. A large divergence (right) indicates the new policy has aggressively abandoned the old behavior, potentially leading to catastrophic forgetting.}
 \label{fig:kl_divergence}
 \end{figure}
 
@@ -319,7 +319,7 @@ As illustrated in Figure~\ref{fig:dec_pomdp}, this scenario is formally modeled 
     \draw[arrow, dashed, draw=red!70] (env.south) -- ++(0, -0.6) -| ([xshift=0.6cm]agent2.south);
 
 \end{tikzpicture}
-\caption{The Dec-POMDP interaction framework. The true global state is obscured by an observation filter, distributing localized views and a shared reward to decentralized agents.}
+\caption[The Dec-POMDP Interaction Framework]{The Dec-POMDP interaction framework. The true global state is obscured by an observation filter, distributing localized views and a shared reward to decentralized agents.}
 \label{fig:dec_pomdp}
 \end{figure}
 
@@ -405,7 +405,7 @@ However, during online deployment, this centralized structure is severed. The Cr
 
 Before the widespread adoption of Actor-Critic methods in multi-agent settings, the field heavily relied on value-decomposition techniques to solve the credit assignment problem. Algorithms like Value-Decomposition Networks (VDN)~\parencite{Sunehag_Lever_Gruslys_Czarnecki_Zambaldi_Jaderberg_Lanctot_Sonnerat_Leibo_Tuyls_et_al._2017} and QMIX~\parencite{Rashid_Samvelyan_Witt_Farquhar_Foerster_Whiteson_2018} became popular by factorizing a global reward into individual agent contributions. QMIX, for example, enforces a strict monotonic relationship between the global value and the local values of the agents. However, these structural constraints limit the types of cooperative tasks these algorithms can solve effectively~\parencite{Castellini_2022}.
 
-More recently, research has demonstrated that on-policy Actor-Critic methods can avoid these constraints altogether while matching or exceeding the performance of off-policy factorization methods. Multi-Agent PPO (MAPPO) brings our grid-world to life by extending the single-agent PPO architecture directly into the CTDE paradigm~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022}. The elegance of MAPPO lies in its simplicity: the decentralized Actors remain mathematically identical to standard PPO, while only the Centralized Critic is modified to process the global environment state.
+More recently, research has demonstrated that on-policy Actor-Critic methods can avoid these constraints altogether while matching or exceeding the performance of off-policy factorization methods. Multi-Agent PPO (MAPPO) brings our grid-world to life by extending the single-agent PPO architecture directly into the CTDE paradigm~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022}. MAPPO is straightforward: the decentralized Actors remain mathematically identical to standard PPO, while only the Centralized Critic is modified to process the global environment state.
 
 The Centralized Critic Network (Value), parameterized by $\phi$, learns the value function $V_\phi(\mathbf{s}_t)$. Crucially, $\mathbf{s}_t$ is the unclipped global joint state. In our RPG scenario, while the lumberjack only sees the trees immediately in front of them, the Critic sees the entire map, knowing exactly where both the lumberjack and the miner are located, and what resources they hold. By estimating baseline returns using this true reality of the board, the Critic stabilizes the variance in its Advantage calculations. It is optimized by minimizing the Mean Squared Error against the actual calculated returns $\hat{R}_t$~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022}:
 \begin{equation}

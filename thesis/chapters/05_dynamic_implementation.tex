@@ -1,11 +1,11 @@
 % ==========================================================================
 % Section 5 — LLM Dynamic Implementation: The "Mixing Board" Approach
 % ==========================================================================
-\section{The Mixing Board: LLM-Driven Reward Shaping}
+\section{Architecture 1: LLM-Driven Dynamic Reward Shaping}
 \label{ch:dynamic_implementation}
 
 This chapter details the first integration strategy: LLM-driven dynamic reward shaping, informally referred to as the \emph{Mixing Board} approach.
-Intuitively, this approach separates \emph{strategy} from \emph{execution}. Returning to our established metaphor, the LLM acts as the Commander standing at a strategic mixing board, adjusting priority dials for various subtasks. Meanwhile, the low-level PPO agents~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022} (the lumberjack and miner) act as the kinetic workers, navigating the physical grid-world to fulfill whichever priority is currently dialed highest.
+Intuitively, this approach separates \emph{strategy} from \emph{execution}. The LLM acts as a Commander standing at a strategic mixing board, adjusting priority dials for various subtasks. Meanwhile, the low-level PPO agents~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022} (the lumberjack and miner) act as kinetic workers, navigating the physical grid-world to fulfill whichever priority is currently dialed highest.
 
 The Commander (our mixing board) does not act directly inside the environment. Instead, it periodically observes the agents' progress and adjusts a vector of subtask priority weights. These weights govern two things:
 \begin{enumerate}[nosep]
@@ -65,7 +65,7 @@ However, at the end of every training update, a \emph{Critic Trigger} acts as a 
     % Vertical feed
     \draw[arr,dashed] (env.south) -- node[left,font=\footnotesize]{TD stats} (trigger.north);
 \end{tikzpicture}
-\caption{Dataflow of the LLM Dynamic ``Mixing Board'' approach. Solid arrows denote high-frequency per-step operations (execution); the dashed arrow indicates low-frequency per-update monitoring (strategy).}
+\caption[Dataflow of the Mixing Board Approach]{Dataflow of the LLM Dynamic ``Mixing Board'' approach. Solid arrows denote high-frequency per-step operations (execution); the dashed arrow indicates low-frequency per-update monitoring (strategy).}
 \label{fig:dyn_system_flow}
 \end{figure}
 
@@ -137,7 +137,7 @@ While the actors pursue only one goal at a time, the LLM weights for the unselec
     \end{scope}
 
 \end{tikzpicture}
-\caption{Visualization of Dynamic Goal Selection. The planner evaluates all feasible tasks, but only the task with the maximum score (orange) is selected as the active goal.}
+\caption[Visualization of Dynamic Goal Selection]{Visualization of Dynamic Goal Selection. The planner evaluates all feasible tasks, but only the task with the maximum score (orange) is selected as the active goal.}
 \label{fig:goal_selection_bars}
 \end{figure}
 
@@ -336,7 +336,7 @@ where $\mathbf{p}^{(i)}(s)\in\mathbb{R}^2$ is the agent's $(x,y)$ position, $\ma
     % Gravity Pull Vector (Gradient)
     \draw[pull] (agent) -- (2.6, 2.28) node[midway, above left, font=\small\sffamily\bfseries, text=red!80, align=center] {Magnetic\\Pull};
 \end{tikzpicture}
-\caption{Visualizing the Potential Function $\Phi$. The scalar potential strictly increases as the agent approaches the active target, creating a directional pull that guides navigation.}
+\caption[Visualizing the Potential Function]{Visualizing the Potential Function $\Phi$. The scalar potential strictly increases as the agent approaches the active target, creating a directional pull that guides navigation.}
 \label{fig:potential_gravity}
 \end{figure}
 

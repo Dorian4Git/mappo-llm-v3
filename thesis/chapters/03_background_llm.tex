@@ -1,7 +1,7 @@
 % ==========================================================================
 % Chapter 3 — Background: Large Language Models
 % ==========================================================================
-\section{The Semantic Engine: Large Language Models}
+\section{Background: Large Language Models and Fine-Tuning}
 \label{ch:background_llm}
 
 In the previous chapter, we established how the Options framework allows our lumberjack and miner to execute discrete macro-actions, such as \texttt{COLLECT\_WOOD} or \texttt{BUILD\_BRIDGE}. However, MARL agents cannot inherently deduce the logical sequence of these macro-actions. This chapter introduces the theoretical foundations of Large Language Models (LLMs) and their optimization mechanisms. It establishes how these autoregressive models can act as a high-level "Commander," parsing the semantic state of the grid-world and issuing the correct strategic sequence to the agents below.
@@ -102,14 +102,14 @@ where $s_{i,j}$ represents the raw, scaled dot-product score between query $i$ a
 
 The \emph{softmax} function converts the raw attention scores into a valid probability distribution. At the very end of the network, a final softmax layer converts the model's output into the probability $P(y_i)$ of the next token over the entire vocabulary.
 
-The generation process behaves like a strict deterministic time-loop: the model predicts a single word, and that new word instantly becomes part of the unchangeable past context used to predict the very next word (as shown by the blue feedback loop in Figure~\ref{fig:clm_autoregressive}). It is relevant to see how it learns at first when it is trained even so we won't train from a moel from scratch in our implementation. Given a context sequence $X$ and a target sequence of tokens $\mathbf{y} = (y_1, y_2, \dots, y_N)$, the network is optimized by minimizing the negative log-likelihood (Categorical Cross-Entropy) over the sequence~\parencite{Radford_Narasimhan_Salimans_Sutskever_2018}:
+The generation process behaves like a strict deterministic time-loop: the model predicts a single word, and that new word instantly becomes part of the unchangeable past context used to predict the very next word (as shown by the blue feedback loop in Figure~\ref{fig:clm_autoregressive}). Although we do not train a model from scratch in our implementation, it is relevant to understand the training objective. Given a context sequence $X$ and a target sequence of tokens $\mathbf{y} = (y_1, y_2, \dots, y_N)$, the network is optimized by minimizing the negative log-likelihood (Categorical Cross-Entropy) over the sequence~\parencite{Radford_Narasimhan_Salimans_Sutskever_2018}:
 \begin{equation}
 \label{eq:clm_loss}
     L_{\text{CLM}} = -\frac{1}{N} \sum_{i=1}^{N} \log P(y_i \mid y_{<i}, X; \Theta)
 \end{equation}
 where $\Theta$ represents the parameters of the neural network. As visualized by the backward gradient flow in Figure~\ref{fig:clm_autoregressive}, it penalizes the model when the probability assigned to the correct target token $y^*_i$ is too low, and gradients ($\nabla_\Theta$) are backpropagated to update the model weights.
 
-This foundational pre-training over trillions of words endows LLMs with vast latent world models, encompassing logical dependencies, domain knowledge, and common-sense heuristics. 
+This pre-training over trillions of tokens gives LLMs implicit knowledge of logical dependencies, domain facts, and common-sense heuristics. 
 
 But why is this specific architecture so critical for our multi-agent framework? During a standard MARL episode, the local Qwen model acts as a frozen, inference-only "Commander". It is \emph{not} actively learning or updating its weights via Equation~\ref{eq:clm_loss}. Instead, we rely entirely on the Attention Mechanism (Equation~\ref{eq:self_attention}) to perform \emph{in-context} reasoning. When we feed the model the full game state as a prompt (e.g., \emph{"Agent 1 is at [2,3] and holds Wood and Stone. It must craft a Pickaxe,"}), the attention mechanism is exactly what allows the network to mathematically link the available inventory (\emph{"Wood"}, \emph{"Stone"}) with the goal (\emph{"Pickaxe"}) to deduce the correct next macro-action. The autoregressive generation loop then allows it to construct and output the command \texttt{GO\_TO\_WORKBENCH} step-by-step. 
 
@@ -220,7 +220,7 @@ where $\alpha$ is a constant scaling factor~\parencite{Hu_Shen_Wallis_Allen-Zhu_
 
 Once this forward pass is complete and the model generates its sequence, how does it actually learn to fix its mistakes? This is where the Causal Language Modeling loss ($L_{\text{CLM}}$) from Equation~\ref{eq:clm_loss} returns to the stage~\parencite{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023}. If the model outputs a malformed JSON, the $L_{\text{CLM}}$ calculates the mathematical error between the model's output and the true desired output. 
 
-The optimizer then uses \emph{backpropagation} to send this error signal backward through the network to update the weights. As visualized by the localized gradient annotations in Figure~\ref{fig:lora_architecture}, the computational brilliance of QLoRA is realized exclusively during this backward pass~\parencite{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023}. When the gradients (the update instructions, $\nabla_{W_0}$) reach the massive $W_0$ matrix, they are simply discarded, because $W_0$ is frozen~\parencite{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023}. 
+The optimizer then uses \emph{backpropagation} to send this error signal backward through the network to update the weights. As visualized by the localized gradient annotations in Figure~\ref{fig:lora_architecture}, the key efficiency of QLoRA appears during this backward pass~\parencite{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023}. When the gradients (the update instructions, $\nabla_{W_0}$) reach the massive $W_0$ matrix, they are simply discarded, because $W_0$ is frozen~\parencite{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023}. 
 
 Instead, the error signal flows down the new adapter pathway via the Chain Rule of calculus. Let $L$ represent the loss and $\frac{\partial L}{\partial h}$ represent the error signal arriving from the network's output. Because the forward pass computes $B(Ax)$, the backward pass encounters matrix $B$ first. As shown in Equation~\ref{eq:lora_backprop}, calculating the gradient for $B$ ($\nabla_B$) relies on the cached forward outputs of $A$. To calculate the gradient for $A$ ($\nabla_A$), the error signal must flow backward through the transpose of $B$ ($B^T$):
 \begin{align}
@@ -232,7 +232,7 @@ This mathematical sequence proves why $\nabla_B$ can be calculated immediately u
 
 Understanding this localized gradient flow is critical to the feasibility of this thesis. In standard RL, agents are relatively small neural networks. However, if our training loop had to calculate and store the gradient $\nabla_{W_0}$ for all 7 billion parameters of the Qwen LLM, the workstation would immediately crash due to an Out-Of-Memory (OOM) error. By mathematically restricting the backpropagation updates exclusively to $\nabla_A$ and $\nabla_B$, we avoid allocating these massive gradient tensors. The optimizer selectively applies these lightweight updates \emph{only} to the low-dimensional adapter matrices~\parencite{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023}. 
 
-Combined, this targeted gradient flow and aggressive 4-bit quantization reduce overall VRAM consumption by up to 75\% compared to full fine-tuning~\parencite{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023}. This ultimate computational efficiency is precisely what enables our Qwen Commander to learn its JSON-formatting rules locally, running seamlessly alongside the heavy MAPPO environment without exhausting the workstation's memory budget.
+Combined, this targeted gradient flow and aggressive 4-bit quantization reduce overall VRAM consumption by up to 75\% compared to full fine-tuning~\parencite{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023}. This computational efficiency is what enables our Qwen Commander to learn its JSON-formatting rules locally, running alongside the heavy MAPPO environment without exhausting the workstation's memory budget.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{The Qwen Architecture and Model Selection}
@@ -257,7 +257,7 @@ Llama 3.1 8B Instruct & 72.6 & 84.5 \\
 Gemma 2 9B & 40.2 & 68.6 \\
 \bottomrule
 \end{tabular}
-\caption{Comparison of zero-shot coding and multi-step reasoning performance among mid-range models.}
+\caption[Comparison of Mid-Range LLMs]{Comparison of zero-shot coding and multi-step reasoning performance among mid-range models.}
 \label{tab:model_benchmarks}
 \vspace{3mm}
 {\raggedleft \footnotesize Adapted from \parencite{Qwen_Yang_Yang_Zhang_Hui_Zheng_Yu_Li_Liu_Huang_et_al_2024} \par}
@@ -335,4 +335,4 @@ However, the low-level agents may sometimes fail to achieve the assigned goal. T
 \label{fig:verbal_reflection}
 \end{figure}
 
-Together, these assembled mechanisms form a complete neuro-symbolic feedback loop: the LLM dictates the logical \emph{what}, and the MAPPO algorithm learns the spatial \emph{how}. Having established the kinetic baseline of reinforcement learning and the semantic capabilities of large language models, the theoretical foundation of this thesis is now complete. The following chapters will demonstrate exactly how these components are engineered and deployed together, beginning with the design of the dependency-driven testbed.
+Together, these mechanisms form the neuro-symbolic feedback loop used in this thesis: the LLM handles task sequencing, and MAPPO handles spatial execution. The following chapters detail how these components are integrated, beginning with the design of the environment.

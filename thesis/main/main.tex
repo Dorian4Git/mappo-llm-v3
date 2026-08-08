@@ -10,10 +10,10 @@
 \setlength{\bibitemsep}{12pt} % Sets the space between bibliography items
 
 % --- Metadata ---
-\newcommand{\authorname}{Dorian Thomé}
-\newcommand{\shortauthors}{D. Thomé}
-\newcommand{\fulltitle}{Bridging Reasoning and Kinetic Execution in Multi-Agent Reinforcement Learning}
-\newcommand{\shorttitle}{Bridging Reasoning \& Kinetic Execution in MARL}
+\newcommand{\authorname}{Dorian THOMÉ}
+\newcommand{\shortauthors}{D. THOMÉ}
+\newcommand{\fulltitle}{Bridging Reasoning and Reactive Execution in Multi-Agent Reinforcement Learning}
+\newcommand{\shorttitle}{Bridging Reasoning \& Reactive Execution in MARL}
 \newcommand{\place}{Geneva}
 \newcommand{\keywords}[1]{\par \vspace{.01em}\noindent{\small\bfseries \keywordsname:} #1\par}
 \def\keywordsname{Keywords}
@@ -33,7 +33,7 @@
 % 5. HES-SO Logo Path
 \makeHEGtitle
     {\authorname}
-    {Prof. Dr. Alexandros Kalousis}
+    {Alexandros KALOUSIS, Prof. Dr.}
     {Geneva, \today}
     {../images/heg_logo.png} 
     {../images/hesso_logo.png}
@@ -41,9 +41,13 @@
 \pagenumbering{roman}
 \section*{Declaration} % Required in the Word template
 \addcontentsline{toc}{section}{Declaration}
-I hereby declare that this thesis is my own work and that I have not used any sources other than those cited in the bibliography. I have acknowledged all contributions and assistance received during the research and writing process. This thesis has not been submitted for any other degree or professional qualification.
+This Master’s thesis is carried out as part of the final school examination, with a view to obtaining the title Master of Science HES-SO in Information Sciences.
 
-\vspace{2cm}
+The student attests that he has submitted the work to a plagiarism detection software. The student accepts the confidentiality clause, if applicable. The use of the conclusions and recommendations formulated in the Master’s thesis, without prejudice to their value, does not engage the responsibility of the author, the Master’s thesis, advisor, the jury or the HEG-GE.
+
+\textit{“I hereby certify that this work has been carried out using only the sources cited in the bibliography, that it is the fruit of my personal reflection and has been written independently.”}
+
+\vspace{1.5cm}
 \hfill
 \begin{tabular}{l}
 Done at Geneva, 15th of August 2026 \\[0.5cm]
@@ -80,13 +84,13 @@ Les résultats démontrent que l'architecture HRL surpasse largement le façonna
 
 \section*{Summary}
 \addcontentsline{toc}{section}{Summary}
-Reinforcement learning agents struggle when rewards are sparse. This work looks at combining Large Language Models (LLMs) with Multi-Agent Reinforcement Learning (MARL) to help them explore better. The main goal is to see if an LLM can guide MAPPO agents through a series of connected tasks. We represent these tasks as a Directed Acyclic Graph (DAG).
+Reinforcement learning agents struggle in environments with sparse rewards. This thesis investigates combining Large Language Models (LLMs) with Multi-Agent Reinforcement Learning (MARL) to resolve exploration bottlenecks. The primary objective is to evaluate whether the semantic reasoning of an LLM can guide MAPPO agents through interdependent tasks modeled as a Directed Acyclic Graph (DAG).
 
-We built two different systems for this. The first one is called Dynamic Reward Shaping. It uses the LLM to adjust the weights of a reward function (PBRS) while the agents learn. The second system is a Hierarchical Reinforcement Learning (HRL) Meta-Controller. In this setup, the LLM picks high-level macro-actions for the agents. This alters their local rewards and what they observe. We tested both approaches and ran ablation studies to measure the impact of temporal smoothing, zero-shot adaptation, QLoRA fine-tuning, and counterfactual reflection.
+We developed and evaluated two distinct neuro-symbolic architectures. The first approach, Dynamic Reward Shaping, utilizes the LLM as a strategic supervisor that continuously adjusts the priority weights of a Potential-Based Reward Shaping (PBRS) signal. The second approach introduces a Hierarchical Reinforcement Learning (HRL) Meta-Controller, where the LLM assigns discrete macro-actions (Options) to the agents, directly modifying their observation space and intrinsic rewards. Both architectures were evaluated through ablation studies targeting temporal smoothing, zero-shot semantic adaptation, QLoRA fine-tuning, and counterfactual reflection.
 
-The HRL approach did much better than dynamic shaping. The agents managed to master the entire environment, including the harder combat phases. However, connecting a language model to physical policies creates instability. The agents' goals keep shifting, which causes them to forget what they already learned. We had to implement Exponential Moving Average (EMA) smoothing and Kullback-Leibler (KL) divergence limits to keep the training stable.
+The results demonstrate that the HRL architecture significantly outperforms dynamic shaping, enabling agents to master the entire environment, including complex combat coordination. However, integrating semantic models with kinetic policies introduces severe non-stationarity. Implementing Exponential Moving Average (EMA) smoothing and Kullback-Leibler (KL) divergence guardrails proved necessary to prevent catastrophic forgetting. 
 
-The experiments also revealed two big issues. First, LLMs can be overly confident. This encourages reward hacking and traps the agents in local optima. Second, counterfactual reflection makes the system overreact to normal physical delays, which slows down the learning process. Using QLoRA fine-tuning did make the training five times faster. Despite this, bridging the gap between high-level planning and low-level execution remains difficult. Future models will likely need built-in memory for space and time to solve this completely.
+Furthermore, the research highlights two fundamental vulnerabilities in neuro-symbolic systems. First, the LLM's semantic overconfidence can induce reward hacking, trapping agents in local optima. Second, counterfactual reflection triggers over-correction to simple physical delays, actively degrading learning efficiency. Prospectively, while QLoRA fine-tuning accelerated convergence five-fold, the viability of these architectures for high-frequency control will require the development of foundation models equipped with spatio-temporal memory.
 
 \textbf{Keywords:} Multi-Agent Reinforcement Learning (MARL), Large Language Models (LLMs), Hierarchical Reinforcement Learning (HRL), Reward Shaping, Proximal Policy Optimization (PPO), Neuro-Symbolic AI, QLoRA.
 
@@ -132,12 +136,12 @@ The experiments also revealed two big issues. First, LLMs can be overly confiden
 In the context of this work, the author states that he used artificial intelligence-assisted tools for the following purposes:
 
 \begin{itemize}
-    \item Améliorations formelles (orthographe, syntaxe, reformulation, structure du rapport) aux pages XXX \\
-    Mention des outils d'IA utilisés : Gemini 3.1 Pro
-    \item Réflexions de fond (production d'analyses, de recommandations) aux pages XXX \\
-    Mention des outils d'IA utilisés : Gemini 3.1 Pro
-    \item Collecte et interprétation des données \\
-    Tous les calculs statistiques (dans la partie x de l'analyse\dots) ont été effectués à l'aide de\dots{} Mention des IA utilisées : Gemini 3.1 Pro
+    \item \textbf{Formal Improvements}: Assisted with spelling, syntax, phrasing, and report structuring throughout all chapters.\\
+    \textit{AI tools used:} Gemini 3.1 Pro (via Antigravity Assistant)
+    \item \textbf{Substantive Reflection}: Served as a collaborative sounding board for deep reflection during architectural design, debugging, and data interpretation across Chapters 4, 5, 6, and 7. The author remained the principal instigator and decision-maker for all methodologies and conclusions.\\
+    \textit{AI tools used:} Gemini 3.1 Pro (via Antigravity Assistant)
+    \item \textbf{Asset Generation}: Assisted in generating 2D pixel-art sprites and visual assets used in the custom MARL environment renderer (Chapter 4).\\
+    \textit{AI tools used:} Gemini 1.5 Pro
 \end{itemize}
 
 \newpage
