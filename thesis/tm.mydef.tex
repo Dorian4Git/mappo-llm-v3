@@ -95,7 +95,7 @@
 % Custom Double Light-Grey Footer Rule
 \renewcommand{\footrule}{%
     \begingroup % Starts isolation
-        \color{gray!50}% Set color to light grey
+        \color{black}% Set color to black
         \hrule width \headwidth height 0.5pt \vspace{0.5pt}% First line
         \hrule width \headwidth height 0.5pt \vspace{1.5pt}% Second line
     \endgroup % Ends isolation, protecting your main text
@@ -184,61 +184,48 @@
 % #5: HES-SO Logo Path
 
 \begin{titlepage}
-    % 1. Logos (Absolute Position)
     \begin{tikzpicture}[remember picture, overlay]
-        % Top Left: HEG Logo
-        \node[anchor=north west, xshift=1cm, yshift=-1cm] at (current page.north west) {
+        % 1. Top Left: HEG Logo
+        \node[anchor=north west, xshift=0.4cm, yshift=-0.9cm] at (current page.north west) {
             \includegraphics[width=0.3\textwidth]{#4}
         };
-        % Bottom Right: HES-SO Logo
-        \node[anchor=south east, xshift=-2.5cm, yshift=1.5cm] at (current page.south east) {
+        % 2. Bottom Right: HES-SO Logo
+        \node[anchor=south east, xshift=-1.7cm, yshift=0.8cm] at (current page.south east) {
             \includegraphics[width=0.25\textwidth]{#5}
         };
+
+        % 3. Main Title — bottom of text at 5.8cm from top
+        \node[anchor=south, yshift=-9.0cm] at (current page.north) {
+            \parbox{0.8\textwidth}{\centering\linespread{1.5}\selectfont\fontsize{18}{22}\selectfont\bfseries \fulltitle}
+        };
+
+        % 4. Author — bottom of text at 14.1cm from top
+        \node[anchor=south, yshift=-15.6cm] at (current page.north) {
+            \parbox{0.8\textwidth}{\centering\linespread{1.2}\selectfont
+                {\bfseries Master's thesis by:}\\[0.2cm]
+                {\bfseries #1}}
+        };
+
+        % 5. Supervisor — bottom of text at 19.6cm from top
+        \node[anchor=south, yshift=-19.9cm] at (current page.north) {
+            \parbox{0.8\textwidth}{\centering\linespread{1.2}\selectfont
+                {Under the direction of:}\\[0.2cm]
+                {\bfseries #2}}
+        };
+
+        % 6. Place/Date — centered between Supervisor and School
+        \node[anchor=center, yshift=-22.5cm] at (current page.north) {
+            \parbox{0.8\textwidth}{\centering\linespread{1.2}\selectfont
+                {\bfseries #3}}
+        };
+
+        % 7. School — bottom of text at 25.7cm from top
+        \node[anchor=south, yshift=-26cm] at (current page.north) {
+            \parbox{0.8\textwidth}{\centering\linespread{1.2}\selectfont
+                {\bfseries Information Sciences}\\
+                {\bfseries Haute École de Gestion de Genève (HEG-GE)}}
+        };
     \end{tikzpicture}
-
-    \begin{center}
-        % Adjust this space to push the title down from the top logo
-        \vspace*{3cm} 
-
-        % 2. Title Section
-        \begingroup 
-            \linespread{1.5} \selectfont
-            {\fontsize{18}{22}\selectfont \bfseries \fulltitle} \\[5cm] % Report Title Set to 18pt
-        \endgroup
-
-        % 3. Submission Statement & Author
-        \begingroup 
-            \linespread{1.2} \selectfont
-            {\bfseries Master’s thesis by:}\\[0.5cm]
-            {\bfseries #1} 
-        \endgroup
-
-        \vspace{2cm}
-
-        % 4. Supervisor Section
-        \begingroup 
-            \linespread{1.2} \selectfont
-            {Under the direction of:}\\[0.5cm]
-            {\bfseries #2} % Supervisor Name
-        \endgroup
-
-        % 5. Push remaining text to bottom, but leave space for logo
-        \vfill 
-
-        % 6. Bottom Metadata
-        \begingroup 
-            \linespread{1.2} \selectfont
-            % Date and Place
-            {\bfseries #3}\\[2cm] 
-            
-            % School Information
-            {\bfseries Information Sciences}\\
-            {\bfseries Haute École de Gestion de Genève (HEG-GE)}
-        \endgroup
-        
-        % Buffer to prevent text from hitting the bottom logo
-        \vspace*{3.5cm} 
-    \end{center}
 \end{titlepage}
 }
 

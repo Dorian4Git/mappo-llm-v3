@@ -10,7 +10,7 @@ In the previous chapter, we established how the Options framework allows our lum
 \subsection{Foundations of Causal Language Modeling (CLM)}
 \label{sec:llm_foundations}
 
-To serve as a Meta-Controller in a reinforcement learning environment, a model must be able to process a current state and make a sequential decision. This makes \emph{Causal Language Models} (CLMs) the ideal architecture~\parencite{Radford_Narasimhan_Salimans_Sutskever_2018}. 
+While \emph{Causal Language Models} (CLMs) were originally introduced for predicting text sequences in natural language understanding tasks~\parencite{Radford_Narasimhan_Salimans_Sutskever_2018}, their autoregressive nature has been framed as an ideal architecture for processing a current state and executing sequential decisions~\parencite{Chen_Lu_Rajeswaran_Lee_Grover_Laskin_Abbeel_Srinivas_Mordatch_2021}. 
 
 Unlike standard RL policies that output continuous spatial coordinates, CLMs operate over massive discrete vocabularies. They generate text autoregressively, meaning they predict the next logical token (word or sub-word) based strictly on the sequence of past tokens. This step-by-step generation perfectly mirrors the step-by-step decision-making process of an RL agent. 
 
@@ -72,7 +72,7 @@ The core computational engine that allows the model to connect these distant con
 The attention mechanism computes a weighted sum of these values, where the weight is determined by how well the query and the key match via a dot-product:
 \begin{equation}
 \label{eq:self_attention}
-    \text{Attention}(Q, K, V) = \text{softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V
+    \text{Attention}(Q, K, V) = \text{softmax}\left(\frac{Q K^T}{\sqrt{d_k}}\right) V = W V
 \end{equation}
 
 There are two critical mathematical safeguards in this equation. First is the scaling factor, $\sqrt{d_k}$ (the square root of the key vector dimension). If $Q$ and $K$ are large, their dot product grows massive. Feeding massive numbers into a softmax function causes it to saturate, snapping its outputs to absolute 1s and 0s. This flattens the mathematical slope (the gradient) to zero, halting the network's ability to learn, a phenomenon known as the vanishing gradient problem. Dividing by $\sqrt{d_k}$ cools these values down, preserving the gradient.
@@ -100,7 +100,7 @@ where $s_{i,j}$ represents the raw, scaled dot-product score between query $i$ a
 
 \subsubsection{The Autoregressive Loop and Optimization}
 
-The \emph{softmax} function converts the raw attention scores into a valid probability distribution. At the very end of the network, a final softmax layer converts the model's output into the probability $P(y_i)$ of the next token over the entire vocabulary.
+As we have seen, the attention mechanism relies on a \emph{softmax} function to convert raw query-key scores into valid probability weights. However, this is not the only place softmax is used. At the very end of the network, a separate, final softmax layer is required to convert the model's output logits into the probability distribution $P(y_i)$ of the next token over the entire vocabulary (as seen in Figure~\ref{fig:clm_autoregressive}).
 
 The generation process behaves like a strict deterministic time-loop: the model predicts a single word, and that new word instantly becomes part of the unchangeable past context used to predict the very next word (as shown by the blue feedback loop in Figure~\ref{fig:clm_autoregressive}). Although we do not train a model from scratch in our implementation, it is relevant to understand the training objective. Given a context sequence $X$ and a target sequence of tokens $\mathbf{y} = (y_1, y_2, \dots, y_N)$, the network is optimized by minimizing the negative log-likelihood (Categorical Cross-Entropy) over the sequence~\parencite{Radford_Narasimhan_Salimans_Sutskever_2018}:
 \begin{equation}
@@ -127,7 +127,7 @@ Teaching a base model these specific formatting rules via full parameter fine-tu
 
 Mathematically, this memory saving is achieved in two steps. First, QLoRA freezes the model's pre-trained weight matrix, $W_0 \in \mathbb{R}^{d \times k}$, using 4-bit NormalFloat (NF4) quantization~\parencite{Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023, Hu_Shen_Wallis_Allen-Zhu_Li_Wang_Wang_Chen_2021}. To understand quantization, imagine converting a high-resolution, 32-bit digital photograph into an 8-bit retro pixel image. While you lose microscopic precision, the overall shape and meaning of the image remain perfectly clear, and the file size shrinks drastically. NF4 quantization applies this exact compression to the neural weights, drastically reducing the VRAM required to hold the model's foundational knowledge in memory.
 
-Second, because $W_0$ is now frozen and cannot be updated, we must inject trainable parameters. As illustrated in Figure~\ref{fig:lora_architecture}, LoRA injects two small, low-rank adapter matrices alongside the frozen base: matrix $A \in \mathbb{R}^{r \times k}$ and matrix $B \in \mathbb{R}^{d \times r}$~\parencite{Hu_Shen_Wallis_Allen-Zhu_Li_Wang_Wang_Chen_2021, Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023}. 
+Second, because $W_0$ is now frozen and cannot be updated, we must inject trainable parameters. These form the specialized guidebook we mentioned. As illustrated in Figure~\ref{fig:lora_architecture}, LoRA implements this "guidebook" by injecting two small, low-rank adapter matrices alongside the frozen base: matrix $A \in \mathbb{R}^{r \times k}$ and matrix $B \in \mathbb{R}^{d \times r}$~\parencite{Hu_Shen_Wallis_Allen-Zhu_Li_Wang_Wang_Chen_2021, Dettmers_Pagnoni_Holtzman_Zettlemoyer_2023}. During the fine-tuning process, the library ($W_0$) is left entirely alone, and \emph{only} the weights within matrices $A$ and $B$ are updated via gradient descent.
 
 To visualize why this is so efficient, consider a theoretical weight matrix $W_0$ with dimensions $10,000 \times 10,000$. Updating this full matrix would require learning 100,000,000 parameters. Instead, LoRA introduces a "bottleneck" defined by the rank $r$. If we choose a tiny rank, such as $r=8$, matrix $A$ becomes $8 \times 10,000$ (80,000 parameters) and matrix $B$ becomes $10,000 \times 8$ (80,000 parameters). By multiplying them together ($B \times A$), we reconstruct a matrix $\Delta W$ that is still $10,000 \times 10,000$, but we only had to train 160,000 actual parameters (a reduction of over 99.8\%). Equation~\ref{eq:lora_matrices} illustrates this bottleneck visually for a small $4 \times 4$ matrix with rank $r=1$, where training only 8 parameters is required to reconstruct all 16 weights:
 \begin{equation}
