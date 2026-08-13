@@ -24,6 +24,8 @@ For the \textbf{Hierarchical Reinforcement Learning (HRL)} experiments, we evalu
 
 All runs were executed with identical MAPPO hyperparameters (clipping $\epsilon=0.2$, GAE\footnote{Generalized Advantage Estimation} $\lambda=0.95$, $\gamma=0.99$, across 128 parallel environments).
 
+Finally, to evaluate the structural stability and adaptability of the system, we conduct targeted ablation studies (such as the necessity of EMA smoothing) and a \textbf{Semantic Shift} experiment, detailing the Meta-Controller's zero-shot ability to adapt to sudden environmental rule changes without retraining. These are explored in Part 3 (Section~\ref{sec:robustness_and_adaptation}).
+
 % ==========================================
 % PART 1: DYNAMIC REWARD SHAPING
 % ==========================================
@@ -45,7 +47,7 @@ However, the Baseline fails at the \emph{Iron} bottleneck. Without dynamic rewar
 
 In contrast, both LLM-guided runs overcome the Iron bottleneck at different speeds. \textbf{Qwen} unlocks Iron at step~10M, and discovers Sword and Armor around step~10.1M. This rapid progression is explained by the DAG structure: once Iron is available, Sword and Armor only require visiting the Workbench, a behavior the agents have already mastered. \textbf{Gemini 2.5 Flash Lite} unlocks Iron later, at step~40.7M. Once unlocked, an identical cascade occurs, with Sword and Armor appearing at step~41.3M.
 
-The learning dynamics for both LLM configurations are characterised by high variance. Rather than smooth monotonic improvement, the agents exhibit repeated oscillations in task completion rates across many updates before stabilising on a subtask. This is particularly visible in the mid-game tasks (Pickaxe, Bridge), where completion rates fluctuate between 0\% and partial success for extended periods. In the case of \textbf{Qwen}, the agents eventually forget how to build a Bridge after their initial success around step $2.97 \times 10^7$, regressing to 0\% completion. This indicates that the learned policies can remain fragile when the shaping signal shifts focus away from previously mastered behaviours.
+The learning dynamics for both LLM configurations are characterized by high variance. Rather than smooth monotonic improvement, the agents exhibit repeated oscillations in task completion rates across many updates before stabilizing on a subtask. This is particularly visible in the mid-game tasks (Pickaxe, Bridge), where completion rates fluctuate between 0\% and partial success for extended periods. In the case of \textbf{Qwen}, the agents eventually forget how to build a Bridge after their initial success around step $2.97 \times 10^7$, regressing to 0\% completion. This indicates that the learned policies can remain fragile when the shaping signal shifts focus away from previously mastered behaviors.
 
 Neither run achieved Enemy defeats (0\% for all configurations), indicating that the combat subtask represents a challenge beyond reward shaping. It likely requires specific action coordination that the current scalar reward signal cannot provide.
 
@@ -73,9 +75,9 @@ Figure~\ref{fig:llm_weights_evolution} shows two distinct command strategies, th
 
 Beyond this shared starting point, the strategies diverge. \textbf{Gemini's strategy} employs oscillation. It alternates between maximizing early tasks ($w_{\text{wood}}$, $w_{\text{stone}}$) and late tasks ($w_{\text{bridge}}$). However, because the agents had not yet mastered Pickaxe, the DAG guardrail layer (Section~\ref{sec:dag_planner}) programmatically masked out the late-game weights to $0.0$. By constantly shifting its feasible weights, Gemini caused the greedy planner's target to rapidly bounce between Wood and Workbench. This broke the agents' focus and slowed their progression toward Iron.
 
-\textbf{Qwen's strategy} is highly stable. With only 20 interventions, Qwen established a consistent hierarchy ($w_{\text{wood}} \approx 2.33$, $w_{\text{stone}} \approx 2.33$, $w_{\text{workbench}} \approx 1.51$, $w_{\text{iron}} \approx 0.38$). 
+\textbf{Qwen's strategy} is highly stable. Rather than micromanaging the agents' immediate next steps, Qwen effectively establishes a consistent, global hierarchy of strategic intent ($w_{\text{wood}} \approx 2.33$, $w_{\text{stone}} \approx 2.33$, $w_{\text{workbench}} \approx 1.51$, $w_{\text{iron}} \approx 0.38$) and delegates the tactical execution to the DAG planner. 
 
-This stability leverages how the greedy planner selects exactly one target subtask ($g^{(i)} = \arg\max_{j \in \mathcal{F}} R_j^{\text{base}} \cdot w_j$). Initially, Wood and Stone yield the highest scores ($2.33 \times 2.0 = 4.66$). Because Qwen's weights remain static, subtask switching is driven entirely by the DAG mask: once Wood and Stone are mastered, they are removed from the feasible set $\mathcal{F}$, automatically shifting the planner's target to the Workbench ($1.51 \times 3.0 = 4.53$). Once the Pickaxe is crafted, Iron enters $\mathcal{F}$ and becomes the new target ($0.38 \times 2.0 = 0.76$). 
+This stability perfectly leverages how the greedy planner selects exactly one target subtask ($g^{(i)} = \arg\max_{j \in \mathcal{F}} R_j^{\text{base}} \cdot w_j$). Initially, Wood and Stone yield the highest scores ($2.33 \times 2.0 = 4.66$). Because Qwen's weights provide a static, ordered priority list, subtask switching is driven entirely by the DAG mask: once Wood and Stone are mastered, they are removed from the feasible set $\mathcal{F}$, automatically shifting the planner's target to the Workbench ($1.51 \times 3.0 = 4.53$). Once the Pickaxe is crafted, Iron enters $\mathcal{F}$ and seamlessly becomes the new target ($0.38 \times 2.0 = 0.76$). 
 
 This explains the intervention frequency disparity (198 for Gemini vs.\ 20 for Qwen). The \emph{CriticTrigger} (Section~\ref{sec:critic_trigger}) fires only during performance plateaus. Qwen's static hierarchy allowed the DAG to naturally guide the planner, resolving the Iron bottleneck by step~10M and keeping the trigger closed. Gemini's oscillation kept the target unstable, stranding agents at the Iron bottleneck until step~40.7M and causing constant trigger fires. Gemini's high intervention count is thus a symptom of stagnation, not proactive command.
 
@@ -206,7 +208,7 @@ Compared to the Dynamic Shaping architectures (Part~1), which plateaued at 0.076
 \subsubsection{KL-Divergence Guardrail}
 \label{sec:kl_guard}
 
-In the HRL architecture, the transition between discrete macro-actions (Options) induces abrupt shifts in the intrinsic reward landscape. From the perspective of the low-level PPO workers, the objective function is highly non-stationary. To prevent catastrophic forgetting of previously learned kinetic policies, we bound the surrogate objective update using a strict Kullback-Leibler (KL) divergence guard.
+In the HRL architecture, the transition between discrete macro-actions (Options) induces abrupt shifts in the intrinsic reward landscape. From the perspective of the low-level PPO workers, the objective function is highly non-stationary. To prevent catastrophic forgetting of previously learned kinetic policies, we bound the PPO surrogate objective update using a strict Kullback-Leibler (KL) divergence guard.
 
 During the optimization epochs, we continuously monitor the approximate KL divergence between the behavioral policy $\pi_{\theta_{\text{old}}}$ and the updating policy $\pi_{\theta}$~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}:
 \begin{equation}
@@ -245,7 +247,7 @@ Table~\ref{tab:kl_stats} highlights how KL instability disrupts learning. The QL
 
 Furthermore, while reflection is widely considered a mechanism to improve reasoning in LLM literature, in this HRL context it actively degrades sample efficiency. The QLoRA with Reflection run accumulates \textbf{2.3$\times$ more staleness resets} than the No-Reflection run (88{,}711 vs.\ 39{,}137) despite generating a similar number of total LLM queries ($\sim$12{,}800). This indicates a destructive cycle: when told a plan failed, the reflective Commander generates a worse plan that fails even faster. This rapid cycling of short-lived Options causes constant, small policy shifts. While these individual shifts may not always trigger the KL guardrail, their cumulative effect prevents the Critic from converging, severely reducing sample efficiency.
 
-This paradox stems from a misalignment between the instruction-tuning data and actual RL inference. During QLoRA fine-tuning, the dataset injected synthetic counterfactuals (e.g., \emph{``You previously chose [Incorrect Option]. It failed.''}) to teach the model to correct logical errors. Consequently, the fine-tuned Commander learned a strong prior: a failure prompt means its previous choice was logically wrong and must be changed.
+This paradox originates from a misalignment between the instruction-tuning data and actual RL inference. During QLoRA fine-tuning, the dataset injected synthetic counterfactuals (e.g., \emph{``You previously chose [Incorrect Option]. It failed.''}) to teach the model to correct logical errors. Consequently, the fine-tuned Commander appears to have developed an unintended bias: it overwhelmingly interprets any failure prompt as evidence that its previous choice was logically flawed and must be changed.
 
 During RL training, however, option ``staleness'' rarely indicates a logical error. More often, it represents a \emph{kinetic delay}: the agents simply need more time to navigate the terrain or collect resources for a fundamentally correct plan. When the reflection prompt fires due to this kinetic delay, the Commander incorrectly assumes a reasoning error and abandons the correct long-horizon option.
 
@@ -269,13 +271,13 @@ Because the prompt implies a mistake, the Commander hallucinates a logical error
 \begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation/hrl_ablation_td_error.png}
-    \caption[Temporal Difference Error Variance]{Temporal Difference Error Variance. The With-Reflection configuration exhibits persistent high variance during mid-training from contradictory option switches. Both QLoRA runs converge to similar final TD errors ($\sim$0.024), while the No-LoRA base settles higher at 0.042.}
+    \caption[Temporal Difference Error Variance]{Temporal Difference Error Variance throughout the training for all HRL configurations.}
     \label{fig:hrl_td_error}
 \end{figure}
 
 The downstream effect is quantified in the TD Error (Figure~\ref{fig:hrl_td_error}). The With-Reflection configuration maintains the highest mean TD error across the full training run (0.060), 25\% higher than the No-Reflection run (0.048). This elevated error during mid-training reflects the Critic's inability to track the rapidly switching intrinsic reward landscape caused by reflection-induced option churn. However, as the policies saturate and option switching diminishes, the TD errors stabilize. Averaged over the final 100 updates, both QLoRA runs converge to a comparable mean TD error ($\sim$0.024). The No-LoRA base settles at a higher final mean TD error (0.042), as its Critic continues to struggle with the less structured option transitions generated by the un-finetuned model.
 
-Ultimately, all three HRL configurations solve the complete DAG. The key findings are twofold: first, \textbf{QLoRA fine-tuning significantly accelerates sample efficiency} (5$\times$ faster to Gold); second, while the KL-divergence guardrail absorbs major non-stationarity, it cannot filter out the high-frequency, sub-threshold perturbations caused by the reflection loop. Thus, forcing reflection upon a fine-tuned model actively delays convergence.
+Ultimately, all three HRL configurations solve the complete DAG. The key findings are twofold: first, QLoRA fine-tuning significantly accelerates sample efficiency (5$\times$ faster to Gold); second, while the KL-divergence guardrail absorbs major non-stationarity, it cannot filter out the high-frequency, sub-threshold perturbations caused by the reflection loop. Thus, forcing reflection upon a fine-tuned model actively delays convergence.
 
 % ==========================================================================
 \subsection{Part 3: Robustness and Semantic Adaptation}
@@ -299,7 +301,7 @@ As shown in Figure~\ref{fig:ema_ablation_td}, removing the EMA filter results in
     \label{fig:ema_ablation_td}
 \end{figure}
 
-The Critic network struggles to track a reward objective that shifts instantaneously. Figure~\ref{fig:ema_ablation_subtasks} illustrates the behavioral consequence: the non-stationarity leads to suboptimal optimization, causing the workers to exhibit slight regressions in their \texttt{Iron} and \texttt{Sword} completion rates during the mid-stages of training. However, it is worth noting that the No-EMA workers do eventually recover and climb back to a 100\% success rate on these tasks. Thus, while the workers can mathematically overcome the noise, this proves that the EMA smoothing equation is highly helpful for bridging discrete LLM outputs with continuous RL gradients, enabling faster convergence and preventing such regressions.
+The Critic network struggles to track a reward objective that shifts instantaneously. Figure~\ref{fig:ema_ablation_subtasks} illustrates the behavioral consequence: the non-stationarity leads to suboptimal optimization, causing the workers to exhibit slight regressions in their \texttt{Iron} and \texttt{Sword} completion rates during the mid-stages of training. However, it is worth noting that the No-EMA workers do eventually recover and climb back to a 100\% success rate on these tasks. Thus, while the workers can mathematically overcome the noise, this confirms that the EMA smoothing equation is highly helpful for bridging discrete LLM outputs with continuous RL gradients, enabling faster convergence and preventing such regressions.
 
 \begin{figure}[H]
     \centering
@@ -329,7 +331,7 @@ To quantify the optimization efficiency provided by the EMA filter, Table~\ref{t
         \texttt{Gold} & Failed to Converge & Failed to Converge \\
         \bottomrule
     \end{tabular}
-    \caption[Environment Steps for 90\% Completion]{Environment steps required to reach a 90\% completion rate. Disabling the EMA smoothing filter causes a severe learning slowdown across all tasks. Note that neither configuration converges on the terminal combat tasks (Enemy, Gold), consistent with the limitations of the Dynamic Shaping architecture established in Part~1.}
+    \caption[Environment Steps for 90\% Completion]{Environment steps required to reach a 90\% completion rate.}
     \label{tab:ema_convergence_speed}
 \end{table}
 
@@ -343,20 +345,20 @@ To quantify the optimization efficiency provided by the EMA filter, Table~\ref{t
 \subsubsection{Computational, Financial, and Energy Overheads}
 \label{sec:computational_overhead}
 
-Integrating LLMs directly into the RL training loop introduces severe wall-clock overhead if not managed carefully. Querying external cloud APIs dynamically throughout an episode creates massive network latency. 
+Integrating LLMs into the RL training loop introduces severe wall-clock overhead if queries rely on external cloud APIs. This latency makes commercial cloud models impractical for high-frequency control. 
 
-A standard 128-update training run illustrates this bottleneck. The \textbf{Standard HRL Baseline}, using a traditional programmed meta-controller without LLM queries, finished in \textbf{8.30 hours}. By comparison, routing queries through a cloud model (Gemini 1.5 Flash) inflated the training time to \textbf{12.27 hours}. This is a 48\% slowdown caused entirely by API latency. Attempting the same with heavier models like GPT-4 proved completely impossible due to strict rate limits.
+To quantify this, a standard 128-update training run using a traditional programmed meta-controller (the Standard HRL Baseline) finished in \textbf{8.30 hours}. Routing those same decisions through a cloud API (Gemini 1.5 Flash) increased the training time to \textbf{12.27 hours}. This 48\% slowdown is caused entirely by network latency. Testing heavier proprietary models like GPT-4 was infeasible due to API rate limits.
 
-Our optimized \textbf{LLM Dynamic (LoRA)} implementation solves this issue. Running a locally fine-tuned Qwen2.5-7B model, it completed the same run in \textbf{7.78 hours}. By batching requests and eliminating network travel, local inference matches and even slightly beats the standard programmatic baseline. 
+Our optimized implementation uses a smaller, locally fine-tuned Qwen2.5-7B model to solve this bottleneck. By eliminating network communication, the local model completed the run in \textbf{7.78 hours}, matching the speed of the programmed baseline. 
 
-This local optimization also yields massive financial and energy savings. Simulating 128 parallel environments generates millions of tokens per run, making commercial APIs financially prohibitive for researchers. Furthermore, a workstation drawing 750W over a 12.27-hour API run consumes substantial electricity. Cutting the run time to 7.78 hours eliminates token fees entirely while dropping power consumption and utility costs by nearly 40\%.
+This local optimization provides a double win in terms of resource efficiency. First, it eliminates the financial cost and power consumption associated with querying millions of tokens on commercial cloud servers. Second, it reduces the local workstation's own electricity footprint by nearly 40\% simply by shortening the total training time from 12.27 hours to 7.78 hours.
 
 \subsubsection{Environment Shift: The Case for a Semantic Commander}
 \label{sec:semantic_adaptation}
 
 A valid question is why we should use an LLM Commander at all. The previous results showed that a stable hierarchy paired with a DAG mask operates perfectly in a static environment. If the goal is simply to shift weights along a predictable path, a hard-coded Python script would be much more efficient.
 
-The limitation of a programmed script is its brittleness. It relies entirely on fixed rules and exact string matching. If a map designer renames the \texttt{Workbench} to \texttt{Furnace}, a hard-coded script will crash instantly with a missing key error. This highlights the core asset of the LLM. It possesses zero-shot semantic reasoning. The LLM understands the underlying context of the environment and can adapt to linguistic or structural changes dynamically, requiring absolutely no code modifications.
+The limitation of a programmed script is its inflexibility. It relies entirely on fixed rules and exact string matching. If a map designer renames the \texttt{Workbench} to \texttt{Furnace}, a hard-coded script will crash instantly with a missing key error. This highlights the core asset of the LLM. It possesses zero-shot semantic reasoning. The LLM understands the underlying context of the environment and can adapt to linguistic or structural changes dynamically, requiring absolutely no code modifications.
 
 To test this adaptability, we injected an alias mapping into the orchestrator at Update 500. The \texttt{Workbench} was renamed to \texttt{Furnace} in the Commander's prompt space. A secondary control run replaced it with a nonsense string: \texttt{Zylorg}. 
 
@@ -376,7 +378,7 @@ To test this adaptability, we injected an alias mapping into the orchestrator at
     \label{fig:shift_all_subtasks}
 \end{figure} 
 
-The results in Figures~\ref{fig:semantic_shift_subtasks} and~\ref{fig:shift_all_subtasks} prove the LLM's resilience, even though the \texttt{Furnace} run ultimately failed to master the final tasks. 
+The results in Figures~\ref{fig:semantic_shift_subtasks} and~\ref{fig:shift_all_subtasks} illustrate the LLM's adaptive capacity, even though the \texttt{Furnace} run ultimately failed to master the final tasks. 
 
 When the Commander encountered \texttt{Zylorg}, it lacked any semantic prior. It gracefully degraded its strategy, assigning the unknown node a neutral priority weight while focusing on recognizable end-goals. 
 

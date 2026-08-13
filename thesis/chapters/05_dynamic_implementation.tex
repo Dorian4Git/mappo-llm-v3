@@ -8,12 +8,12 @@ This chapter details the first integration strategy: LLM-driven dynamic reward s
 Intuitively, this approach separates \emph{strategy} from \emph{execution}. The LLM acts as a Commander standing at a strategic mixing board, adjusting priority dials for various subtasks. Meanwhile, the low-level PPO agents~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022} (the lumberjack and miner) act as kinetic workers, navigating the physical grid-world to fulfill whichever priority is currently dialed highest.
 
 The Commander (our mixing board) does not act directly inside the environment. Instead, it periodically observes the agents' progress and adjusts a vector of subtask priority weights. These weights govern two things:
-\begin{enumerate}[nosep]
+\begin{enumerate}
     \item which semantic goal the agents' internal planner selects, and
     \item the magnitude of the gravitational pull (potential-based shaping signal) guiding the agents toward that goal.
 \end{enumerate}
 
-As established in Section~\ref{sec:llm_rl_integration}, this paradigm draws foundational inspiration from recent frameworks that deploy LLMs as meta-level reward designers, such as EUREKA, PRM4RL, MEDS, and GLARE~\parencite{ma2024eurekahumanlevelrewarddesign, Zhang_Gao_Jiang_Chen_Pan_Zhang_Deng_2025, liu2026memoryenhanceddynamic, yan2026glare}. While these approaches provided the theoretical justification for using LLMs to structure sparse-reward environments, the present work pivots to address the practical constraints of a high-frequency execution loop.
+As established in Section~\ref{sec:llm_rl_integration}, this paradigm draws foundational inspiration from recent frameworks that deploy LLMs as meta-level reward designers, such as EUREKA, PRM4RL, and GLARE~\parencite{ma2024eurekahumanlevelrewarddesign, Zhang_Gao_Jiang_Chen_Pan_Zhang_Deng_2025, yan2026glare}. While these approaches provided the theoretical justification for using LLMs to structure sparse-reward environments, the present work pivots to address the practical constraints of a high-frequency execution loop.
 
 Rather than requiring the LLM to write complex reward functions from scratch or compile logic formulas during the rollout phase, our Commander operates at a latency-bound granularity. It simply adjusts a vector of priority weights that steer goal selection within a pre-compiled, mathematically safe potential-based shaping framework.
 
@@ -29,8 +29,7 @@ The exposition of this chapter follows the exact chronological dataflow of the i
 \subsection{System Overview}
 \label{sec:dyn_overview}
 
-Figure~\ref{fig:dyn_system_flow} illustrates the end-to-end pipeline of the Mixing Board architecture.
-Conceptually, the system operates in a continuous loop. At every standard environment step, the agents update their inventory, the DAG Planner assigns them a valid target, and the PBRS module feeds them a shaped reward to guide their movement.
+The end-to-end pipeline of the Mixing Board architecture is illustrated in Figure~\ref{fig:dyn_system_flow}. Conceptually, the system operates in a continuous loop. At every standard environment step, the agents update their inventory, the DAG Planner assigns them a valid target, and the PBRS module feeds them a shaped reward to guide their movement.
 
 However, at the end of every training update, a \emph{Critic Trigger} acts as a diagnostic monitor. It watches the agents' learning curves (TD-error and success rates). If the trigger detects that the lumberjack and miner are stuck at a learning plateau (spinning their wheels without making progress), it halts the system. It constructs a prompt detailing the failure, queries the LLM Commander for a new strategic direction, filters that new direction through a safety layer, and updates the planner to pull the agents out of their rut.
 
@@ -188,7 +187,7 @@ If the gate is open and the Z-score trigger fires, an LLM intervention is dispat
 
 When the SOS flare fires, the system constructs a structured situation report for the Commander. This prompt includes:
 
-\begin{enumerate}[nosep]
+\begin{enumerate}
     \item The trigger reason (plateau description, z-score value).
     \item Current subtask completion percentages, noting which tasks are already fully mastered ($\ge 95\%$ success rate).
     \item Per-agent TD-error statistics (mean, variance, per-agent breakdown).
@@ -225,7 +224,7 @@ The LLM responds with a standardized JSON object containing its reasoning and th
 \end{verbatim}
 \end{hegquote}
 
-By requiring the LLM to generate a brief reasoning trace before outputting the subtask weights, the prompt leverages the ReAct framework~\parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023}, which has been shown to significantly improve the logical consistency of LLM decision-making.
+By requiring the LLM to generate a brief reasoning trace before outputting the subtask weights, the system leverages Chain-of-Thought (CoT) prompting~\parencite{Wei_Wang_Schuurmans_Bosma_Ichter_Xia_Chi_Le_Zhou_2022}. This technique has been shown to significantly improve the logical consistency and interpretability of LLM decision-making.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Softmax Attention Budget}
@@ -250,9 +249,9 @@ To prevent this, the programmatic safety layer first strictly bounds the raw log
 \end{equation}
 where $K=|\mathcal{W}|=7$ is the total number of subtasks, and $\tau=0.5$ is an empirically tuned temperature hyperparameter. This operation transforms the raw LLM outputs $c$ into normalized weights $w^{\text{softmax}}$ with the following properties:
 
-\begin{itemize}[nosep]
+\begin{itemize}
     \item \emph{Constant budget}: $\sum w_i^{\text{softmax}} = K$. The total reward distributed among the tasks remains perfectly constant (exactly $7.0$), regardless of the LLM's output scale or the prior $15.0$ bound on the raw logits.
-    \item \emph{Controlled transitions}: The temperature $\tau=0.5$ softens the LLM's raw priorities, preventing the entire budget from collapsing onto a single task, while still being decisive enough to direct the agents.
+    \item \emph{Decisiveness via Temperature}: A temperature $\tau < 1.0$ mathematically decreases the entropy of the resulting distribution. Setting $\tau=0.5$ deliberately \emph{sharpens} the LLM's raw priorities. This amplifies the Commander's confidence, ensuring the highest-ranked task receives a distinctively larger share of the reward budget, which provides a clear and decisive gradient signal for the agents to follow.
     \item \emph{Numerical stability}: To prevent overflow errors, the logits are shifted by subtracting their maximum value before exponentiation.
 \end{itemize}
 
@@ -284,6 +283,8 @@ Despite these mathematical safeguards, the system employs a final safety net ins
     > 0.20
 \end{equation}
 Fundamental policy optimization algorithms, including PPO, are designed around the mathematical desire for monotonic improvement, guaranteeing that a new policy performs at least as well as the old one~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}. Because the LLM injects external, non-stationary shocks into the reward landscape, these mathematical guarantees are temporarily broken. The Auto-Rollback acts as an empirical failsafe, instantly reverting the weights to restore training stability if the Commander's new strategy proves disastrous on the ground.
+
+It should be explicitly noted that while this Auto-Rollback mechanism was fully implemented as part of the system's theoretical architecture, it was deliberately deactivated during the experimental evaluations discussed in Chapter~\ref{ch:experiments}. This decision was made to observe the raw, unmitigated impact of the LLM interventions, both positive and negative, on the learning dynamics, ensuring that the failsafe did not artificially mask the consequences of poor strategic suggestions.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Potential-Based Reward Shaping}
@@ -380,9 +381,9 @@ To ensure the agents eventually learn to act independently, the blending coeffic
 
 In standard Markov Decision Processes, observation and action delays severely destabilize training~\parencite{Katsikopoulos_Engelbrecht_2003}. If the PPO workers paused to wait for the LLM Commander's response during every SOS flare, network latency and inference time would bottleneck the simulation, dropping GPU utilization to near zero.
 
-To prevent this, queries are dispatched asynchronously via a daemon thread. This approach mirrors frameworks like GITM~\parencite{Zhu_etal_2023}, which explicitly decouple the environment clock from the LLM inference clock. The dataflow executes as follows:
+To prevent this, queries are dispatched asynchronously via a daemon thread. This approach mirrors standard asynchronous reinforcement learning architectures~\parencite[e.g.,][]{petrenko2020sample}, decoupling the high-frequency environment clock of the PPO workers from the variable latency of the LLM inference pipeline. The dataflow executes as follows:
 
-\begin{enumerate}[nosep]
+\begin{enumerate}
     \item \textbf{Trigger:} The critic trigger fires at the end of a PPO update and constructs the situation report prompt.
     \item \textbf{Dispatch:} The prompt is enqueued to a thread-safe queue.
     \item \textbf{Background Processing:} The daemon thread queries the LLM API without interrupting the main simulation loop.

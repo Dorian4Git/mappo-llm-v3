@@ -18,7 +18,7 @@ The exposition follows the implementation order:
     \item \textbf{Discrete Option Selection} (\cref{sec:discrete_selection}): How the LLM is triggered to assign these explicit tasks.
     \item \textbf{One-Hot Observation Augmentation} (\cref{sec:onehot_aug}): How the Commander's text-based orders are mathematically injected into the MAPPO neural network.
     \item \textbf{Bipartite Reward Structure} (\cref{sec:bipartite_reward}): The dual-reward system required to train the workers to follow these new explicit orders.
-    \item \textbf{Staleness and Counterfactual Reflection} (\cref{sec:staleness}): How the Commander diagnoses its own mistakes when an order fails on the ground.
+    \item \textbf{Staleness and Counterfactual Reflection} (\cref{sec:lifecycle_guardrails}): How the Commander diagnoses its own mistakes when an order fails on the ground.
 \end{enumerate}
 
 % ──────────────────────────────────────────────────────────────────────────
@@ -114,9 +114,9 @@ Because the Meta-Controller issues explicit, discrete commands, it does not need
 
 \subsubsection{Trigger Conditions: Success and Staleness}
 
-Option selection is triggered dynamically under two specific conditions, evaluated per-environment:
+Option selection is triggered dynamically under two specific conditions, evaluated per-en\-vi\-ron\-ment:
 
-\begin{enumerate}[nosep]
+\begin{enumerate}
     \item \textbf{Success:} The agent successfully acquired the item (the inventory slot changed), meaning the current Option has terminated and the agent awaits a new order.
     \item \textbf{Staleness:} The active option has been running for more than $T_{\text{stale}}=150$ steps without completion.
     In MARL, a step $t \to t{+}1$ represents a physical movement or action in the grid. If an agent executes 150 low-level kinetic actions without satisfying its macro-objective, the system assumes the agent is stuck (e.g., trying to mine iron without a pickaxe) and forces an LLM intervention.
@@ -124,7 +124,7 @@ Option selection is triggered dynamically under two specific conditions, evaluat
 
 Environments that are already awaiting an LLM response (\texttt{llm\_pending}) or are on a brief 50-step cooldown are safely excluded from triggering new queries.
 
-\subsubsection{Prompt Structure and Counterfactual Reflection}
+\subsubsection{Prompt Structure}
 
 When a trigger fires, the system translates the grid-world's physical inventory state into a text-based JSON schema.
 For a standard \emph{Success} trigger, the Commander receives a Chain-of-Thought prompt~\parencite{Wei_Wang_Schuurmans_Bosma_Ichter_Xia_Chi_Le_Zhou_2022} detailing the current inventory and the DAG dependencies, requesting exactly one discrete Option per agent:
@@ -155,29 +155,6 @@ Respond ONLY with valid JSON:
 \end{verbatim}
 \end{hegquote}
 
-However, if a \emph{Staleness} trigger fires, the LLM receives a \emph{counterfactual reflection prompt}.
-Rather than simply asking for a new assignment, this prompt forces the LLM to diagnose \textbf{why} its previous assignment failed before issuing new options:
-
-\begin{hegquote}
-\begin{verbatim}
-### REFLECTION REQUIRED:
-Agent 0 was assigned "{a0_option}" and Agent 1 was assigned "{a1_option}".
-After {stale_steps} steps, NEITHER has succeeded.
-
-### YOUR TASK:
-1. First, diagnose what prerequisite is MISSING.
-2. Then assign corrected options that respect the DAG.
-
-Respond ONLY with JSON:
-{
-  "reflection": "<diagnosis>",
-  "dag_check": "<verification>",
-  "agent_0_option": "<Option>",
-  "agent_1_option": "<Option>"
-}
-\end{verbatim}
-\end{hegquote}
-
 \subsubsection{Asynchronous Query Management}
 
 Training MARL across 128 parallel environments generates significant query volume. To optimize throughput, the system deduplicates queries by grouping environments with identical inventory states, sending a single prompt per unique state to the LLM, and broadcasting the response to all matching environments.
@@ -188,11 +165,11 @@ Additionally, because LLM inference takes several seconds, continuous environmen
 \subsection{One-Hot Observation Augmentation}
 \label{sec:onehot_aug}
 
-Once the Commander has selected a discrete Option, that command must be physically transmitted to the worker. In the MAPPO framework, this is achieved by appending a one-hot vector directly into the agent's localized observation space, effectively acting as a ``radio receiver'' for the Commander's orders.
+Once the Commander has selected a discrete Option, that command must be physically transmitted to the worker. In the MAPPO framework, this is achieved by appending a one-hot vector directly into the agent's localized observation space, effectively acting as a ``radio receiver'' for the Commander's orders. We can see how exactly in Equation \ref{eq:hrl_obs}.
 
 \subsubsection{Dynamic Enemy State}
 
-Unlike the Mixing Board approach, which utilized the baseline static environment, the HRL architecture operates in an extended environment that introduces a \emph{dynamic enemy}. In this variant, the enemy is no longer a static zone interaction. Instead, the enemy tracks the agents' positions and actively chases any agent that crosses the river, creating a real-time pursuit challenge. The combat system rewards coordination: if both agents attack the enemy simultaneously, they deal 50~HP of damage per step, compared to only 10~HP for a solo attack. This 5$\times$ coordination multiplier makes the \texttt{FIGHT\_ENEMY} option inherently cooperative.
+Unlike the Mixing Board approach, which utilized the baseline static environment, the HRL architecture operates in an extended environment that introduces a \emph{dynamic enemy}. In this variant, the enemy is no longer a static zone interaction. Instead, the enemy tracks the agents' positions and actively chases any agent that crosses the river, creating a real-time pursuit challenge. The combat system is designed to reward coordination: if both agents attack the enemy simultaneously, they deal 50~HP of damage per step, compared to only 10~HP for a solo attack. While this 5$\times$ coordination multiplier was intended to make the \texttt{FIGHT\_ENEMY} option inherently cooperative, the overarching time penalty ($-0.01$ per step) often creates conflicting incentives. As explored in Chapter~\ref{ch:experiments}, the agents occasionally discover that having one agent rush the enemy while the other crafts is more time-efficient than waiting to launch a coordinated assault.
 
 To give the agents spatial awareness of this dynamic threat, the three dimensions that were occupied by the goal embedding in the Mixing Board approach (indices 2--4) are repurposed to carry the enemy's real-time state: its $(x, y)$ position and its normalized health $h/100$. Providing this state information is standard practice in fully observable Markov Decision Processes (MDPs); it simply represents the agents' physical line-of-sight, which is required for the low-level PPO policy to learn the kinetic micro-actions of pursuit and combat.
 
@@ -231,9 +208,9 @@ For example, if an agent is located at coordinates $(3, 4)$, the enemy is at $(5
     \right]
 \end{equation}
 
-This design maintains the same $\mathbb{R}^{25}$ dimensionality as the Mixing Board approach, allowing the identical neural network architecture to be used across both experiments. The three dimensions previously occupied by the continuous goal embedding are simply repurposed to carry the enemy state, preventing any architecture mismatch when loading or comparing models between the two approaches.
+This design expands the $\mathbb{R}^{15}$ observation space of the Mixing Board approach to $\mathbb{R}^{25}$. Rather than increasing the spatial observation dimensionality, the three dimensions previously occupied by the continuous goal embedding are efficiently repurposed to carry the enemy state. The additional 10 dimensions are strictly dedicated to the one-hot option vector.
 
-Furthermore, by appending the one-hot vector $\mathbf{e}_{o_t^{(i)}}$ directly to the observation space, the MAPPO network learns an \emph{option-conditional policy} $\pi_\theta(a \mid s, o)$. This one-hot encoding acts as a mathematical switch, allowing a single neural network to dynamically shift its behavior based on the Commander's active assignment, avoiding the need to train a separate policy network for each of the 10 distinct options.
+By appending this one-hot vector $\mathbf{e}_{o_t^{(i)}}$ directly to the observation space, the MAPPO network learns an \emph{option-conditional policy} $\pi_\theta(a \mid s, o)$. This one-hot encoding acts as a mathematical switch, allowing a single neural network to dynamically shift its behavior based on the Commander's active assignment, avoiding the need to train a separate policy network for each of the 10 distinct options.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Bipartite Reward Structure}
@@ -259,9 +236,9 @@ First, the continuous distance-based shaping reward toward the active option's t
     \lambda_{\text{intr}}
     \bigl(\gamma\,\Phi^{(i)}(s_{t+1}, z_o) - \Phi^{(i)}(s_t, z_o)\bigr)
 \end{equation}
-where $z_o$ is the target zone of option~$o$ (\cref{tab:option_props}), $\Phi$ is the potential function, and $\lambda_{\text{intr}} = 0.05$.
+where $z_o$ is the target zone of option~$o$ (\cref{tab:option_props}), $\Phi$ is the potential function, and $\lambda_{\text{intr}} = 0.05$ is the shaping scaling factor (equivalent to $\lambda_{\text{scale}}$ from the Mixing Board approach).
 
-This formulation is mathematically constructed to guarantee policy invariance while ensuring multi-agent coordination stability. The canonical difference form $\gamma\,\Phi(s_{t+1}) - \Phi(s_t)$ prevents the agent from exploiting the dense reward signal. Without the discount factor $\gamma$, an agent could theoretically accumulate infinite positive reward by stepping back and forth between two adjacent states. By decaying the future potential, any such cycle yields a net negative shaping reward~\parencite{Ng_Harada_Russell_1999}.
+As established in previous chapters, this canonical difference form $\gamma\,\Phi(s_{t+1}) - \Phi(s_t)$ guarantees policy invariance and naturally prevents the agents from exploiting the reward signal by stepping back and forth~\parencite{Ng_Harada_Russell_1999}.
 
 The indicator function $\mathds{1}_{\{o^{(i)} \neq \texttt{IDLE}\}}$ acts as a coordination mask. An agent assigned the \texttt{IDLE} option is actively waiting for its partner to satisfy a dependency; applying distance-based shaping here would incorrectly penalize it for remaining stationary. The mask zeroes out this shaping signal, allowing the agent to safely wait without destabilizing the value network.
 
@@ -310,7 +287,7 @@ and the clipped surrogate objective updates accordingly:
     L^{\text{CLIP}}(\theta) = \mathbb{E} \left[ \min\left( r_t^{(i)}(\theta) A_t^{(i)},\; \text{clip}\bigl(r_t^{(i)}(\theta), 1 - \epsilon, 1 + \epsilon\bigr) A_t^{(i)} \right) \right]
 \end{equation}
 
-On the Critic side, learning is driven by the Advantage function ($A_t^{(i)}$). Advantage measures how much better a chosen action was compared to the baseline expectation. This baseline is provided by the Centralized Value function $V_\phi$. 
+On the Critic side, learning is driven by the Advantage function ($A_t^{(i)}$). Remember that the Advantage measures how much better a chosen action was compared to the baseline expectation. This baseline is provided by the Centralized Value function $V_\phi$. 
 To maintain the CTDE paradigm established in Section~\ref{subsec:ctde}, the Critic evaluates the \emph{global} environment state $\mathbf{s}_t$. In this HRL architecture, it also receives the joint options of all agents $\mathbf{o}_t = (o_t^{(0)}, \dots, o_t^{(N)})$. The bipartite reward feeds into this option-conditional Advantage:
 \begin{equation}
     A_t^{(i)} = r_t^{\text{total}, (i)} + \gamma V_\phi(\mathbf{s}_{t+1}, \mathbf{o}_{t+1}) - V_\phi(\mathbf{s}_t, \mathbf{o}_t)
@@ -331,7 +308,29 @@ When an environment reaches a terminal state (gold mined, game over, or truncati
 \subsubsection{Staleness Detection and Counterfactual Reflection}
 During execution, an internal watchdog tracks the age (number of steps) of each active option. If an option exceeds $T_{\text{stale}}=150$ steps without termination, the environment is marked as stale and the LLM is re-queried. The \texttt{IDLE} options are excluded from this trigger, as intentional waiting is a valid cooperative strategy.
 
-When a staleness trigger fires, the LLM receives a reflection prompt instead of the standard assignment prompt. This forces the LLM to reason about \emph{why} the previous option failed (e.g., a missing DAG precondition like \texttt{MINE\_IRON} without a pickaxe) before proposing a corrected assignment. This mechanism leverages the LLM's zero-shot reasoning to debug its own prior hallucinations, synergizing reasoning with counterfactual critique~\parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023, Shinn_Cassano_Berman_Gopinath_Narasimhan_Yao_2023}.
+When a staleness trigger fires, the LLM receives a \emph{counterfactual reflection prompt} instead of the standard assignment prompt. Rather than simply asking for a new assignment, this prompt forces the LLM to diagnose \textbf{why} its previous assignment failed (e.g., a missing DAG precondition like \texttt{MINE\_IRON} without a pickaxe) before issuing new options:
+
+\begin{hegquote}
+\begin{verbatim}
+### REFLECTION REQUIRED:
+Agent 0 was assigned "{a0_option}" and Agent 1 was assigned "{a1_option}".
+After {stale_steps} steps, NEITHER has succeeded.
+
+### YOUR TASK:
+1. First, diagnose what prerequisite is MISSING.
+2. Then assign corrected options that respect the DAG.
+
+Respond ONLY with JSON:
+{
+  "reflection": "<diagnosis>",
+  "dag_check": "<verification>",
+  "agent_0_option": "<Option>",
+  "agent_1_option": "<Option>"
+}
+\end{verbatim}
+\end{hegquote}
+
+This mechanism leverages the LLM's zero-shot reasoning to debug its own prior hallucinations, synergizing reasoning with counterfactual critique~\parencite{Yao_Zhao_Yu_Du_Shafran_Narasimhan_Cao_2023, Shinn_Cassano_Berman_Gopinath_Narasimhan_Yao_2023}.
 
 \subsubsection{Target KL Divergence Guard}
 To protect the policy network from destructive updates when intrinsic reward signals shift abruptly after an LLM reassignment, the training loop employs a target KL divergence early-stopping mechanism~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}. During each PPO epoch, the approximate KL divergence between the old and new policies is monitored:
@@ -349,7 +348,7 @@ If $D_{\text{KL}}^{\text{approx}} > 0.015$ (an empirical threshold widely adopte
 
 Before detailing the specific fine-tuning pipeline required for the Meta-Controller, it is instructive to contrast this architecture with the Dynamic Reward Shaping (Mixing Board) approach developed in Chapter 5. While both paradigms seek to integrate LLM reasoning into MARL, they operate at fundamentally different levels of abstraction. 
 
-The Mixing Board is a \emph{soft integration} strategy: the LLM gently nudges the priority of intrinsic rewards, but the MARL agents remain entirely responsible for discovering the physical behaviors. Conversely, the Meta-Controller represents a \emph{hard integration}: the LLM acts as a strict supervisor, dictating explicit macro-actions (options) that the agents must execute. This shift from continuous priority logits to discrete option assignments necessitates significant structural changes, particularly regarding LLM query frequency, observation augmentation, and safety mechanisms. Table~\ref{tab:approach_comparison} summarizes these core architectural distinctions.
+The Mixing Board is a \emph{soft integration} strategy: the LLM gently nudges the priority of intrinsic rewards, but the MARL agents remain entirely responsible for discovering the physical behaviors. Conversely, the Meta-Controller represents a \emph{hard integration}: the LLM acts as a strict supervisor, dictating explicit macro-actions (options) that the agents must execute. This shift from continuous priority logits to discrete option assignments necessitates significant structural changes, particularly regarding LLM query frequency, observation augmentation, and safety mechanisms. These core architectural differences are summarized in Table~\ref{tab:approach_comparison}.
 
 \begin{table}[H]
 \centering
@@ -402,10 +401,9 @@ To prevent the model from over-indexing on trivially simple early-game states, t
 
 Two augmentation techniques are applied to improve generalization:
 
-\begin{enumerate}[nosep]
-    \item \textbf{Stochastic Oracle Augmentation (SOA):} To prevent overfitting to perfect state representations, a randomly selected inventory field is zeroed out with a 10\% probability before querying the oracle. For example, a true state of \texttt{[wood: 1, stone: 1]} might be perturbed to \texttt{[wood: 0, stone: 1]}. This forces the model to produce safe outputs even when the prompt contains slightly degraded or delayed state information, which is common during live RL rollouts.
-
-    \item \textbf{Reflection Augmentation (40\% injection rate):} A synthetic hallucinated failure is prepended to the prompt: ``\emph{You previously chose [Incorrect Option]. It failed after [N] steps.}'' The model must then output the correct option despite this misleading prior. While intended to teach the Commander to recover from logical errors, Section~\ref{sec:reflection_ablation} demonstrates that this training signal inadvertently caused the model to assume \emph{any} reported failure implies a logical mistake (the ``Reflection Contradiction'').
+\begin{enumerate}
+    \item \textbf{Stochastic Oracle Augmentation (SOA):} To prevent the model from overfitting to the perfectly logical inventory progressions generated by the script, a randomly selected inventory field is zeroed out with a 10\% probability before querying the oracle. For example, a valid mid-game state like \texttt{[iron: 1, pickaxe: 1]} might be corrupted to the physically impossible state \texttt{[iron: 1, pickaxe: 0]}. By passing this corrupted state to the oracle to generate the training label, the LLM is explicitly trained on how to gracefully recover from weird, out-of-distribution inventory combinations. This robustness is critical because observation delays and asynchronous race conditions during live RL rollouts frequently produce these mathematically inconsistent states.
+    \item \textbf{Reflection Augmentation (40\% injection rate):} A synthetic hallucinated failure is prepended to the prompt: ``\emph{You previously chose [Incorrect Option]. It failed after [N] steps.}'' The model must then output the correct option despite this misleading prior. While intended to teach the Commander to recover from logical errors, Section~\ref{sec:kl_guard} demonstrates that this training signal inadvertently caused the model to assume \emph{any} reported failure implies a logical mistake (the ``Reflection Contradiction'').
 \end{enumerate}
 
 The final raw dataset contains \textbf{1,200 balanced examples} spanning all DAG phases and agent status combinations.
@@ -462,7 +460,7 @@ A critical training detail is the application of \emph{response-only loss maskin
 
 The complete fine-tuning process converged in approximately \textbf{3.1 hours} (1,910 steps) on the RTX 5070. As shown in Figure~\ref{fig:qlora_training}, the training loss dropped rapidly from 1.605 to 0.165, with the final evaluation metrics confirming near-perfect task acquisition:
 
-\begin{itemize}[nosep]
+\begin{itemize}
     \item Evaluation loss: \textbf{0.0007}
     \item Mean token accuracy: \textbf{99.98\%}
 \end{itemize}

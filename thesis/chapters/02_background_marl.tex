@@ -10,7 +10,7 @@ This chapter covers the theoretical foundations for the architectures developed 
 \subsection{Fundamentals of Reinforcement Learning}
 \label{sec:rl_fundamentals}
 
-Reinforcement learning (RL) formalizes sequential decision-making under uncertainty, where an autonomous agent learns to optimize its behavior through interaction with a dynamic environment\parencite{Sutton_Barto_2018}. Imagine an agent dropped into a complex grid-world, tasked with navigating a forest to collect wood. At each step, it observes its surroundings, chooses a direction, and receives a numerical reward if it successfully harvests the resource.
+Reinforcement learning (RL) formalizes sequential decision-making under uncertainty, where an autonomous agent learns to optimize its behavior through interaction with a dynamic environment~\parencite{Sutton_Barto_2018}. Imagine an agent dropped into a complex grid-world, tasked with navigating a forest to collect wood. At each step, it observes its surroundings, chooses a direction, and receives a numerical reward if it successfully harvests the resource.
 
 \subsubsection{Markov Decision Processes (MDPs)}
 \label{subsec:mdp}
@@ -18,7 +18,7 @@ Reinforcement learning (RL) formalizes sequential decision-making under uncertai
 A fully observable single-agent control problem is mathematically formalized as a Markov Decision Process (MDP)~\parencite{Szepesvári_2011}.
 Conceptually, an MDP provides a structured framework for modeling decision-making in environments where outcomes are partly random and partly under the control of the agent. 
 
-Figure~\ref{fig:mdp_loop} illustrates this foundational interaction loop. At each discrete timestep, the agent observes the current state of the world, consults its internal strategy (the policy $\pi$) to select an action, and executes it. The environment then computes the consequences, responding with the subsequent state and a scalar reward signal.
+This foundational interaction is depicted in Figure~\ref{fig:mdp_loop}. At each discrete timestep, the agent observes the current state of the world, consults its internal strategy (the policy $\pi$) to select an action, and executes it. The environment then computes the consequences, responding with the subsequent state and a scalar reward signal.
 
 \begin{figure}[H]
 \centering
@@ -51,7 +51,7 @@ To solve this grid-world mathematically, the system relies on the \emph{Markov P
 
 Building on this property, the MDP is formally defined by the 5-tuple $\langle \mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \gamma \rangle$~\parencite{Szepesvári_2011}.
 We can map each of these mathematical variables directly to our wood-collecting agent:
-\begin{itemize}[nosep]
+\begin{itemize}
     \item $\mathcal{S}$ is the set of all valid states. In our example, a state $s$ includes the agent's $(x, y)$ coordinates on the grid and whether its inventory currently contains wood.
     \item $\mathcal{A}$ is the set of available actions. For our agent, this might be limited to \{Move North, Move South, Interact/Chop\}.
     \item $\mathcal{P}: \mathcal{S} \times \mathcal{A} \times \mathcal{S} \rightarrow [0, 1]$ is the transition probability. If the agent chooses the 'Move North' action, $\mathcal{P}$ defines the chance it actually lands on the tile above (e.g., 100\%, or perhaps 90\% if the environment includes slippery terrain).
@@ -66,6 +66,13 @@ The ultimate goal of the agent is to optimize this policy to maximize its \emph{
 $G_t = \sum_{k=0}^{\infty} \gamma^k R_{t+k+1}$ represents the agent's "total lifetime score."
 It is the sum of every reward the agent expects to collect from the current moment $t$ until the end of the episode, with future rewards multiplied by the discount factor $\gamma$ so they carry slightly less weight than immediate victories.
 
+To mathematically bind all the components of the MDP tuple together, we define the \emph{Value function} $V^\pi(s)$. This function represents the expected return when starting in state $s$ and following policy $\pi$ thereafter. Crucially, it can be decomposed recursively into the \emph{Bellman Equation} \parencite{bellman1957dynamic}, which explicitly unites the policy ($\pi$) with the transition probabilities ($\mathcal{P}$), rewards ($\mathcal{R}$), and discount factor ($\gamma$) across the state-action space ($\mathcal{S}, \mathcal{A}$):
+\begin{equation}
+    V^\pi(s) = \sum_{a \in \mathcal{A}} \pi(a \mid s) \sum_{s' \in \mathcal{S}} \mathcal{P}(s' \mid s, a) \Big[ \mathcal{R}(s, a) + \gamma V^\pi(s') \Big]
+\label{eq:bellman}
+\end{equation}
+This equation is the engine of reinforcement learning. It demonstrates that the abstract variables of the MDP tuple do not exist in isolation, but interact continuously to evaluate and improve the agent's strategy. It states that the value of being in a state is equal to the immediate reward received plus the value of being in the next state, discounted by gamma. 
+
 \subsubsection{The Actor-Critic Architecture: Two Neural Networks}
 \label{subsec:actor_critic}
 
@@ -74,8 +81,8 @@ To train our wood-collecting agent, we must optimize its policy. Instead of memo
 To help the Actor learn, we introduce a second neural network called the \emph{Critic}, parameterized by an entirely separate set of weights $\phi$. The Critic learns the \emph{Value function}, $V_\phi(s)$, which is its estimate of the total expected return from a given state. Conceptually, this is the agent's "gut feeling" about a location. If the agent stands next to a forest, the Critic outputs a high value; if it stands next to a hazard, it outputs a low value.
 
 Because we have two distinct networks, they have two distinct mathematical objectives during optimization:
-\begin{itemize}[nosep]
-    \item \textbf{The Actor} aims to maximize its expected performance score, denoted as $J(\theta)$. Therefore, it updates its weights $\theta$ via \emph{gradient ascent} ($\nabla_\theta$). Shown later in \Cref{eq:policy_gradient}. 
+\begin{itemize}
+    \item \textbf{The Actor} aims to maximize its expected performance score, denoted as $J(\theta)$. Therefore, it updates its weights $\theta$ via \emph{gradient ascent} ($\nabla_\theta$). Shown later in \Cref{eq:policy_gradient} and Figure~\ref{fig:actor_critic}.
     \item \textbf{The Critic} aims to minimize its prediction errors. Its objective is a loss function $L(\phi)$, typically defined as the Mean Squared Error between its predicted value and the actual target return $\hat{R}_t$. Therefore, it updates its weights $\phi$ via \emph{gradient descent} ($\nabla_\phi$):
 \end{itemize}
 \begin{equation}
@@ -121,7 +128,7 @@ As illustrated in Figure~\ref{fig:actor_critic}, this dual-network architecture 
     \draw[arrow, dashed, draw=purple!80] (critic_grad.north) -- (critic.south);
 
 \end{tikzpicture}
-\caption[The Actor-Critic Architecture]{The Actor-Critic architecture. The Actor maximizes its performance via gradient ascent, while the Critic minimizes its prediction error via gradient descent.}
+\caption[The Actor-Critic Architecture]{The Actor-Critic architecture.}
 \label{fig:actor_critic}
 \end{figure}
 
@@ -180,7 +187,7 @@ With the Advantage calculated by the Critic (\Cref{fig:actor_critic}), the Actor
     \label{eq:policy_gradient}
 \end{equation}
 
-In other words, we take the expectation (essentially, an average) of the product of the log probability of the specific action that was just taken and the Advantage signal from the Critic, calculated over a large batch of state $s$ the agent visited and action $a$ it took. In plain English, Equation~\ref{eq:policy_gradient} tells the neural network: \emph{"On average across all your recent experiences, if an action was surprisingly good (positive Advantage), push your weights in a direction that makes that action more likely in the future. If it was bad, make it less likely."}
+Mathematically, this equation states that the gradient of the Actor's overall performance ($\nabla_\theta J(\theta)$) is equal to an expected value (an average) taken over recent experiences. For every state-action pair, we calculate the gradient of the log probability ($\nabla_\theta \log \pi_\theta$), the exact direction we must shift our weights to make that specific action more likely, and scale it by the Critic's Advantage signal ($A^{\pi_\theta}$). In plain English, \Cref{eq:policy_gradient} tells the neural network: \emph{"On average across all your recent experiences, if an action was surprisingly good (positive Advantage), push your weights in the direction that makes that action more likely in the future. If it was bad (negative Advantage), push in the opposite direction."}
 
 We can see why it could be fragile in practice. Suppose our lumberjack agent accidentally executes a random sequence of movements and luckily discovers a massive, hidden cache of wood. The Critic will calculate an enormous positive Advantage. Standard gradient ascent will blindly follow the math, reacting by violently dragging the Actor's weights in that specific direction to favor that exact sequence again. 
 
@@ -193,7 +200,7 @@ Proximal Policy Optimization (PPO) resolves this fragility. It abandons the clas
 \end{equation}
 
 To fully understand this equation, we can break down its notation:
-\begin{itemize}[nosep]
+\begin{itemize}
     \item $\hat{\mathbb{E}}_t$ means we are averaging over a finite batch of real data collected at time steps $t$, rather than computing a perfect theoretical expectation. $\hat{A}_t$ is the estimated Advantage provided by the Critic.
     \item $r_t(\theta)$ is the probability ratio, defined as $\frac{\pi_\theta(a_t \mid s_t)}{\pi_{\theta_{\text{old}}}(a_t \mid s_t)}$, which measures how much more (or less) likely the agent is to take the action now compared to before the update.
     \item $\epsilon$ acts as a hard boundary or a speed limit for the updates (typically $0.2$, as established by \textcite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}).
@@ -204,7 +211,7 @@ If an action yields a massive positive Advantage, the network will naturally try
 \subsubsection{Kullback-Leibler (KL) Divergence and Early Stopping}
 \label{subsec:kl_divergence}
 
-While the clipping mechanism described in Equation~\ref{eq:ppo_clip} acts as a strict per-action speed limit---ensuring the probability of taking one specific action doesn't spike too drastically---PPO implementations frequently employ an additional, broader safety net. This is known as \emph{early stopping} based on Kullback-Leibler (KL) divergence~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}.
+While the clipping mechanism described in Equation~\ref{eq:ppo_clip} acts as a strict per-action speed limit, ensuring the probability of taking one specific action doesn't spike too drastically, PPO implementations frequently employ an additional, broader safety net. This is known as \emph{early stopping} based on Kullback-Leibler (KL) divergence~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}.
 
 To understand why this is necessary, consider our lumberjack once more. The clipping function works perfectly for isolating and limiting a single enthusiastic update (like chopping a tree). However, if the agent updates thousands of small, unclipped actions simultaneously across a large batch of data, the \emph{cumulative} effect might still fundamentally alter the agent's overall behavior. 
 
@@ -319,12 +326,12 @@ As illustrated in Figure~\ref{fig:dec_pomdp}, this scenario is formally modeled 
     \draw[arrow, dashed, draw=red!70] (env.south) -- ++(0, -0.6) -| ([xshift=0.6cm]agent2.south);
 
 \end{tikzpicture}
-\caption[The Dec-POMDP Interaction Framework]{The Dec-POMDP interaction framework. The true global state is obscured by an observation filter, distributing localized views and a shared reward to decentralized agents.}
+\caption[The Dec-POMDP Interaction Framework]{The Dec-POMDP interaction framework.}
 \label{fig:dec_pomdp}
 \end{figure}
 
 To formalize this mathematically, we extend our previous MDP into the Dec-POMDP tuple $\langle \mathcal{N}, \mathcal{S}, \boldsymbol{\mathcal{A}}, \mathcal{P}, \mathcal{R}, \boldsymbol{\Omega}, \mathcal{O}, \gamma \rangle$. We can map these variables directly to our cooperative scenario:
-\begin{itemize}[nosep]
+\begin{itemize}
     \item $\mathcal{N} = \{1, \dots, N\}$ is the roster of active agents (e.g., Agent 1 Lumberjack, Agent 2 Miner).
     \item $\boldsymbol{\mathcal{A}} = \mathcal{A}_1 \times \dots \times \mathcal{A}_N$ is the joint action space. At timestep $t$, agents simultaneously execute a joint action $\mathbf{a}_t = (a_t^{(1)}, \dots, a_t^{(N)}) \in \boldsymbol{\mathcal{A}}$.
     \item $\boldsymbol{\Omega} = \Omega_1 \times \dots \times \Omega_N$ is the joint observation space, representing the limited windows of information each agent receives.
@@ -434,7 +441,7 @@ However, generating entirely new physical environments on the fly introduces sig
 \subsection{Temporal Abstraction and Reward Shaping}
 \label{sec:abstraction_shaping}
 
-While MAPPO exhibits strong sample efficiency in dense tasks, it struggles catastrophically in long-horizon domains gated by sparse rewards. If our lumberjack and miner only receive a shared $+10$ reward when the final enemy is defeated, the probability of them randomly discovering the exact sequence of chopping wood, mining stone, and crafting weapons approaches zero. To mitigate this exploration bottleneck, structural abstraction techniques are required.
+While MAPPO exhibits strong sample efficiency in dense tasks, it struggles catastrophically in long-horizon domains gated by sparse rewards. If our lumberjack and miner only receive a single $+10$ reward upon completing a high-level goal, such as successfully crafting an advanced tool, the probability of them randomly discovering the exact prerequisite sequence of chopping wood, mining stone, and navigating to a workbench approaches zero. To mitigate this exploration bottleneck, structural abstraction techniques are required.
 
 \subsubsection{Potential-Based Reward Shaping (PBRS)}
 \label{subsec:pbrs}
@@ -472,12 +479,19 @@ As demonstrated in Figure~\ref{fig:pbrs_loop}, the discount factor $\gamma$ is m
 Rather than modifying the reward landscape, Hierarchical Reinforcement Learning (HRL) achieves temporal abstraction by organizing low-level actions into high-level macro-structures. The \emph{Options Framework} formalizes these macro-actions over MDPs~\parencite{Sutton_Precup_Singh_1999}. Rather than forcing a single policy to decide whether to step north or south at every millisecond, HRL introduces a higher-level cognitive hierarchy. A Meta-Controller can select a discrete Option $o \in \mathcal{O}$, such as \texttt{COLLECT\_WOOD}, which then dictates those low-level kinetic movements.
 
 This Option is defined by the triple $\langle \mathcal{I}_o, \pi_o, \beta_o \rangle$~\parencite{Sutton_Precup_Singh_1999}:
-\begin{itemize}[nosep]
+\begin{itemize}
     \item $\mathcal{I}_o \subseteq \mathcal{S}$ is the initiation set. The \texttt{COLLECT\_WOOD} Option can only be initiated if the lumberjack does not already have wood in its inventory.
-    \item $\pi_o(a \mid s)$ is the intra-option policy governing primitive execution. This is the low-level MAPPO policy that actually steers the agent to the tree and executes the 'Chop' command.
+    \item $\pi(a \mid s, o)$ is the intra-option policy governing primitive execution. While classically denoted as a separate policy $\pi_o(a \mid s)$, modern deep RL implementations parameterize this as a single neural network $\pi_\theta(a \mid s, o)$ that takes the selected option $o$ as an augmented input. This is the low-level MAPPO policy that actually steers the agent to the tree and executes the 'Chop' command.
     \item $\beta_o: \mathcal{S} \rightarrow [0, 1]$ is the stochastic termination condition, giving the probability $\beta_o(s)$ that option $o$ terminates in state $s$. For the lumberjack, this triggers at 100\% probability the moment the wood enters the inventory.
 \end{itemize}
 
 When an option $o$ is selected, the intra-option policy $\pi_o$ controls primitive actions until the termination condition $\beta_o$ triggers. This transforms the underlying decision process into a Semi-Markov Decision Process (SMDP) operating over variable temporal steps~\parencite{Sutton_Precup_Singh_1999}.
 
-By abstracting the kinetic physics of the grid into discrete semantic tasks, the Options framework sets the stage for a high-level cognitive controller. As explored in the next chapter, this architecture allows Large Language Models to act as these strategic orchestrators, entirely bypassing the random exploration bottleneck.
+Because an Option $o$ executes over a variable number of steps $k$ rather than a single discrete tick, the standard MDP mathematics must be adjusted. The Meta-Controller evaluates its strategic choices using an SMDP action-value function. The reward is accumulated over the duration of the option, and the value of the resulting next state $S_{t+k}$ is discounted by $\gamma^k$:
+\begin{equation}
+    Q(s, o) = \mathbb{E} \left[ \sum_{j=1}^{k} \gamma^{j-1} R_{t+j} + \gamma^k \max_{o'} Q(S_{t+k}, o') \right]
+\label{eq:smdp_bellman}
+\end{equation}
+The total value of choosing an Option ($Q(s, o)$) is the sum of all the small environmental rewards collected \emph{during} its execution (the $\sum$ term), plus the expected value of the new state we land in once the option finishes ($S_{t+k}$). Because this new state is reached $k$ steps in the future, its value is exponentially discounted by $\gamma^k$. This formulation is important for Hierarchical RL: it empowers the high-level controller to plan over long semantic horizons while remaining robust to the unpredictable amount of physical time ($k$) required by the low-level agents.
+
+Crucially, this temporal abstraction replaces tick-by-tick micromanagement. Because the high-level controller only evaluates the environment when an Option terminates, it operates at a significantly lower frequency than the environment's physical clock~\parencite{Sutton_Precup_Singh_1999}. By abstracting the kinetic physics of the grid into discrete semantic tasks, the Options framework sets the stage for a high-level cognitive controller. As explored in the next chapter, this architecture allows computationally expensive Large Language Models to act as these strategic orchestrators without needing to generate a decision every physical step, entirely bypassing the random exploration bottleneck.

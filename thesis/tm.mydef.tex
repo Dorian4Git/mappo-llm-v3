@@ -19,7 +19,7 @@
 \usepackage{setspace} 
 \setstretch{1.2}      % 1.2 line spacing (Standard HEG requirement)
 \setlength{\parindent}{0pt} % No indentation at the start of paragraphs
-\setlength{\parskip}{6pt}   % A realistic gap between standard paragraphs 
+\setlength{\parskip}{9pt}   % A realistic gap between standard paragraphs (+1mm approx)
 \usepackage{microtype} % Better typography
 
 \usepackage[a4paper, 
@@ -58,22 +58,27 @@
 % The {16}{19} means 16pt font size with 19pt line spacing.
 \titleformat{\section}
   {\fontsize{16}{19}\bfseries\sffamily}{\thesection}{1em}{}
+\titlespacing*{\section}{0pt}{0pt}{0pt}
 
 % Unnumbered Level 1 Heading (16pt) - Centered for Declaration, TOC, etc.
 \titleformat{name=\section,numberless}
   {\fontsize{16}{19}\bfseries\sffamily\centering}{}{0em}{}
+\titlespacing*{name=\section,numberless}{0pt}{0pt}{0pt}
 
 % Level 2 Heading (14pt) - e.g., \subsection
 \titleformat{\subsection}
   {\fontsize{14}{17}\bfseries\sffamily}{\thesubsection}{1em}{}
+\titlespacing*{\subsection}{0pt}{0pt}{0pt}
 
 % Level 3 Heading (12pt) - e.g., \subsubsection
 \titleformat{\subsubsection}
   {\fontsize{12}{14}\bfseries\sffamily}{\thesubsubsection}{1em}{}
+\titlespacing*{\subsubsection}{0pt}{0pt}{0pt}
 
 % Level 4 Heading (11pt) - e.g., \paragraph
 \titleformat{\paragraph}
   {\fontsize{11}{13}\bfseries\sffamily}{\theparagraph}{1em}{}
+\titlespacing*{\paragraph}{0pt}{0pt}{0pt}
 
 % Note: If you are using the 'report' document class, you might also want to format \chapter to 16pt:
 % \titleformat{\chapter}[hang]
@@ -126,7 +131,7 @@
 \usepackage{multirow}
 \usepackage{siunitx}
 \usepackage{enumitem}
-\setlist{itemsep=0pt, parsep=0pt, topsep=6pt, partopsep=0pt}
+\setlist{itemsep=3pt, parsep=0pt, topsep=-3pt, partopsep=0pt}
 \usepackage{csquotes}
 
 % Rename Table of Contents

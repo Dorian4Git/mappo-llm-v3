@@ -58,29 +58,9 @@ Dorian THOMÉ
 
 \section*{Acknowledgments}
 \addcontentsline{toc}{section}{Acknowledgments}
-I would like to express my deepest gratitude to my supervisor, Prof. Dr. Alexandros Kalousis, for his invaluable guidance and support throughout this research. I also thank M. Jacopo Castellini for his insightful feedback and guidance.
-
-I acknowledge the use of the following resources:
-\begin{itemize}
-    \item Gemini 3.1 Pro for code generation, debugging, and assisting in spelling and grammar checks. Proof reading.
-\end{itemize}
+My gratitude to my supervisor, Prof. Dr. Alexandros Kalousis, and M. Jacopo Castellini for their guidance and support throughout this research.
 
 \newpage
-
-\section*{Résumé}
-\addcontentsline{toc}{section}{Résumé}
-
-\begin{otherlanguage}{french}
-Ce mémoire examine l'intégration des grands modèles de langage (LLM) avec l'apprentissage par renforcement multi-agents (MARL) afin de résoudre les goulets d'étranglement liés à l'exploration dans des environnements à récompenses rares. L'objectif principal est d'évaluer comment le raisonnement sémantique d'un LLM peut guider des agents optimisés par l'algorithme MAPPO à travers des tâches interdépendantes modélisées par un graphe orienté acyclique (DAG).
-
-Pour ce faire, la méthodologie s'est articulée autour du développement et de l'évaluation de deux architectures neuro-symboliques distinctes. La première approche, le façonnage dynamique (Dynamic Reward Shaping), utilise le LLM comme un superviseur stratégique ajustant en continu les pondérations d'une fonction de récompense basée sur le potentiel (PBRS). La seconde approche introduit un méta-contrôleur hiérarchique (HRL) au sein duquel le LLM assigne des macro-actions discrètes (Options) aux agents, modifiant ainsi directement leur espace d'observation et leur signal de récompense intrinsèque. L'étude évalue l'impact de ces architectures à travers des études d'ablation ciblant le lissage temporel, l'adaptation sémantique en "zero-shot", l'ajustement fin (QLoRA) et la réflexion contrefactuelle.
-
-Les résultats démontrent que l'architecture HRL surpasse largement le façonnage dynamique, permettant aux agents de maîtriser l'intégralité de l'environnement, y compris les phases de coordination complexes liées au combat. Le bilan critique des réalisations révèle que l'intégration de modèles sémantiques avec des politiques cinétiques nécessite des mécanismes de stabilisation stricts. L'utilisation d'une moyenne mobile exponentielle (EMA) et de garde-fous basés sur la divergence de Kullback-Leibler (KL) s'est avérée indispensable pour empêcher l'oubli catastrophique face à la non-stationnarité des objectifs. Par ailleurs, cette recherche met en lumière deux vulnérabilités fondamentales des systèmes neuro-symboliques. Premièrement, l'excès de confiance sémantique du LLM peut induire un piratage des récompenses (reward hacking), piégeant les agents dans des optima locaux. Deuxièmement, la réflexion contrefactuelle provoque une sur-correction induite face à de simples retards physiques, dégradant l'efficacité de l'apprentissage. D'un point de vue prospectif, bien que l'ajustement fin par QLoRA multiplie par cinq la vitesse de convergence, la viabilité de ces architectures pour le contrôle à haute fréquence nécessitera le développement de modèles de fondation dotés d'une véritable mémoire spatio-temporelle.
-
-\keywords{Apprentissage par renforcement multi-agents (MARL), Grands modèles de langage (LLM), Apprentissage hiérarchique par renforcement (HRL), Façonnage de récompenses, Optimisation de la politique proximale (PPO), Systèmes neuro-symboliques, QLoRA.}
-\end{otherlanguage}
-
-\vspace{2cm}
 
 \section*{Summary}
 \addcontentsline{toc}{section}{Summary}
