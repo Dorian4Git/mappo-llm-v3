@@ -9,6 +9,19 @@
 \renewcommand*{\bibfont}{\normalsize\setstretch{1.0}} % Forces 11pt and single spacing
 \setlength{\bibitemsep}{12pt} % Sets the space between bibliography items
 
+% --- HEG-GE ISO 690 Citation Fixes ---
+% Forces commas instead of semicolons between authors
+\renewcommand*{\multinamedelim}{\addcomma\space}
+% Forces "and" before the final author (translated from "et")
+\renewcommand*{\finalnamedelim}{\space and\space}
+% Removes the comma between author and year in in-text citations
+\renewcommand*{\nameyeardelim}{\space}
+% Forces "et al." formatting
+\DefineBibliographyStrings{english}{
+    andothers = {et al\adddot}
+}
+
+
 % --- Metadata ---
 \newcommand{\authorname}{Dorian THOMÉ}
 \newcommand{\shortauthors}{D. THOMÉ}
