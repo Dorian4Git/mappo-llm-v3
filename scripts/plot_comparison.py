@@ -128,9 +128,9 @@ if __name__ == "__main__":
                         # We multiply update by 128 (n_envs) * 256 (rollout_length) to get approx env steps
                         # Or just use the update number for x-axis if preferred. Let's use (update * 32768)
                         # Wait, HRL updates are every 32768 steps (128*256).
-                        if "Max_Approx_KL" in data:
+                        if "max_kl" in data:
                             steps.append(data.get("update", 0) * 32768)
-                            vals.append(data["Max_Approx_KL"])
+                            vals.append(data["max_kl"])
                     except json.JSONDecodeError:
                         pass
                         

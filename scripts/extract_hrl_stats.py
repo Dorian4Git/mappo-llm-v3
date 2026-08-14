@@ -4,9 +4,10 @@ import numpy as np
 from tensorboard.backend.event_processing import event_accumulator
 
 runs = {
-    'No-LoRA':     'runs/v3_HRL_Std_Ollama_E128_s42_20260720-085701',
-    'QLoRA+Refl':  'runs/v3_HRL_Std_LoRA_E128_s42_20260720-190702',
-    'QLoRA-NoRefl':'runs/v3_HRL_Std_LoRA_E128_s42_20260721-094612',
+    'No-LoRA + Refl.': 'runs/v3_HRL_Std_Ollama_E128_s42_20260721-220545',
+    'No-LoRA -- No Refl.': 'runs/v3_HRL_Std_NoLoRA_E128_s42_20260814-125343',
+    'QLoRA + Refl.': 'runs/v3_HRL_Std_LoRA_E128_s42_20260722-120127',
+    'QLoRA -- No Refl.': 'runs/v3_HRL_Std_LoRA_E128_s42_20260721-094612'
 }
 
 tags_of_interest = [

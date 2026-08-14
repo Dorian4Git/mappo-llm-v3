@@ -15,9 +15,10 @@ For the \textbf{Dynamic Reward Shaping} experiments, we evaluate:
     \item \textbf{LLM Dynamic (Local Qwen 2.5 7B):} An equivalent dynamic architecture utilizing a localized, smaller parameter model (Qwen 2.5 7B) to observe the efficacy of smaller, self-hosted LLMs. 
 \end{enumerate}
 
-For the \textbf{Hierarchical Reinforcement Learning (HRL)} experiments, we evaluate three configurations:
+For the \textbf{Hierarchical Reinforcement Learning (HRL)} experiments, we evaluate four configurations:
 \begin{enumerate}
-    \item \textbf{No-LoRA Base (Qwen 2.5 7B):} The un-finetuned base model serving as the HRL Meta-Controller (the Commander).
+    \item \textbf{No-LoRA Base with Reflection (Qwen 2.5 7B):} The un-finetuned base model serving as the HRL Meta-Controller, with counterfactual reflection triggered on option staleness.
+    \item \textbf{No-LoRA Base without Reflection (Qwen 2.5 7B):} The same un-finetuned base model, with the reflection mechanism disabled.
     \item \textbf{QLoRA with Reflection (Qwen 2.5 7B):} A QLoRA fine-tuned model (as detailed in Section~\ref{sec:qlora_pipeline}, the Qwen 2.5 7B model was fine-tuned using a 4-bit NF4 quantization pipeline on 1,200 synthetic oracle examples) with counterfactual reflection triggered on option staleness.
     \item \textbf{QLoRA without Reflection (Qwen 2.5 7B):} The same fine-tuned model, with the reflection mechanism disabled.
 \end{enumerate}
@@ -100,88 +101,128 @@ However, the training trajectories highlight a trade-off in policy stability (Fi
 % ==========================================
 % PART 2: HIERARCHICAL REINFORCEMENT LEARNING
 % ==========================================
+% ==========================================
+% PART 2: HIERARCHICAL REINFORCEMENT LEARNING
+% ==========================================
 \subsection{Part 2: Hierarchical Reinforcement Learning}
 \label{sec:exp_hrl}
 
-While the dynamic shaping architecture successfully guided the lumberjack and miner past initial bottlenecks (like Iron), it ultimately stalled at the combat phase (Enemy, Gold). Modifying the continuous reward landscape was insufficient to teach the workers the discrete, long-horizon macro-actions required for coordinated combat.
+% --- OLD VERSION START ---
+% While the dynamic shaping architecture successfully guided the lumberjack and miner past initial bottlenecks (like Iron), it ultimately stalled at the combat phase (Enemy, Gold). Modifying the continuous reward landscape was insufficient to teach the workers the discrete, long-horizon macro-actions required for coordinated combat.
+% 
+% This limitation motivated the shift to a full \textbf{Hierarchical Reinforcement Learning (HRL)} architecture, where the Commander explicitly assigns discrete \emph{Options} (e.g., ``Craft Sword'', ``Defeat Enemy'') directly to the lower-level MAPPO policy. As outlined in Section~\ref{sec:exp_setup}, we evaluated three configurations over 2000 optimization updates ($\approx$65.5M environment steps each): the un-finetuned \textbf{No-LoRA Base} (plotted in grey), and two \textbf{QLoRA} fine-tuned variants: with counterfactual reflection (blue) and without (red). The reflection mechanism is triggered whenever an assigned Option becomes ``stale'' (i.e., workers fail to complete it within 150 steps).
+% 
+% \subsubsection{Subtask Progression}
+% 
+% All three configurations managed to complete the DAG at some point, but with significant differences in efficiency. Table~\ref{tab:hrl_breakthrough} presents the exact environment step at which each subtask was first completed. 
+% 
+% \begin{table}[H]
+% \centering
+% \caption[First Breakthrough Step per Subtask]{First breakthrough step (millions of environment steps) for each subtask. \textbf{Bold} indicates the fastest configuration per subtask.}
+% \label{tab:hrl_breakthrough}
+% \begin{tabular}{lccc}
+% \hline
+% \textbf{Subtask} & \textbf{No-LoRA} & \textbf{QLoRA + Refl.} & \textbf{QLoRA -- No Refl.} \\
+% \hline
+% Wood       & \textbf{0.16M} & 0.29M & 0.26M \\
+% Stone      & \textbf{0.16M} & 0.29M & 0.26M \\
+% Pickaxe    & 13.50M & 1.25M & \textbf{0.72M} \\
+% Bridge     & 30.61M & 2.03M & \textbf{1.18M} \\
+% Iron       & 16.61M & \textbf{2.13M} & 3.01M \\
+% Sword      & 16.71M & \textbf{2.29M} & 3.15M \\
+% Armor      & 16.78M & \textbf{2.29M} & 3.15M \\
+% Enemy      & 30.74M & \textbf{2.49M} & 3.24M \\
+% Gold       & 32.31M & 7.08M & \textbf{6.29M} \\
+% \hline
+% \end{tabular}
+% \end{table}
+% 
+% Several patterns emerge from Table~\ref{tab:hrl_breakthrough}. First, all three configurations solve the early-game tasks (Wood, Stone) within the first 0.3M steps, with the No-LoRA base marginally faster due to lower inference overhead. Second, the QLoRA models show a significant advantage starting at Pickaxe: both fine-tuned runs complete the mid-game milestones (Pickaxe through Armor) approximately \textbf{8--14$\times$ faster} than the base model. The No-LoRA run does not reach Pickaxe until 13.5M steps, nearly $11\times$ slower than QLoRA with Reflection (1.25M), demonstrating that fine-tuning is essential for coherent option sequencing.
+% 
+% Third, the No-LoRA run exhibits an ordering anomaly: it completes Iron, Sword, and Armor ($\sim$16.7M) well before Bridge (30.6M). Since Bridge is a prerequisite for reaching the enemy, the agents spend $\sim$14M steps fully equipped but unable to cross the river. Both QLoRA runs, however, follow the optimal DAG ordering (building the bridge before crafting combat equipment), resulting in a tight progression from Bridge to Enemy ($<$0.5M steps gap).
+% 
+% Finally, at the Gold milestone, QLoRA without Reflection is the fastest (6.29M), followed closely by QLoRA with Reflection (7.08M). The No-LoRA base reaches Gold at 32.31M, \textbf{5.1$\times$ slower}, confirming that without fine-tuning, the Commander struggles to plan the late-game transition from combat to resource extraction.
+% --- OLD VERSION END ---
 
-This limitation motivated the shift to a full \textbf{Hierarchical Reinforcement Learning (HRL)} architecture, where the Commander explicitly assigns discrete \emph{Options} (e.g., ``Craft Sword'', ``Defeat Enemy'') directly to the lower-level MAPPO policy. As outlined in Section~\ref{sec:exp_setup}, we evaluated three configurations over 2000 optimization updates ($\approx$65.5M environment steps each): the un-finetuned \textbf{No-LoRA Base} (plotted in grey), and two \textbf{QLoRA} fine-tuned variants: with counterfactual reflection (blue) and without (red). The reflection mechanism is triggered whenever an assigned Option becomes ``stale'' (i.e., workers fail to complete it within 150 steps).
+While the dynamic shaping architecture successfully guided the lumberjack and miner past initial bottlenecks, it ultimately stalled at the combat phase. Modifying the continuous reward landscape was insufficient to teach the workers the discrete, long-horizon macro-actions required for coordinated combat.
+
+This limitation motivated the shift to a full \textbf{Hierarchical Reinforcement Learning (HRL)} architecture, where the Commander explicitly assigns discrete \emph{Options} directly to the lower-level MAPPO policy. To systematically investigate the exploration bottleneck and the impact of our proposed mechanisms, we evaluated four configurations over 2000 optimization updates ($\approx$65.5M environment steps each): the un-finetuned \textbf{No-LoRA Base} (with and without counterfactual reflection) and the \textbf{QLoRA} fine-tuned variant (with and without counterfactual reflection). The reflection mechanism is triggered whenever an assigned Option becomes ``stale'' (i.e., workers fail to complete it within 150 steps).
 
 \subsubsection{Subtask Progression}
 
-All three configurations managed to complete the DAG at some point, but with significant differences in efficiency. Table~\ref{tab:hrl_breakthrough} presents the exact environment step at which each subtask was first completed. 
+All four configurations managed to complete the DAG at some point, but with significant differences in efficiency and stability. Table~\ref{tab:hrl_breakthrough} presents the exact environment step at which each subtask was first completed. 
 
 \begin{table}[H]
 \centering
 \caption[First Breakthrough Step per Subtask]{First breakthrough step (millions of environment steps) for each subtask. \textbf{Bold} indicates the fastest configuration per subtask.}
 \label{tab:hrl_breakthrough}
-\begin{tabular}{lccc}
+\begin{tabular}{lcccc}
 \hline
-\textbf{Subtask} & \textbf{No-LoRA} & \textbf{QLoRA + Refl.} & \textbf{QLoRA -- No Refl.} \\
+\textbf{Subtask} & \textbf{No-LoRA + Refl.} & \textbf{No-LoRA -- No Refl.} & \textbf{QLoRA + Refl.} & \textbf{QLoRA -- No Refl.} \\
 \hline
-Wood       & \textbf{0.16M} & 0.29M & 0.26M \\
-Stone      & \textbf{0.16M} & 0.29M & 0.26M \\
-Pickaxe    & 13.50M & 1.25M & \textbf{0.72M} \\
-Bridge     & 30.61M & 2.03M & \textbf{1.18M} \\
-Iron       & 16.61M & \textbf{2.13M} & 3.01M \\
-Sword      & 16.71M & \textbf{2.29M} & 3.15M \\
-Armor      & 16.78M & \textbf{2.29M} & 3.15M \\
-Enemy      & 30.74M & \textbf{2.49M} & 3.24M \\
-Gold       & 32.31M & 7.08M & \textbf{6.29M} \\
+Wood       & 0.16M & 0.26M & 0.29M & 0.26M \\
+Stone      & 0.16M & 0.26M & 0.29M & 0.26M \\
+Pickaxe    & 13.50M & 5.01M & 1.25M & \textbf{0.72M} \\
+Bridge     & 30.61M & 5.73M & 2.03M & \textbf{1.18M} \\
+Iron       & 16.61M & 10.52M & \textbf{2.13M} & 3.01M \\
+Sword      & 16.71M & 10.52M & \textbf{2.29M} & 3.15M \\
+Armor      & 16.78M & 10.52M & \textbf{2.29M} & 3.15M \\
+Enemy      & 30.74M & 11.89M & \textbf{2.49M} & 3.24M \\
+Gold       & 32.31M & 16.32M & 7.08M & \textbf{6.29M} \\
 \hline
 \end{tabular}
 \end{table}
 
-Several patterns emerge from Table~\ref{tab:hrl_breakthrough}. First, all three configurations solve the early-game tasks (Wood, Stone) within the first 0.3M steps, with the No-LoRA base marginally faster due to lower inference overhead. Second, the QLoRA models show a significant advantage starting at Pickaxe: both fine-tuned runs complete the mid-game milestones (Pickaxe through Armor) approximately \textbf{8--14$\times$ faster} than the base model. The No-LoRA run does not reach Pickaxe until 13.5M steps, nearly $11\times$ slower than QLoRA with Reflection (1.25M), demonstrating that fine-tuning is essential for coherent option sequencing.
+Several critical patterns emerge from Table~\ref{tab:hrl_breakthrough}. First, the QLoRA models show a massive overall advantage: both fine-tuned runs complete the mid-game milestones (Pickaxe through Armor) approximately 8--14$\times$ faster than the baseline equipped with reflection. At the final Gold milestone, QLoRA without Reflection is the fastest (6.29M), closely followed by QLoRA with Reflection (7.08M).
 
-Third, the No-LoRA run exhibits an ordering anomaly: it completes Iron, Sword, and Armor ($\sim$16.7M) well before Bridge (30.6M). Since Bridge is a prerequisite for reaching the enemy, the agents spend $\sim$14M steps fully equipped but unable to cross the river. Both QLoRA runs, however, follow the optimal DAG ordering (building the bridge before crafting combat equipment), resulting in a tight progression from Bridge to Enemy ($<$0.5M steps gap).
+However, the most revealing finding relates to the \textbf{Reactive Self-Debugging} failure mode. When counterfactual reflection is applied to the base No-LoRA model, it acts as a severe destabilizing force rather than a helpful correction. The No-LoRA model without reflection reaches the Gold milestone in 16.32M steps, while the No-LoRA model \emph{with} reflection takes 32.31M steps---nearly twice as long. 
 
-Finally, at the Gold milestone, QLoRA without Reflection is the fastest (6.29M), followed closely by QLoRA with Reflection (7.08M). The No-LoRA base reaches Gold at 32.31M, \textbf{5.1$\times$ slower}, confirming that without fine-tuning, the Commander struggles to plan the late-game transition from combat to resource extraction.
+This occurs because the un-finetuned model lacks the specific domain reasoning to interpret the error message (``Error: Agent failed, try something else''). Instead of correcting its logic, the base model panics and rapidly switches its assigned options, constantly changing the reward function for the RL agents and heavily destabilizing the PPO training. Conversely, without reflection, the base model falls into \emph{semantic over-confidence}, statically outputting the same incorrect option (e.g., `IDLE`). Ironically, this static failure is better for the MAPPO agents; it creates a stationary environment, allowing the agents to eventually ignore the LLM's bad advice and brute-force the environment through pure RL exploration. This data mathematically confirms that reactive self-debugging is a double-edged sword: it is highly effective when paired with a fine-tuned model, but actively harms convergence when applied to a base model.
 
 \begin{figure}[H]
     \centering
     \begin{subfigure}{0.32\textwidth}
-        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation/hrl_ablation_subtask_Wood.png}
+        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation_2/hrl_ablation_subtask_Wood.png}
         \caption{Wood}
     \end{subfigure}
     \hfill
     \begin{subfigure}{0.32\textwidth}
-        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation/hrl_ablation_subtask_Stone.png}
+        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation_2/hrl_ablation_subtask_Stone.png}
         \caption{Stone}
     \end{subfigure}
     \hfill
     \begin{subfigure}{0.32\textwidth}
-        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation/hrl_ablation_subtask_Pickaxe.png}
+        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation_2/hrl_ablation_subtask_Pickaxe.png}
         \caption{Pickaxe}
     \end{subfigure}
     \vskip 0.5\baselineskip
     \begin{subfigure}{0.32\textwidth}
-        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation/hrl_ablation_subtask_Iron.png}
+        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation_2/hrl_ablation_subtask_Iron.png}
         \caption{Iron}
     \end{subfigure}
     \hfill
     \begin{subfigure}{0.32\textwidth}
-        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation/hrl_ablation_subtask_Sword.png}
+        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation_2/hrl_ablation_subtask_Sword.png}
         \caption{Sword}
     \end{subfigure}
     \hfill
     \begin{subfigure}{0.32\textwidth}
-        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation/hrl_ablation_subtask_Armor.png}
+        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation_2/hrl_ablation_subtask_Armor.png}
         \caption{Armor}
     \end{subfigure}
     \vskip 0.5\baselineskip
     \begin{subfigure}{0.32\textwidth}
-        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation/hrl_ablation_subtask_Bridge.png}
+        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation_2/hrl_ablation_subtask_Bridge.png}
         \caption{Bridge}
     \end{subfigure}
     \hfill
     \begin{subfigure}{0.32\textwidth}
-        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation/hrl_ablation_subtask_Enemy.png}
+        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation_2/hrl_ablation_subtask_Enemy.png}
         \caption{Enemy}
     \end{subfigure}
     \hfill
     \begin{subfigure}{0.32\textwidth}
-        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation/hrl_ablation_subtask_Gold.png}
+        \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation_2/hrl_ablation_subtask_Gold.png}
         \caption{Gold}
     \end{subfigure}
     \caption[Subtask Completion Rates (HRL Configurations)]{Subtask completion rates across all nine environment milestones for the three HRL configurations. The dependency chain flows left-to-right, top-to-bottom.}
@@ -196,7 +237,7 @@ The subtask curves for QLoRA with Reflection exhibit a ``staircase'' pattern (Fi
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation/hrl_ablation_rewards.png}
+    \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation_2/hrl_ablation_rewards.png}
     \caption[Average Extrinsic Reward (HRL Configurations)]{Average Extrinsic Reward across HRL configurations. All three runs converge to comparable final rewards ($\sim$0.326), but the QLoRA runs reach this level $\sim$3$\times$ faster than the No-LoRA base.}
     \label{fig:hrl_rewards}
 \end{figure}
@@ -219,7 +260,7 @@ If $D_{\text{KL}}^{\text{approx}}$ exceeds the predefined trust region threshold
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation/hrl_ablation_kl_spikes.png}
+    \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation_2/hrl_ablation_kl_spikes.png}
     \caption[Maximum Approximate KL Divergence]{Maximum approximate KL divergence per update across the three HRL configurations. The dashed red line marks the early-stopping threshold $\delta = 0.015$.}
     \label{fig:kl_spikes}
 \end{figure}
@@ -228,24 +269,26 @@ If $D_{\text{KL}}^{\text{approx}}$ exceeds the predefined trust region threshold
 \centering
 \caption{KL divergence statistics and policy stability metrics across HRL configurations.}
 \label{tab:kl_stats}
-\begin{tabular}{lccc}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccc}
 \hline
-\textbf{Metric} & \textbf{No-LoRA} & \textbf{QLoRA + Refl.} & \textbf{QLoRA -- No Refl.} \\
+\textbf{Metric} & \textbf{No-LoRA + Refl.} & \textbf{No-LoRA -- No Refl.} & \textbf{QLoRA + Refl.} & \textbf{QLoRA -- No Refl.} \\
 \hline
-Mean $\max D_{\text{KL}}$       & 0.0066 & 0.0082 & 0.0073 \\
-Peak $\max D_{\text{KL}}$       & 0.025  & \textbf{0.117}  & 0.107 \\
-KL early-stop triggers           & 46 / 2{,}000 & \textbf{234 / 2{,}000} & 152 / 2{,}000 \\
-Staleness resets (total)         & 28{,}927 & \textbf{88{,}711} & 39{,}137 \\
-LLM queries dispatched           & 12{,}752 & 12{,}791 & \textbf{13{,}710} \\
-Final TD error (last 100 updates)& 0.042  & 0.024  & \textbf{0.023} \\
-Mean TD error (all updates)      & 0.046  & 0.060  & 0.048 \\
+Mean $\max D_{\text{KL}}$       & 0.0066 & 0.0067 & 0.0082 & 0.0073 \\
+Peak $\max D_{\text{KL}}$       & 0.025  & 0.042  & \textbf{0.117}  & 0.107 \\
+KL early-stop triggers           & 46 / 2{,}000 & 55 / 2{,}000 & \textbf{234 / 2{,}000} & 152 / 2{,}000 \\
+Staleness resets (total)         & 28{,}927 & 78{,}535 & \textbf{88{,}711} & 39{,}137 \\
+LLM queries dispatched           & 12{,}752 & \textbf{14{,}036} & 12{,}791 & 13{,}710 \\
+Final TD error (last 100 updates)& 0.042  & 0.032  & 0.024  & \textbf{0.023} \\
+Mean TD error (all updates)      & 0.046  & 0.049  & 0.060  & 0.048 \\
 \hline
-\end{tabular}
+\end{tabular}%
+}
 \end{table}
 
-Table~\ref{tab:kl_stats} highlights how KL instability disrupts learning. The QLoRA with Reflection run hits the KL guardrail \textbf{5.1$\times$ more often} than the No-LoRA base and \textbf{1.5$\times$ more often} than the No-Reflection run. Since each KL trigger immediately aborts the current gradient update, this constant disruption prevents the PPO workers from smoothly optimizing their kinetic behaviors. This manifests directly as the jagged fluctuations seen in its reward trajectory (Figure~\ref{fig:hrl_rewards}).
+Table~\ref{tab:kl_stats} highlights how KL instability disrupts learning. The QLoRA with Reflection run hits the KL guardrail \textbf{5.1$\times$ more often} than the No-LoRA + Refl. base and \textbf{1.5$\times$ more often} than the QLoRA -- No Reflection run. Since each KL trigger immediately aborts the current gradient update, this constant disruption prevents the PPO workers from smoothly optimizing their kinetic behaviors. This manifests directly as the jagged fluctuations seen in its reward trajectory (Figure~\ref{fig:hrl_rewards}).
 
-Furthermore, while reflection is widely considered a mechanism to improve reasoning in LLM literature, in this HRL context it actively degrades sample efficiency. The QLoRA with Reflection run accumulates \textbf{2.3$\times$ more staleness resets} than the No-Reflection run (88{,}711 vs.\ 39{,}137) despite generating a similar number of total LLM queries ($\sim$12{,}800). This indicates a destructive cycle: when told a plan failed, the reflective Commander generates a worse plan that fails even faster. This rapid cycling of short-lived Options causes constant, small policy shifts. While these individual shifts may not always trigger the KL guardrail, their cumulative effect prevents the Critic from converging, severely reducing sample efficiency.
+Furthermore, the data reveals a fascinating divergence in how reflection impacts sample efficiency depending on the underlying model's capability. For the fine-tuned QLoRA model, reflection actively degrades efficiency: the QLoRA + Reflection run accumulates \textbf{2.3$\times$ more staleness resets} than its No-Reflection counterpart (88{,}711 vs.\ 39{,}137). When the fine-tuned model is told a plan failed, the reflective Commander tends to overcorrect or generate a worse plan that fails even faster, causing rapid cycling of short-lived Options. Conversely, for the weaker No-LoRA model, reflection \textit{improves} stability: the No-LoRA -- No Reflection run suffers \textbf{2.7$\times$ more staleness resets} (78{,}535 vs.\ 28{,}927) than when reflection is enabled. This suggests that while reflection can help a weaker baseline model avoid getting permanently stuck, it interferes with the already-optimized priors of a fine-tuned model.
 
 This paradox originates from a misalignment between the instruction-tuning data and actual RL inference. During QLoRA fine-tuning, the dataset injected synthetic counterfactuals (e.g., \emph{``You previously chose [Incorrect Option]. It failed.''}) to teach the model to correct logical errors. Consequently, the fine-tuned Commander appears to have developed an unintended bias: it overwhelmingly interprets any failure prompt as evidence that its previous choice was logically flawed and must be changed.
 
@@ -266,11 +309,11 @@ LLM Response:
   "agent_1_option": "CRAFT_ARMOR"
 }
 \end{verbatim}
-Because the prompt implies a mistake, the Commander hallucinates a logical error (``lacked necessary items'') and regresses to an irrelevant prerequisite (\texttt{CRAFT\_ARMOR}). Disabling reflection prevents this forced doubt, allowing the Commander to stably re-confirm the correct Option. Future work could isolate this effect by evaluating reflection on the un-finetuned No-LoRA base model.
+Because the prompt implies a mistake, the Commander hallucinates a logical error (``lacked necessary items'') and regresses to an irrelevant prerequisite (\texttt{CRAFT\_ARMOR}). Disabling reflection prevents this forced doubt, allowing the Commander to stably re-confirm the correct Option.
 
 \begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation/hrl_ablation_td_error.png}
+    \includegraphics[width=\textwidth]{../../plots/hrl_reflection_ablation_2/hrl_ablation_td_error.png}
     \caption[Temporal Difference Error Variance]{Temporal Difference Error Variance throughout the training for all HRL configurations.}
     \label{fig:hrl_td_error}
 \end{figure}

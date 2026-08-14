@@ -23,6 +23,7 @@ if __name__ == "__main__":
     parser.add_argument("--deep", action="store_true")
     parser.add_argument("--enable-logging", action="store_true")
     parser.add_argument("--disable-lora", action="store_true", help="Run the base Qwen model without the LoRA adapter")
+    parser.add_argument("--disable-reflection", action="store_true", help="Disable the use of reflection in HRL prompts")
     parser.add_argument("--llm-backend", type=str, default="huggingface_peft", choices=["ollama", "huggingface", "huggingface_peft", "gemini"])
     parser.add_argument("--resume", type=str, default=None, help="Path to checkpoint to resume from (e.g. checkpoints/hrl_latest.pt)")
     
@@ -39,5 +40,6 @@ if __name__ == "__main__":
         llm_backend=args.llm_backend,
         llm_model=args.llm_model,
         disable_lora=args.disable_lora,
+        disable_reflection=args.disable_reflection,
         resume_path=args.resume,
     )
