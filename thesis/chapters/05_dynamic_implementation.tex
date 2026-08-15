@@ -92,7 +92,7 @@ The base reward $R_j^{\text{base}}$ provides a higher baseline value for tasks t
 \textbf{Step 4: Cooperative Override.} 
 Because the environment is fully cooperative, certain tasks require synchronized presence. If the highest-scoring goal for either agent is a cooperative bottleneck (such as returning to the Workbench or building the Bridge), the planner overrides individual greedy selections and magnetically pulls the partner agent to the same target, ensuring they co-locate to trigger the interaction.
 
-Finally, as visualized in Figure~\ref{fig:goal_selection_bars}, the planner does not pass the raw scalar weight $w_j$ to the actors. Instead, it passes the \emph{identity} of this final chosen goal (e.g., ``target: Stone'') down to the Potential-Based Reward Shaping (PBRS) module. As detailed later in Section~\ref{sec:pbrs}, the PBRS module acts as a GPS system: it uses that target identity to activate a specific potential function, which then rains dense, step-by-step rewards onto the actors. As the actors physically navigate the grid, they receive small positive rewards for moving closer to the chosen goal, directly training their policy networks. 
+Finally, as visualized in Figure~\ref{fig:goal_selection_bars}, the planner does not pass the raw scalar weight $w_j$ to the actors. Instead, it passes the \emph{identity} of this final chosen goal (e.g., ``target: Stone'') down to the Potential-Based Reward Shaping (PBRS) module. As detailed later in Section~\ref{sec:pbrs}, the PBRS module acts as a GPS system: it uses that target identity to activate a specific potential function, which then provides dense, step-by-step rewards to the actors. As the actors physically navigate the grid, they receive small positive rewards for moving closer to the chosen goal, directly training their policy networks. 
 
 While the actors pursue only one goal at a time, the LLM weights for the unselected tasks are not discarded. They are smoothed over time (Section~\ref{sec:ema_smoothing}), meaning a lower-ranked task can steadily rise in priority until it cleanly overtakes the current leader without causing erratic behavior.
 
@@ -158,13 +158,13 @@ Specifically, it tracks the agents' success rate ($\rho$) for completing their a
 
 For example, if the agents successfully mined Iron in 40\% of episodes 20 steps ago, and are still hovering around 40\% completion today, their learning has flatlined. This mathematical gate ensures the LLM Commander is only bothered when the lumberjack and miner have genuinely stalled. Additionally, the gate will open as a failsafe if any specific individual subtask gets permanently stuck at a partial completion rate.
 
-\subsubsection{Stage~2: The Z-Score Trigger (The SOS Flare)}
+\subsubsection{Stage~2: The Z-Score Trigger (The Variance Trigger)}
 
 Just because production has stalled does not mean the agents need new orders. They might simply be navigating a physically long path. To confirm they are actually stuck, the system looks at the Centralized Critic.
 
 As established in Section~\ref{subsec:td_error}, the TD-Error (Temporal Difference Error) measures the ``surprise gap'' of the Critic network, i.e. the mathematical difference between its prior prediction and the newly observed reality. A high mean TD-error is not necessarily alarming. It merely indicates that the environment has a large reward scale.
 
-However, a spike in TD-error variance is a critical failure metric. It means the Critic is fundamentally confused: it is seeing wildly different returns for the exact same states (e.g., sometimes observing a massive reward, and sometimes a penalty for identical actions). This variance spike occurs when agents get stuck at a bottleneck, thrash between uncoordinated goals, or experience severe non-stationarity~\parencite{Foerster_Nardelli_Farquhar_Afouras_Torr_Kohli_Whiteson_2017}. Therefore, variance acts as the mathematical SOS flare of a confused agent. Once the plateau gate is open, the system checks whether the Critic's TD-error variance has spiked beyond $\sigma$ standard deviations from its running mean:
+However, a spike in TD-error variance is a critical failure metric. It means the Critic is fundamentally confused: it is seeing wildly different returns for the exact same states (e.g., sometimes observing a massive reward, and sometimes a penalty for identical actions). This variance spike occurs when agents get stuck at a bottleneck, thrash between uncoordinated goals, or experience severe non-stationarity~\parencite{Foerster_Nardelli_Farquhar_Afouras_Torr_Kohli_Whiteson_2017}. Therefore, variance acts as the mathematical intervention signal of a confused agent. Once the plateau gate is open, the system checks whether the Critic's TD-error variance has spiked beyond $\sigma$ standard deviations from its running mean:
 
 \begin{equation}
 \label{eq:zscore_trigger}
@@ -185,7 +185,7 @@ If the gate is open and the Z-score trigger fires, an LLM intervention is dispat
 \subsection{LLM Weight Query: Continuous Logit Output}
 \label{sec:llm_weight_query}
 
-When the SOS flare fires, the system constructs a structured situation report for the Commander. This prompt includes:
+When the variance trigger fires, the system constructs a structured situation report for the Commander. This prompt includes:
 
 \begin{enumerate}
     \item The trigger reason (plateau description, z-score value).
@@ -230,7 +230,7 @@ By requiring the LLM to generate a brief reasoning trace before outputting the s
 \subsection{Softmax Attention Budget}
 \label{sec:softmax_budget}
 
-When the Commander responds to the SOS flare, the raw logits $\boldsymbol{c}=(c_1,\dots,c_K)$ it returns are unconstrained real numbers (e.g., they can be wildly positive or negative). If we applied these raw values directly to the reward function, the Commander could accidentally inflate or deflate the entire "economy" of the grid-world, completely destabilizing the PPO Critic's value estimations.
+When the Commander responds to the intervention signal, the raw logits $\boldsymbol{c}=(c_1,\dots,c_K)$ it returns are unconstrained real numbers (e.g., they can be wildly positive or negative). If we applied these raw values directly to the reward function, the Commander could accidentally inflate or deflate the entire "economy" of the grid-world, completely destabilizing the PPO Critic's value estimations.
 
 To prevent this, the programmatic safety layer first strictly bounds the raw logits, capping any individual task logit at a maximum of $3.0$ and ensuring the total sum across all tasks does not exceed $15.0$. These bounded logits are then converted into a \emph{budget-preserving} weight vector via a temperature-scaled softmax~\parencite{Sutton_Barto_2018}:
 \begin{equation}
@@ -258,7 +258,7 @@ where $K=|\mathcal{W}|=7$ is the total number of subtasks, and $\tau=0.5$ is an 
 \subsubsection{EMA Smoothing}
 \label{sec:ema_smoothing}
 
-Sudden transitions in target goals cause severe whiplash for the agents. To ensure the active weights shift smoothly, the newly computed $w^{\text{softmax}}$ is blended with the previously active weights via an Exponential Moving Average (EMA), a standard stabilization technique in RL:
+Sudden transitions in target goals cause abrupt policy shifts for the agents. To ensure the active weights shift smoothly, the newly computed $w^{\text{softmax}}$ is blended with the previously active weights via an Exponential Moving Average (EMA), a standard stabilization technique in RL:
 \begin{equation}
 \label{eq:ema}
     \widetilde{w}_i^{(t)}
@@ -355,7 +355,7 @@ As the agent steps from state $t$ to $t+1$, the per-step shaping reward measures
 \end{equation}
 As established in Section~\ref{subsec:pbrs}, $\gamma=0.99$ acts as the anti-farming mechanism, mathematically punishing the agent if it loops backward along its own path.
 
-The scale factor ($\lambda_{\text{scale}} = 0.05$) acts as a volume knob. If an agent runs a long distance across the map, its potential $\Phi$ might jump by $+20$ points. If unscaled, the agent would receive $+20$ simply for running, making marathon sprinting more lucrative than actually mining Gold (which only yields a true sparse reward of $+15$). Multiplying by $0.05$ shrinks that $+20$ movement reward down to a $+1.0$ nudge. This guarantees the dense shaping reward remains a gentle guide rather than an exploitable feedback loop, while the sparse environmental milestones remain the ultimate prize.
+The scale factor ($\lambda_{\text{scale}} = 0.05$) acts as a volume knob. If an agent runs a long distance across the map, its potential $\Phi$ might jump by $+20$ points. If unscaled, the agent would receive $+20$ simply for running, making continuous movement more lucrative than actually mining Gold (which only yields a true sparse reward of $+15$). Multiplying by $0.05$ shrinks that $+20$ movement reward down to a $+1.0$ nudge. This guarantees the dense shaping reward remains a gentle guide rather than an exploitable feedback loop, while the sparse environmental milestones remain the ultimate prize.
 
 Additionally, the indicator $\mathds{1}[g \text{ active}]$ acts as a mask. If the agent completes its portion of the DAG and is idling while waiting for its partner, this mask zeroes out the shaping reward entirely, preventing the agent from being incorrectly penalized for remaining stationary.
 
@@ -379,7 +379,7 @@ To ensure the agents eventually learn to act independently, the blending coeffic
 \subsection{Async Communication Architecture}
 \label{sec:async_bridge}
 
-In standard Markov Decision Processes, observation and action delays severely destabilize training~\parencite{Katsikopoulos_Engelbrecht_2003}. If the PPO workers paused to wait for the LLM Commander's response during every SOS flare, network latency and inference time would bottleneck the simulation, dropping GPU utilization to near zero.
+In standard Markov Decision Processes, observation and action delays severely destabilize training~\parencite{Katsikopoulos_Engelbrecht_2003}. If the PPO workers paused to wait for the LLM Commander's response during every intervention trigger, network latency and inference time would bottleneck the simulation, dropping GPU utilization to near zero.
 
 To prevent this, queries are dispatched asynchronously via a daemon thread. This approach mirrors standard asynchronous reinforcement learning architectures~\parencite[e.g.,][]{petrenko2020sample}, decoupling the high-frequency environment clock of the PPO workers from the variable latency of the LLM inference pipeline. The dataflow executes as follows:
 

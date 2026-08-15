@@ -10,7 +10,7 @@ To fully explore the spectrum of neuro-symbolic integration, we must ask: what h
 
 This section details the second integration strategy: a Hierarchical Reinforcement Learning (HRL) framework. Here, we transition from soft environmental guidance to hard architectural integration. The LLM ceases to be a distant architect and becomes a direct \emph{Meta-Controller}. Instead of adjusting continuous weights over a fixed greedy planner, the Meta-Controller replaces the planner entirely. It selects discrete high-level \emph{Options} (macro-actions) that strictly govern the behavior of the low-level MAPPO policy.
 
-In our established metaphor, the Commander is no longer just shifting the gravity; it is radioing explicit, non-negotiable orders directly into the sensory inputs of the lumberjack and miner.
+In our established metaphor, the Commander is no longer just shifting the gravity; it is issuing explicit, discrete commands directly to the sensory inputs of the lumberjack and miner.
 
 The exposition follows the implementation order:
 \begin{enumerate}
@@ -216,14 +216,14 @@ By appending this one-hot vector $\mathbf{e}_{o_t^{(i)}}$ directly to the observ
 \subsection{Bipartite Reward Structure}
 \label{sec:bipartite_reward}
 
-In standard RL, the environment reward is the ground truth. However, in our sparse environment, relying solely on this is analogous to a university student only receiving feedback on graduation day (the diploma). To ensure the agents learn the day-to-day behaviors required to achieve that diploma, the HRL approach uses a bipartite composite reward: a sparse environment reward and a dense intrinsic reward.
+In standard RL, the environment reward is the ground truth. However, in our sparse environment, relying solely on this is analogous to receiving feedback only at the very end of a long episode. To ensure the agents learn the day-to-day behaviors required to achieve that final milestone, the HRL approach uses a bipartite composite reward: a sparse environment reward and a dense intrinsic reward.
 
 \subsubsection{Extrinsic and Intrinsic Components}
 \label{sec:intrinsic_reward}
 
 As established in Section~\ref{sec:env_design}, the extrinsic environment reward $r_t^{\text{env}}$ is the true, unmodified sparse signal from the grid-world (refer to Table~\ref{tab:env_rewards}). It consists of a constant time-step penalty of $-0.01$ to encourage speed, plus massive milestone bonuses upon successfully completing a physical subtask.
 
-Conversely, the intrinsic (shaping) reward is a synthetic ``breadcrumb trail'' generated internally by the architecture to keep the agent motivated toward the Commander's assigned target. 
+Conversely, the intrinsic (shaping) reward is a dense synthetic shaping signal generated internally by the architecture to keep the agent motivated toward the Commander's assigned target. 
 It consists of two sub-components: a continuous distance-based shaping mechanism, and a discrete option success bonus.
 
 First, the continuous distance-based shaping reward toward the active option's target zone is computed identically to the PBRS framework~\parencite{Ng_Harada_Russell_1999} established in Section~\ref{subsec:pbrs}, but applied to the option's target rather than the planner's target:
@@ -266,7 +266,7 @@ The total reward signal fed to the PPO algorithm is a weighted sum of the enviro
     + \alpha_{\text{intr}} \cdot r_t^{\text{intr}}
 }
 \end{equation}
-with $\alpha_{\text{intr}} = 0.5$. This coefficient was chosen to balance the dense intrinsic signal against the sparse environment milestones; too large a value causes the policy to over-optimise for intrinsic shaping at the expense of actual task completion.
+with $\alpha_{\text{intr}} = 0.5$. This coefficient was chosen to balance the dense intrinsic signal against the sparse environmental milestones; too large a value causes the policy to over-optimise for intrinsic shaping at the expense of actual task completion.
 
 Note the key difference from the Mixing Board approach: here, no $\lambda$ decay schedule is applied. The intrinsic coefficient remains fixed because the LLM continuously updates the \emph{direction} (which option to pursue) rather than the magnitude of shaping.
 
@@ -294,7 +294,7 @@ To maintain the CTDE paradigm established in Section~\ref{subsec:ctde}, the Crit
 \end{equation}
 Because the Value function $V_\phi$ now receives the globally augmented state $\mathbf{s}_t' = [\mathbf{s}_t \parallel \mathbf{e}_{\mathbf{o}_t}]$, the Critic learns to predict entirely different baseline expected returns depending on the combination of options actively guiding the agents.
 
-The consequence is a tightly coupled learning loop: the Actor gradient explicitly links the local physical state $s_t^{(i)}$, the Commander's specific order $o_t^{(i)}$, and the intrinsic success of that command through $A_t^{(i)}$. The network learns distinct sub-policies for each option, not through separate networks, but through a single policy that conditions its behavior on which ``switch'' the LLM has flipped.
+The consequence is a tightly coupled learning loop: the Actor gradient explicitly links the local physical state $s_t^{(i)}$, the Commander's specific order $o_t^{(i)}$, and the intrinsic success of that command through $A_t^{(i)}$. The network learns distinct sub-policies for each option, not through separate networks, but through a single policy that conditions its behavior on which option the LLM has assigned.
 
 % ──────────────────────────────────────────────────────────────────────────
 \subsection{Execution Lifecycle and Stability Guardrails}

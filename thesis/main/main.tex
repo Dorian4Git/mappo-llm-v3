@@ -4,7 +4,7 @@
 \input{../tm.mydef.tex}
 
 % Bibliography Configuration
-\usepackage[backend=biber, style=iso-authoryear]{biblatex}
+\usepackage[backend=biber, style=iso-authoryear, maxnames=3, minnames=1]{biblatex}
 \addbibresource{../references.bib}
 \renewcommand*{\bibfont}{\normalsize\setstretch{1.0}} % Forces 11pt and single spacing
 \setlength{\bibitemsep}{12pt} % Sets the space between bibliography items
@@ -12,8 +12,8 @@
 % --- HEG-GE ISO 690 Citation Fixes ---
 % Forces commas instead of semicolons between authors
 \renewcommand*{\multinamedelim}{\addcomma\space}
-% Forces "and" before the final author (translated from "et")
-\renewcommand*{\finalnamedelim}{\space and\space}
+% Forces "et" before the final author to match HEG guidelines
+\renewcommand*{\finalnamedelim}{\space et\space}
 % Removes the comma between author and year in in-text citations
 \renewcommand*{\nameyeardelim}{\space}
 % Forces "et al." formatting
@@ -58,6 +58,8 @@ This Master’s thesis is carried out as part of the final school examination, w
 
 The student attests that he has submitted the work to a plagiarism detection software. The student accepts the confidentiality clause, if applicable. The use of the conclusions and recommendations formulated in the Master’s thesis, without prejudice to their value, does not engage the responsibility of the author, the Master’s thesis, advisor, the jury or the HEG-GE.
 
+In accordance with HEG-GE guidelines, the author declares the use of Generative AI tools (such as Google Gemini) exclusively for proofreading, stylistic refinement, coding assistance and LaTeX formatting assistance. All intellectual content, experimental data, and conceptual architecture remain the sole original work of the author.
+
 \textit{“I hereby certify that this work has been carried out using only the sources cited in the bibliography, that it is the fruit of my personal reflection and has been written independently.”}
 
 \vspace{1.5cm}
@@ -71,7 +73,7 @@ Dorian THOMÉ
 
 \section*{Acknowledgments}
 \addcontentsline{toc}{section}{Acknowledgments}
-My gratitude to my supervisor, Prof. Dr. Alexandros Kalousis, and M. Jacopo Castellini for their guidance and support throughout this research.
+My gratitude to my supervisor, Prof. Dr. Alexandros Kalousis, and Dr. Jacopo Castellini for their guidance and support throughout this research.
 
 \newpage
 
@@ -81,7 +83,7 @@ Reinforcement learning agents struggle in environments with sparse rewards. This
 
 We developed and evaluated two distinct neuro-symbolic architectures. The first approach, Dynamic Reward Shaping, utilizes the LLM as a strategic supervisor that continuously adjusts the priority weights of a Potential-Based Reward Shaping (PBRS) signal. The second approach introduces a Hierarchical Reinforcement Learning (HRL) Meta-Controller, where the LLM assigns discrete macro-actions (Options) to the agents, directly modifying their observation space and intrinsic rewards. Both architectures were evaluated through ablation studies targeting temporal smoothing, zero-shot semantic adaptation, QLoRA fine-tuning, and counterfactual reflection.
 
-The results demonstrate that the HRL architecture significantly outperforms dynamic shaping, enabling agents to master the entire environment, including complex combat coordination. However, integrating semantic models with kinetic policies introduces severe non-stationarity. Implementing Exponential Moving Average (EMA) smoothing and Kullback-Leibler (KL) divergence guardrails proved necessary to prevent catastrophic forgetting. 
+The results demonstrate that the HRL architecture significantly outperforms dynamic shaping, enabling agents to master the entire environment, including complex combat coordination. However, integrating semantic models with kinetic policies introduces significant non-stationarity. Implementing Exponential Moving Average (EMA) smoothing for the Dynamic architecture and Kullback-Leibler (KL) divergence guardrails for the HRL architecture proved necessary to maintain policy stability. 
 
 Furthermore, the research highlights two fundamental vulnerabilities in neuro-symbolic systems. First, the LLM's semantic overconfidence can induce reward hacking, trapping agents in local optima. Second, counterfactual reflection triggers over-correction to simple physical delays, actively degrading learning efficiency. Prospectively, while QLoRA fine-tuning accelerated convergence five-fold, the viability of these architectures for high-frequency control will require the development of foundation models equipped with spatio-temporal memory.
 

@@ -191,7 +191,7 @@ Mathematically, this equation states that the gradient of the Actor's overall pe
 
 We can see why it could be fragile in practice. Suppose our lumberjack agent accidentally executes a random sequence of movements and luckily discovers a massive, hidden cache of wood. The Critic will calculate an enormous positive Advantage. Standard gradient ascent will blindly follow the math, reacting by violently dragging the Actor's weights in that specific direction to favor that exact sequence again. 
 
-This aggressive update frequently causes the network to "fall off a cliff." By violently altering its internal structure for one lucky event, the agent effectively destroys its own brain, catastrophically forgetting fundamental survival rules it had previously learned (such as avoiding hazards or map boundaries).
+This aggressive update frequently causes the network to destabilize. By over-updating its internal structure for one lucky event, the agent effectively overwrites its learned weights, forgetting fundamental survival rules it had previously learned (such as avoiding hazards or map boundaries).
 
 Proximal Policy Optimization (PPO) resolves this fragility. It abandons the classical gradient calculation and instead enforces a strict mathematical guardrail, establishing a clipped surrogate objective specifically for the Actor, denoted as $L^{\text{CLIP}}(\theta)$~\parencite{Schulman_Wolski_Dhariwal_Radford_Klimov_2017}:
 \begin{equation}
@@ -282,14 +282,14 @@ To prevent this catastrophic forgetting, PPO calculates an approximation of the 
 \subsection{Cooperative Multi-Agent Reinforcement Learning}
 \label{sec:marl_foundations}
 
-Imagine our wood-collecting agent is no longer alone. We now introduce a second agent into the grid, tasked with mining stone. Suddenly, the fundamental assumption of our standard MDP (that the environment only changes when \emph{our} agent acts) is shattered. Because both agents update their policies and take actions concurrently, the environment becomes a moving target. If the lumberjack moves toward a tree, but the miner accidentally blocks the path a millisecond prior, the environment's transition dynamics become non-stationary from the local perspective of any individual agent~\parencite{Albrecht_Christianos_Schäfer_2024}.
+Imagine our wood-collecting agent is no longer alone. We now introduce a second agent into the grid, tasked with mining stone. Suddenly, the fundamental assumption of our standard MDP (that the environment only changes when \emph{our} agent acts) is invalidated. Because both agents update their policies and take actions concurrently, the environment becomes a moving target. If the lumberjack moves toward a tree, but the miner accidentally blocks the path a millisecond prior, the environment's transition dynamics become non-stationary from the local perspective of any individual agent~\parencite{Albrecht_Christianos_Schäfer_2024}.
 
 \subsubsection{Decentralized Partially Observable MDPs (Dec-POMDPs)}
 \label{subsec:dec_pomdp}
 
 In complex multi-agent domains, an individual agent rarely possesses a god's-eye view of the entire grid. They suffer from local sensory limitations, perceiving only a cropped window of their immediate surroundings. 
 
-As illustrated in Figure~\ref{fig:dec_pomdp}, this scenario is formally modeled as a Decentralized Partially Observable Markov Decision Process (Dec-POMDP)~\parencite{Oliehoek_Amato_2016}. The diagram demonstrates how the true global environment state is hidden behind an "observation emission filter," essentially creating a fog of war that forces each agent to act strictly on fragmented, local information.
+As illustrated in Figure~\ref{fig:dec_pomdp}, this scenario is formally modeled as a Decentralized Partially Observable Markov Decision Process (Dec-POMDP)~\parencite{Oliehoek_Amato_2016}. The diagram demonstrates how the true global environment state is hidden behind an "observation emission filter," essentially creating strict partial observability that forces each agent to act strictly on fragmented, local information.
 
 \begin{figure}[H]
 \centering
@@ -346,9 +346,9 @@ To restore temporal context, agent $i$ must rely on its memory. It maintains an 
 \subsubsection{Centralized Training with Decentralized Execution (CTDE)}
 \label{subsec:ctde}
 
-To resolve the fog of war without violating the strict rules of the game, modern MARL algorithms adopt the Centralized Training with Decentralized Execution (CTDE) paradigm~\parencite{Albrecht_Christianos_Schäfer_2024}. 
+To resolve this partial observability without violating the strict rules of the game, modern MARL algorithms adopt the Centralized Training with Decentralized Execution (CTDE) paradigm~\parencite{Albrecht_Christianos_Schäfer_2024}. 
 
-CTDE applies a dual-perspective philosophy to our grid-world. As shown in Figure~\ref{fig:ctde_mappo}, during the offline training phase, the algorithm acts as an omniscient supervisor. It utilizes a Centralized Critic that has privileged, god's-eye access to the global environment state $\mathbf{s}_t$. Because it knows the exact coordinates of both the lumberjack and the miner, it can accurately judge whether a joint action was truly beneficial. 
+CTDE applies a dual-perspective philosophy to our grid-world. As shown in Figure~\ref{fig:ctde_mappo}, during the offline training phase, the algorithm acts as an omniscient supervisor. It utilizes a Centralized Critic that has complete access to the global environment state $\mathbf{s}_t$. Because it knows the exact coordinates of both the lumberjack and the miner, it can accurately judge whether a joint action was truly beneficial. 
 
 However, during online deployment, this centralized structure is severed. The Critic is discarded, and the decentralized Actors are deployed to the grid. They must execute their policies independently, relying solely on their fragmented local action-observation histories ($\tau_i$) without knowing the exact status of their partner.
 
@@ -420,7 +420,7 @@ The Centralized Critic Network (Value), parameterized by $\phi$, learns the valu
 \end{equation}
 where $N$ represents the number of agents, and $B$ represents the batch size (the number of environment transitions sampled during a training update). This equation simply averages the prediction error across all agents and all sampled experiences.
 
-Simultaneously, the decentralized Actors (the lumberjack and the miner) learn their respective policies $\pi_{\theta_i}(a_i \mid \tau_i)$. Because they operate in the fog of war, their inputs are restricted strictly to their localized action-observation histories ($\tau_i$). Each Actor updates its weights using the exact same clipped surrogate objective from Equation~\ref{eq:ppo_clip}. 
+Simultaneously, the decentralized Actors (the lumberjack and the miner) learn their respective policies $\pi_{\theta_i}(a_i \mid \tau_i)$. Because they operate under strict partial observability, their inputs are restricted strictly to their localized action-observation histories ($\tau_i$). Each Actor updates its weights using the exact same clipped surrogate objective from Equation~\ref{eq:ppo_clip}. 
 
 As shown in Figure~\ref{fig:ctde_mappo}, the gradient flow is strictly separated. The global state error updates only the Critic's weights ($\phi$), while the Critic passes its computed Advantage signal to the Actors. The lumberjack and miner then use this Advantage to update their own weights ($\theta_i$). This clear separation enables MAPPO to achieve sample efficiency in complex cooperative benchmarks~\parencite{Yu_Velu_Vinitsky_Gao_Wang_Bayen_Wu_2022}.
 
@@ -441,7 +441,7 @@ However, generating entirely new physical environments on the fly introduces sig
 \subsection{Temporal Abstraction and Reward Shaping}
 \label{sec:abstraction_shaping}
 
-While MAPPO exhibits strong sample efficiency in dense tasks, it struggles catastrophically in long-horizon domains gated by sparse rewards. If our lumberjack and miner only receive a single $+10$ reward upon completing a high-level goal, such as successfully crafting an advanced tool, the probability of them randomly discovering the exact prerequisite sequence of chopping wood, mining stone, and navigating to a workbench approaches zero. To mitigate this exploration bottleneck, structural abstraction techniques are required.
+While MAPPO exhibits strong sample efficiency in dense tasks, it struggles significantly in long-horizon domains gated by sparse rewards. If our lumberjack and miner only receive a single $+10$ reward upon completing a high-level goal, such as successfully crafting an advanced tool, the probability of them randomly discovering the exact prerequisite sequence of chopping wood, mining stone, and navigating to a workbench approaches zero. To mitigate this exploration bottleneck, structural abstraction techniques are required.
 
 \subsubsection{Potential-Based Reward Shaping (PBRS)}
 \label{subsec:pbrs}

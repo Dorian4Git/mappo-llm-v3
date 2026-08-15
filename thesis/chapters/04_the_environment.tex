@@ -8,8 +8,10 @@ Before detailing the neuro-symbolic architectures developed in this thesis, this
 
 The environment operates as a cooperative spatial grid where multiple agents must jointly gather resources, craft tools, and defeat an adversary to achieve a final objective. Unlike standard dense-reward environments, where agents receive incremental gradient signals based on Euclidean distance to a target, this environment utilizes a logical sparse-reward formulation. The agents receive extrinsic rewards solely upon the completion of discrete logical milestones (subtasks).
 
+The overarching philosophy of this design is mathematical austerity. The environment acts as a consistent judge, providing no incremental guidance or continuous signals. It only issues a constant time penalty to encourage speed and milestone bonuses for completing predefined physical tasks.
+
 \subsubsection{Extrinsic Reward Structure}
-The environment reward $r_t^{\text{env}}$ is the true, unmodified signal from the environment. It consists of a constant time-step penalty of $-0.01$ to encourage speed, plus massive milestone bonuses upon successfully completing a physical subtask:
+The environment reward $r_t^{\text{env}}$ is the true, unmodified signal from the environment. It consists of a constant time-step penalty of $-0.01$ to encourage speed, plus milestone bonuses upon successfully completing a physical subtask:
 
 \begin{table}[H]
 \centering
@@ -98,21 +100,20 @@ The fundamental exploration challenge of the environment is formulated as a Dire
     \label{fig:env_dag}
 \end{figure}
 
-As the topological depth of this chain increases, the probability of agents discovering the complete sequence through purely random, entropy-driven exploration decays exponentially. This structure isolates the ``exploration bottleneck'' that our neuro-symbolic models are designed to solve.
+As the topological depth of this chain increases, the probability of agents discovering the complete sequence through random exploration decays. This structure isolates the exploration bottleneck that our neuro-symbolic models are designed to address.
 
 \subsubsection{Action and Observation Spaces}
 \label{subsec:env_spaces}
 
-The agents are trained under the Centralized Training with Decentralized Execution (CTDE) paradigm. During the decentralized execution phase, each agent perceives a 14-dimensional observation vector. Within this vector, the agents know exactly two things: \emph{where they are} (the absolute $(x,y)$ coordinates of the agents) and \emph{what they have} (the boolean status of the shared inventory). 
-
-However, they are completely blind to the map layout. The environment strictly enforces the Dec-POMDP partial observability (established in Section~\ref{subsec:dec_pomdp}) by completely hiding the coordinates of the static target zones (e.g., resources, workbenches) from the state vector. Because the true mathematical state of the environment includes these target locations, hiding them creates a cognitive "fog of war". This forces the agents to physically explore the spatial grid to locate their objectives, rather than simply calculating a direct mathematical path to a known coordinate. To further prevent the policies from overfitting and memorizing a static sequence of movements, the agents' starting coordinates are slightly randomized at the beginning of every episode.
+\subsection{Partial Observability and the Action Space}
+To simulate realistic constraints, the agents do not possess global vision of the grid. Instead, they operate under strict partial observability. At each time step $t$, agent $i$ receives a localized observation vector $o_t^{(i)} \in \mathbb{R}^{15}$ (or $\mathbb{R}^{25}$ in Chapter 6), which includes: their own $(x,y)$ coordinates and inventory status. The environment hides target locations (e.g., resources, workbenches) from the state vector. This requires agents to explore the spatial grid to locate objectives. To further prevent the policies from overfitting to a static sequence of movements, the agents' starting coordinates are randomized at the beginning of every episode.
 
 The discrete action space consists of five parameters: four cardinal movement directions (Up, Down, Left, Right) and one semantic ``Interact'' action. The interaction mechanic is context-sensitive. For instance, triggering the action while adjacent to a forest tile chops wood, whereas executing it at a workbench (contingent upon possessing the requisite inventory) initiates tool crafting.
 
 \subsubsection{Visual Representation}
 \label{subsec:env_visual}
 
-Figure~\ref{fig:env_screenshots} provides a visual representation of the discrete grid-world environment utilized throughout the MARL training process. The interface explicitly renders the underlying state matrix, allowing human observers to track the spatial coordinates of the autonomous agents as they navigate the map. It also visualizes the dynamic entity zones critical to the dependency DAG (e.g., forests for wood harvesting, ore deposits for iron mining, and localized workbenches for tool crafting). While the core simulation runs headlessly via highly optimized arrays to maximize transition throughput, this renderer serves as an essential tool for visual debugging and policy interpretation. 
+Figure~\ref{fig:env_screenshots} provides a visual representation of the discrete grid-world environment utilized throughout the MARL training process. The interface renders the underlying state matrix, allowing human observers to track the spatial coordinates of the autonomous agents. While the core simulation runs headlessly to maximize throughput, this renderer serves as a tool for visual debugging and policy interpretation. 
 
 \begin{figure}[H]
     \centering
@@ -123,22 +124,22 @@ Figure~\ref{fig:env_screenshots} provides a visual representation of the discret
     \label{fig:env_screenshots}
 \end{figure}
 
-All visual assets utilized in this rendering engine, including the 2D pixel-art sprites representing the workers, and interactive elements, were procedurally generated using the Gemini 1.5 Pro model via the Antigravity coding assistant platform.
+All visual assets utilized in this rendering engine were generated using the Gemini 1.5 Pro model via the Antigravity coding assistant platform.
 
 \subsection{Architecture \& Technology Stack}
 \label{sec:env_tech}
 
-Engineering a custom MARL environment demands a careful selection of the underlying technology stack, requiring a balance between visual debugging capabilities and raw, parallelized simulation throughput.
+Engineering a custom MARL environment demands a careful selection of the underlying technology stack, requiring a balance between visual debugging capabilities and simulation throughput.
 
-Why Not a Game Engine? Initially, robust open-source game engines such as Godot~\parencite{godot} were considered for the simulation backbone. Godot provides a powerful visual editor, robust collision physics, and a mature node-based hierarchy, making it an optimal choice for traditional game development.
+Why Not a Game Engine? Initially, open-source game engines such as Godot~\parencite{godot} were considered for the simulation backbone. Godot provides a visual editor, collision physics, and a node-based hierarchy, making it an option for traditional game development.
 
-However, modern on-policy deep reinforcement learning algorithms like MAPPO require simulating tens of millions of environment transitions to converge. Full-stack game engines introduce massive computational overhead for rendering pipelines and internal state management. Attempting to spawn hundreds of headless engine instances in parallel quickly bottlenecks system memory and CPU inter-process communication.
+The final constraint in our environment design is the hardware profile. Because MARL requires processing thousands of physical state transitions per second to calculate gradients, introducing an LLM query directly into the training loop introduces significant computational overhead.
 
-As a result, the environment was engineered natively in Python, utilizing NumPy~\parencite{numpy} as the core mathematical engine and Pygame~\parencite{pygame} as a lightweight visual wrapper. This matrix-first approach offers critical architectural advantages for reinforcement learning:
+As a result, the environment was engineered natively in Python, utilizing NumPy~\parencite{numpy} as the core mathematical engine and Pygame~\parencite{pygame} as a lightweight visual wrapper. This matrix-first approach offers architectural advantages for reinforcement learning:
 \begin{itemize}
-    \item \textbf{Direct Tensor Integration:} The underlying grid, entities, and inventory states exist purely as NumPy matrices. This bypasses the massive serialization and deserialization bottlenecks typically encountered when passing state data between a Python-based RL training script and an external C++ game engine.
-    \item \textbf{Seamless NumPy-to-Game Translation:} Because the environment state is natively represented as a matrix, Pygame can trivially translate these numerical coordinates into a visual interface for human debugging. The mathematical logic (kinematics, collisions) is completely decoupled from the rendering loop.
-    \item \textbf{Headless Vectorization:} During the actual training loop, the Pygame visual renderer is entirely disabled. The PyTorch models interact directly with the raw NumPy arrays, allowing a vectorized wrapper to step thousands of environments simultaneously in parallel without any graphical or inter-process overhead.
+    \item \textbf{Direct Tensor Integration:} The underlying grid, entities, and inventory states exist purely as NumPy matrices. This avoids the serialization and deserialization overhead typically encountered when passing state data between a Python-based RL training script and an external C++ game engine.
+    \item \textbf{Seamless NumPy-to-Game Translation:} Because the environment state is natively represented as a matrix, Pygame can translate these numerical coordinates into a visual interface for human debugging. The mathematical logic (kinematics, collisions) is decoupled from the rendering loop.
+    \item \textbf{Headless Vectorization:} During the actual training loop, the Pygame visual renderer is disabled. The PyTorch models interact directly with the raw NumPy arrays, allowing a vectorized wrapper to step thousands of environments simultaneously in parallel.
 \end{itemize}
 
 \subsection{Libraries \& Infrastructure}
